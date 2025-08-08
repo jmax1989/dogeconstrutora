@@ -329,14 +329,26 @@
       return groups;
     }
 
+    // Correção: Formatar datas do tipo "YYYY-MM-DD" sem deslocamento de fuso
     function formatDateBR(dateStr) {
-      if(!dateStr) return "";
-      const d = (dateStr instanceof Date) ? dateStr : new Date(dateStr);
+      if (!dateStr) return "";
+      if (dateStr instanceof Date && !isNaN(dateStr)) {
+        const d = dateStr;
+        const dd = String(d.getDate()).padStart(2,'0');
+        const mm = String(d.getMonth() + 1).padStart(2,'0');
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+      }
+      // Espera string no formato "YYYY-MM-DD" ou similar
+      // Extrai ano, mês e dia para criar data local sem timezone UTC
+      const parts = dateStr.split('-');
+      if(parts.length < 3) return dateStr; // não formatar se não reconhecido
+      const yyyy = parseInt(parts[0], 10);
+      const mm = parseInt(parts[1], 10) - 1; // meses 0-indexados
+      const dd = parseInt(parts[2].substring(0,2), 10); // pega só o dia (pode ter hora concatenada)
+      const d = new Date(yyyy, mm, dd);
       if (isNaN(d)) return dateStr;
-      const dd = String(d.getDate()).padStart(2,'0');
-      const mm = String(d.getMonth() + 1).padStart(2,'0');
-      const yyyy = d.getFullYear();
-      return `${dd}/${mm}/${yyyy}`;
+      return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
     }
 
     function draw(groups, duracoesMap, fvsSelecionada) {
