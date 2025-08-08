@@ -329,6 +329,16 @@
       return groups;
     }
 
+    function formatDateBR(dateStr) {
+      if(!dateStr) return "";
+      const d = (dateStr instanceof Date) ? dateStr : new Date(dateStr);
+      if (isNaN(d)) return dateStr;
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth() + 1).padStart(2,'0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
     function draw(groups, duracoesMap, fvsSelecionada) {
       const svg = document.getElementById('svg');
       svg.innerHTML = '';
@@ -366,10 +376,11 @@
         let textoCentro = '';
 
         if(data) {
-          if (data.mediaAC === 100) {
-            fillColor = '#28a745'; // verde padrão para 100%
+          const maxNum = Number(data.maxAC);
+          if (maxNum === 100) {
+            fillColor = '#28a745'; // verde para 100%
           } else {
-            fillColor = '#394867'; // azul escuro para os demais com duração
+            fillColor = '#394867'; // azul escuro para os demais
           }
           textoCentro = `${data.duracao}`;
         }
@@ -381,7 +392,7 @@
         rect.setAttribute("height", height);
         rect.setAttribute("fill", fillColor);
         rect.setAttribute("class", "cell");
-        if (data && data.mediaAC === 100) {
+        if (data && Number(data.maxAC) === 100) {
           rect.classList.add('green');
         }
         rect.style.cursor = "pointer";
@@ -411,6 +422,9 @@
         });
       });
 
+      if (maxWidth === 0) maxWidth = CELL_WIDTH * 6;
+      if (maxHeight === 0) maxHeight = CELL_HEIGHT * 6;
+
       svg.setAttribute('viewBox', `0 0 ${maxWidth} ${maxHeight}`);
       svg.setAttribute('width', '100%');
       svg.setAttribute('height', 'auto');
@@ -432,21 +446,32 @@
         }
 
         const info = dados[0];
+        const maxRaw = info.maxAC;
+        const maxNum = (typeof maxRaw === 'number') ? maxRaw : (maxRaw ? Number(maxRaw) : null);
 
         let conteudoHtml = `<p><strong>Apartamento:</strong> ${info.apartamento}</p>`;
-        conteudoHtml += `<p><strong>Início:</strong> ${info.inicio}</p>`;
+        const inicioFmt = formatDateBR(info.inicio);
 
-        if (typeof info.mediaAC === 'number') {
-          const mediaSemDecimais = Math.round(info.mediaAC);
-          conteudoHtml += `<p><strong>Média:</strong> ${mediaSemDecimais}%</p>`;
-        }
-
-        if (info.termino) {
-          conteudoHtml += `<p><strong>Término:</strong> ${info.termino}</p>`;
-        }
-
-        if (info.duracao) {
-          conteudoHtml += `<p><strong>Duração:</strong> ${info.duracao} dias</p>`;
+        if (maxNum === 100) {
+          const terminoFmt = formatDateBR(info.termino);
+          conteudoHtml += `<p><strong>Início:</strong> ${inicioFmt}</p>`;
+          if (info.termino) conteudoHtml += `<p><strong>Término:</strong> ${terminoFmt}</p>`;
+          if (info.duracao !== undefined && info.duracao !== null && info.duracao !== "") {
+            conteudoHtml += `<p><strong>Duração:</strong> ${info.duracao}</p>`;
+          }
+        } else {
+          conteudoHtml += `<p><strong>Início:</strong> ${inicioFmt}</p>`;
+          if (typeof maxNum === 'number') {
+            const maxSemDecimais = Math.round(maxNum);
+            conteudoHtml += `<p><strong>Conclusão:</strong> ${maxSemDecimais}%</p>`;
+          } else {
+            conteudoHtml += `<p><strong>Conclusão:</strong> -</p>`;
+          }
+          if (info.duracao !== undefined && info.duracao !== null && info.duracao !== "") {
+            conteudoHtml += `<p><strong>Duração:</strong> ${info.duracao}</p>`;
+          } else {
+            conteudoHtml += `<p><strong>Duração:</strong> -</p>`;
+          }
         }
 
         modalContent.innerHTML = conteudoHtml;
@@ -529,8 +554,8 @@
             if(!res.ok) throw new Error(`HTTP status ${res.status}`);
             const dadosDuracoes = await res.json();
             duracoesMap = {};
-            dadosDuracoes.forEach(({apartamento, duracao, mediaAC}) => {
-              duracoesMap[apartamento] = {duracao, mediaAC};
+            dadosDuracoes.forEach(({apartamento, duracao, maxAC}) => {
+              duracoesMap[apartamento] = { duracao: duracao, maxAC: (typeof maxAC === 'number' ? maxAC : (maxAC ? Number(maxAC) : null)) };
             });
             cache.duracoes[fvsSelecionada] = duracoesMap;
           }
