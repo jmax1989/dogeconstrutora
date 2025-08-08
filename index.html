@@ -70,9 +70,8 @@
       display: block;
       margin: auto;
       max-width: 100%;
-      max-height: 80vh; /* Limite de altura para não precisar scroll vertical excessivo */
-      width: auto;
       height: auto;
+      min-height: 300px;
     }
 
     text {
@@ -191,7 +190,6 @@
     const CELL_HEIGHT = 30;
 
     const loadingDiv = document.getElementById('loading');
-    const svg = document.getElementById('svg');
 
     // Cache em memória
     const cache = {
@@ -199,10 +197,6 @@
       duracoes: {},
       estruturaCsv: null,
     };
-
-    // Guardar dimensões atuais para recalcular resize
-    let lastGroups = null;
-    let lastDuracoesMap = null;
 
     function showLoading() {
       loadingDiv.classList.add('show');
@@ -270,8 +264,8 @@
       return groups;
     }
 
-    // Função para desenhar e ajustar tamanho responsivo
     function draw(groups, duracoesMap) {
+      const svg = document.getElementById('svg');
       svg.innerHTML = '';
 
       const getBounds = (cells) => {
@@ -343,46 +337,10 @@
         });
       });
 
-      // Guardar grupos e duracoes para resize
-      lastGroups = groups;
-      lastDuracoesMap = duracoesMap;
-
-      ajustarSVGResponsivo(maxX, maxY);
+      svg.setAttribute('viewBox', `0 0 ${maxY} ${maxX}`);
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', 'auto');
     }
-
-    // Ajusta o viewBox e tamanho do SVG para caber na tela responsivamente
-    function ajustarSVGResponsivo(svgHeight, svgWidth) {
-      // svgHeight e svgWidth são as dimensões totais calculadas (em px)
-
-      const viewportWidth = window.innerWidth * 0.95; // 95% da largura da janela
-      const viewportHeight = window.innerHeight * 0.8; // 80% da altura da janela
-
-      const scaleX = viewportWidth / svgWidth;
-      const scaleY = viewportHeight / svgHeight;
-      const scale = Math.min(scaleX, scaleY, 1); // Não escala acima de 100%
-
-      const viewBoxWidth = svgWidth / scale;
-      const viewBoxHeight = svgHeight / scale;
-
-      svg.setAttribute('viewBox', `0 0 ${viewBoxWidth} ${viewBoxHeight}`);
-
-      svg.style.width = `${svgWidth * scale}px`;
-      svg.style.height = `${svgHeight * scale}px`;
-    }
-
-    // Recalcula o desenho e ajuste ao redimensionar janela
-    window.addEventListener('resize', () => {
-      if (lastGroups && lastDuracoesMap) {
-        // Recalcula SVG responsivo com dimensões antigas
-        // As dimensões originais estavam invertidas: maxX = altura, maxY = largura
-        // No draw(), maxX e maxY foram passados invertidos, ajustar aqui
-        // Como passar certo aqui? Guardar com a ordem certa:
-        // No draw(), última chamada: ajustarSVGResponsivo(maxX, maxY);
-        // maxX = altura, maxY = largura
-        ajustarSVGResponsivo(lastGroups.reduce((max, g) => Math.max(max, ...g.cells.map(c => c[0])), 0) * CELL_HEIGHT + CELL_HEIGHT,
-                            lastGroups.reduce((max, g) => Math.max(max, ...g.cells.map(c => c[1])), 0) * CELL_WIDTH + CELL_WIDTH);
-      }
-    });
 
     async function carregarFvs() {
       const dropdown = document.getElementById('dropdown');
@@ -439,6 +397,7 @@
 
         draw(groups, duracoesMap);
       } catch(e) {
+        const svg = document.getElementById('svg');
         svg.innerHTML = `<text x="10" y="20" fill="#fff">Erro: ${e.message}</text>`;
         console.error('Erro ao carregar dados ou estrutura:', e);
       } finally {
