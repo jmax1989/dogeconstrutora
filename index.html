@@ -335,16 +335,39 @@
       return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
     }
 
+    function getUltimaInspecaoInfo(reaberturas) {
+      if (!Array.isArray(reaberturas) || reaberturas.length === 0) {
+        return { codigo_ultima_inspecao: null, qtd_pend_ultima_inspecao: 0 };
+      }
+      // pega a de maior código (numérico)
+      let best = null;
+      for (const r of reaberturas) {
+        const c = Number(r.codigo);
+        if (!Number.isNaN(c)) {
+          if (!best || c > best.c) best = { c, q: Number(r.qtd_itens_pendentes) || 0 };
+        }
+      }
+      if (best) return { codigo_ultima_inspecao: String(best.c), qtd_pend_ultima_inspecao: best.q };
+      // fallback: usa a última do array
+      const last = reaberturas[reaberturas.length - 1];
+      return {
+        codigo_ultima_inspecao: last.codigo ?? null,
+        qtd_pend_ultima_inspecao: Number(last.qtd_itens_pendentes) || 0
+      };
+    }
+
     function draw(groups, duracoesMap, fvsSelecionada) {
       const svg = document.getElementById('svg');
       svg.innerHTML = '';
       let maxWidth = 0;
       let maxHeight = 0;
+
       groups.forEach(group => {
-        if(group.value.toLowerCase() === 'vazio') return;
+        if (group.value.toLowerCase() === 'vazio') return;
+
         const cells = group.cells;
         let minRow = Infinity, minCol = Infinity, maxRow = -1, maxCol = -1;
-        for(const [r, c] of cells) {
+        for (const [r, c] of cells) {
           minRow = Math.min(minRow, r);
           minCol = Math.min(minCol, c);
           maxRow = Math.max(maxRow, r);
@@ -354,16 +377,29 @@
         const y = minRow * CELL_HEIGHT;
         const width = (maxCol - minCol + 1) * CELL_WIDTH;
         const height = (maxRow - minRow + 1) * CELL_HEIGHT;
+
         maxWidth = Math.max(maxWidth, x + width);
         maxHeight = Math.max(maxHeight, y + height);
+
         const data = duracoesMap[group.value];
-        let fillColor = '#666';
+        let fillColor = '#666'; // cinza padrão (sem dados)
+
         let textoCentro = '';
-        if(data) {
-          const maxNum = Number(data.maxAC);
-          fillColor = maxNum === 100 ? '#28a745' : '#394867';
-          textoCentro = `${data.duracao_real}`;
+        if (data) {
+          textoCentro = `${data.duracao_real ?? ''}`;
+
+          // Regras de cor:
+          // - Azul: tem abertura mas NÃO tem data_termino_inicial
+          // - Verde: tem data_termino_inicial e última inspeção com pendência 0
+          // - Amarelo: tem data_termino_inicial e última inspeção com pendência > 0
+          if (!data.data_termino_inicial) {
+            fillColor = '#1976d2'; // azul
+          } else {
+            const { qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(data.reaberturas);
+            fillColor = qtd_pend_ultima_inspecao > 0 ? '#ffc107' : '#28a745';
+          }
         }
+
         const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
         rect.setAttribute("x", x);
         rect.setAttribute("y", y);
@@ -371,22 +407,25 @@
         rect.setAttribute("height", height);
         rect.setAttribute("fill", fillColor);
         rect.setAttribute("class", "cell");
-        if (data && Number(data.maxAC) === 100) rect.classList.add('green');
         svg.appendChild(rect);
+
         const aptText = document.createElementNS("http://www.w3.org/2000/svg","text");
         aptText.setAttribute("x", x + 3);
         aptText.setAttribute("y", y + 3);
         aptText.setAttribute("class", "apt-text");
         aptText.textContent = group.value;
         svg.appendChild(aptText);
+
         const duracaoText = document.createElementNS("http://www.w3.org/2000/svg","text");
         duracaoText.setAttribute("x", x + width / 2);
         duracaoText.setAttribute("y", y + height / 2);
         duracaoText.setAttribute("class", "duracao-text");
         duracaoText.textContent = textoCentro;
         svg.appendChild(duracaoText);
+
         rect.addEventListener('click', () => abrirModalDetalhes(group.value, fvsSelecionada));
       });
+
       svg.setAttribute('viewBox', `0 0 ${maxWidth} ${maxHeight}`);
     }
 
@@ -403,20 +442,29 @@
           return;
         }
         const info = dados[0];
+
+        const { codigo_ultima_inspecao, qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(info.reaberturas);
+
         let html = `<p><strong>Apartamento:</strong> ${info.apartamento}</p>`;
         html += `<p><strong>Início:</strong> ${formatDateBR(info.data_abertura)}</p>`;
         if (info.data_termino_inicial) {
           html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
         }
         html += `<p><strong>Duração inicial:</strong> ${info.duracao_inicial}</p>`;
+
+        // Reinspeções (agora com coluna Código)
         if (info.reaberturas?.length) {
-          html += `<hr><table><tr><th>Data Abertura</th><th>Pendências</th></tr>`;
+          html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th></tr>`;
           info.reaberturas.forEach(r => {
-            html += `<tr><td>${formatDateBR(r.data_abertura)}</td><td>${r.qtd_itens_pendentes}</td></tr>`;
+            html += `<tr><td>${r.codigo ?? '-'}</td><td>${formatDateBR(r.data_abertura)}</td><td>${r.qtd_itens_pendentes}</td></tr>`;
           });
           html += `</table>`;
           html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
         }
+
+        // Última inspeção (pedido)
+        html += `<p><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</p>`;
+
         html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
         modalContent.innerHTML = html;
       } catch (err) {
@@ -476,23 +524,28 @@
         const rawGrid = await loadCSV(ESTRUTURA_CSV);
         const grid = rawGrid.map(row => expandRow(row.slice(1)));
         const groups = groupCells(grid);
+
         let duracoesMap = {};
-        if(fvsSelecionada) {
-          if(cache.duracoes[fvsSelecionada]) {
+        if (fvsSelecionada) {
+          if (cache.duracoes[fvsSelecionada]) {
             duracoesMap = cache.duracoes[fvsSelecionada];
           } else {
             const res = await fetch(`${API_BASE}?tipo=apartamento&fvs=${encodeURIComponent(fvsSelecionada)}`);
             if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-            const dadosDuracoes = await res.json();
-            dadosDuracoes.forEach(({apartamento, duracao_real, maxAC}) => {
+            const dados = await res.json();
+
+            // Agora guardamos tudo que precisamos para colorir e para o pop-up
+            dados.forEach(({ apartamento, duracao_real, data_termino_inicial, reaberturas }) => {
               duracoesMap[apartamento] = {
-                duracao_real: duracao_real,
-                maxAC: (typeof maxAC === 'number' ? maxAC : (maxAC ? Number(maxAC) : null))
+                duracao_real,
+                data_termino_inicial,
+                reaberturas: Array.isArray(reaberturas) ? reaberturas : []
               };
             });
             cache.duracoes[fvsSelecionada] = duracoesMap;
           }
         }
+
         draw(groups, duracoesMap, fvsSelecionada);
       } catch(e) {
         document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#fff">Erro: ${e.message}</text>`;
