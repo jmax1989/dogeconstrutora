@@ -136,8 +136,8 @@
       animation: spin 1s linear infinite;
     }
     @keyframes spin {
-      0% { transform: rotate(0deg);}
-      100% { transform: rotate(360deg);}
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
     /* Novo pop-up elegante */
     #modal-backdrop {
@@ -167,10 +167,22 @@
       position: relative;
       font-size: 15px;
       animation: slideUp 0.3s ease;
+      max-height: 80vh; /* Tamanho máximo da altura */
+      overflow: hidden; /* Evita que o conteúdo extravase */
     }
     @keyframes slideUp {
       from { transform: translateY(30px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
+    }
+    #modal .modal-content {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    #modal .modal-body {
+      flex-grow: 1;
+      overflow-y: auto; /* Apenas a área de reinspeções rolará */
+      padding-right: 10px;
     }
     #modal h2 {
       margin-top: 0;
@@ -247,7 +259,14 @@
     <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="0">
       <button class="close-btn" aria-label="Fechar modal">&times;</button>
       <h2 id="modal-title">Detalhes do Apartamento</h2>
-      <div id="modal-content"></div>
+      <div class="modal-content">
+        <div class="modal-body">
+          <div id="modal-content"></div>
+        </div>
+        <div class="modal-footer">
+          <p><strong>Duração total:</strong> <span id="total-duracao"></span></p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -298,7 +317,7 @@
       const groups = [];
       const rows = grid.length;
       const cols = grid[0].length;
-      const directions = [[0, 1], [1, 0], [-1, 0], [0, -1]];
+      const directions = [[0, 1], [1, 0], [-1, 0], [0, -1]]; 
       function bfs(r, c, value) {
         const queue = [[r, c]];
         const group = [];
