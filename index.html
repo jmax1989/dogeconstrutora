@@ -4,70 +4,81 @@
   <meta charset="UTF-8" />
   <title>Visualização da Tabela - FVS e Apartamentos</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body {
       margin: 0;
       padding: 0;
-      background-color: #121212;
-      color: #e0e0e0;
+      background-color: #0d1117; /* GitHub dark background */
+      color: #c9d1d9; /* GitHub light text */
       display: flex;
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      font-family: sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.5;
     }
     #dropdown-container {
       position: sticky;
       top: 0;
-      background-color: #121212;
-      z-index: 10000;
-      padding: 12px 20px;
+      background-color: #0d1117;
+      border-bottom: 1px solid #30363d; /* GitHub border color */
+      z-index: 1000;
+      padding: 16px;
       width: 100%;
-      max-width: 400px;
+      max-width: 600px;
       box-sizing: border-box;
-      border-bottom: 1px solid #394867;
       text-align: center;
     }
     select#dropdown {
-      background-color: #1e1e1e;
-      color: #e0e0e0;
-      border: 1px solid #5b7083;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 16px;
-      font-family: sans-serif;
-      transition: border-color 0.3s, background-color 0.3s;
+      background-color: #161b22; /* GitHub input background */
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      transition: border-color 0.2s ease, background-color 0.2s ease;
       outline: none;
       width: 100%;
       cursor: pointer;
+      appearance: none;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%23c9d1d9" d="M6 8.5L11 3.5H1z"/></svg>');
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      background-size: 12px;
     }
-    select#dropdown:hover { border-color: #ffffff; }
+    select#dropdown:hover {
+      border-color: #8b949e; /* GitHub hover border */
+    }
     select#dropdown:focus {
-      border-color: #90caf9;
-      background-color: #2c2c2c;
+      border-color: #58a6ff; /* GitHub focus blue */
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+      background-color: #21262d;
     }
     #svg-container {
-      padding: 20px;
+      padding: 24px;
       max-width: 100%;
       overflow-x: auto;
-      width: 100vw;
+      width: 100%;
       flex-grow: 1;
-      position: relative;
-      margin-top: 12px;
+      margin-top: 8px;
     }
     svg {
-      background-color: #1e1e1e;
-      border-radius: 12px;
+      background-color: #161b22; /* GitHub card background */
+      border-radius: 6px;
+      border: 1px solid #30363d;
       display: block;
       margin: auto;
       max-width: 100%;
       height: auto;
       min-height: 300px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
     text {
-      font-family: sans-serif;
+      font-family: 'Inter', sans-serif;
       pointer-events: none;
-      fill: #ffffff;
+      fill: #c9d1d9;
       font-size: clamp(6px, 1.2vw, 12px);
       text-anchor: start;
       dominant-baseline: hanging;
@@ -76,16 +87,20 @@
     .cell {
       cursor: pointer;
       transition: all 0.2s ease;
-      stroke: #5b7083;
+      stroke: #30363d;
       stroke-width: 1;
     }
-    .cell:hover { filter: brightness(1.2); }
-    .cell.green:hover { filter: brightness(1.5); }
+    .cell:hover {
+      filter: brightness(1.2);
+    }
+    .cell.green:hover {
+      filter: brightness(1.3);
+    }
     .apt-text {
       pointer-events: none;
       font-size: clamp(5px, 1vw, 8px);
-      fill: #ffffff;
-      font-weight: normal;
+      fill: #c9d1d9;
+      font-weight: 500;
       text-anchor: start;
       dominant-baseline: hanging;
       user-select: none;
@@ -93,11 +108,13 @@
       transition: opacity 0.2s ease;
     }
     rect.cell.active + .apt-text,
-    rect.cell:hover + .apt-text { opacity: 1; }
+    rect.cell:hover + .apt-text {
+      opacity: 1;
+    }
     .duracao-text {
       pointer-events: none;
-      fill: #ffffff;
-      font-weight: bold;
+      fill: #c9d1d9;
+      font-weight: 600;
       font-size: clamp(6px, 1.2vw, 12px);
       text-anchor: middle;
       dominant-baseline: middle;
@@ -106,13 +123,16 @@
       user-select: none;
     }
     rect.cell.active + .apt-text + .duracao-text,
-    rect.cell:hover + .apt-text + .duracao-text { opacity: 0; }
+    rect.cell:hover + .apt-text + .duracao-text {
+      opacity: 0;
+    }
     #loading {
       position: fixed;
-      top: 0; left: 0;
+      top: 0;
+      left: 0;
       width: 100vw;
       height: 100vh;
-      background-color: rgba(0,0,0,0.6);
+      background-color: rgba(13, 17, 23, 0.8); /* GitHub dark overlay */
       display: flex;
       justify-content: center;
       align-items: center;
@@ -128,28 +148,28 @@
       pointer-events: auto;
     }
     .spinner {
-      border: 5px solid #444;
-      border-top: 5px solid #90caf9;
+      border: 4px solid #30363d;
+      border-top: 4px solid #58a6ff; /* GitHub blue */
       border-radius: 50%;
-      width: 48px;
-      height: 48px;
+      width: 40px;
+      height: 40px;
       animation: spin 1s linear infinite;
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
-    /* Novo pop-up elegante */
     #modal-backdrop {
       position: fixed;
-      top:0; left:0;
+      top: 0;
+      left: 0;
       width: 100vw;
       height: 100vh;
-      background: rgba(0,0,0,0.85);
+      background: rgba(13, 17, 23, 0.9);
       display: none;
       justify-content: center;
       align-items: center;
-      z-index: 100000;
+      z-index: 10000;
       animation: fadeIn 0.3s ease;
     }
     @keyframes fadeIn {
@@ -157,75 +177,109 @@
       to { opacity: 1; }
     }
     #modal {
-      background: linear-gradient(145deg, #1a1a1a, #222);
-      border-radius: 14px;
-      padding: 24px 28px;
-      max-width: 420px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 24px;
+      max-width: 500px;
       width: 90%;
-      color: #f5f5f5;
-      box-shadow: 0 4px 25px rgba(0,0,0,0.6);
+      color: #c9d1d9;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       position: relative;
-      font-size: 15px;
+      font-size: 14px;
       animation: slideUp 0.3s ease;
-      max-height: 80vh; /* Tamanho máximo da altura */
-      overflow-y: auto; /* Barra de rolagem vertical */
+      max-height: 80vh;
+      overflow-y: auto;
     }
     @keyframes slideUp {
-      from { transform: translateY(30px); opacity: 0; }
+      from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
     #modal h2 {
-      margin-top: 0;
-      margin-bottom: 16px;
+      margin: 0 0 16px;
       font-weight: 600;
-      font-size: 22px;
-      text-align: center;
-      border-bottom: 1px solid #333;
+      font-size: 18px;
+      color: #f0f6fc; /* GitHub heading color */
+      border-bottom: 1px solid #30363d;
       padding-bottom: 8px;
+      text-align: left;
     }
     #modal p {
-      margin: 6px 0;
-      line-height: 1.4em;
+      margin: 8px 0;
+      line-height: 1.6;
+      color: #c9d1d9;
     }
     #modal hr {
       border: none;
-      border-top: 1px solid #333;
+      border-top: 1px solid #30363d;
       margin: 12px 0;
     }
     #modal table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 8px;
+      font-size: 13px;
     }
     #modal th, #modal td {
       text-align: left;
-      padding: 4px 0;
-      font-size: 14px;
+      padding: 8px 4px;
+      border-bottom: 1px solid #30363d;
     }
     #modal th {
-      color: #aaa;
-      font-weight: normal;
+      color: #8b949e; /* GitHub muted text */
+      font-weight: 500;
     }
     #modal td {
-      color: #fff;
+      color: #c9d1d9;
     }
     #modal button.close-btn {
       position: absolute;
-      top: 10px;
+      top: 12px;
       right: 12px;
       background: transparent;
       border: none;
-      color: #bbb;
-      font-size: 26px;
+      color: #8b949e;
+      font-size: 20px;
       cursor: pointer;
-      font-weight: 700;
+      font-weight: 500;
       line-height: 1;
-      padding: 0;
-      user-select: none;
+      padding: 4px;
       transition: color 0.2s ease;
     }
     #modal button.close-btn:hover {
-      color: #fff;
+      color: #f0f6fc;
+    }
+    /* Scrollbar styling for modal */
+    #modal::-webkit-scrollbar {
+      width: 8px;
+    }
+    #modal::-webkit-scrollbar-track {
+      background: #161b22;
+      border-radius: 4px;
+    }
+    #modal::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 4px;
+    }
+    #modal::-webkit-scrollbar-thumb:hover {
+      background: #8b949e;
+    }
+    /* Responsive adjustments */
+    @media (max-width: 600px) {
+      #dropdown-container {
+        padding: 12px;
+        max-width: 100%;
+      }
+      #modal {
+        width: 95%;
+        padding: 16px;
+      }
+      #modal h2 {
+        font-size: 16px;
+      }
+      #modal table {
+        font-size: 12px;
+      }
     }
   </style>
 </head>
@@ -341,7 +395,6 @@
       if (!Array.isArray(reaberturas) || reaberturas.length === 0) {
         return { codigo_ultima_inspecao: null, qtd_pend_ultima_inspecao: 0 };
       }
-      // pega a de maior código (numérico)
       let best = null;
       for (const r of reaberturas) {
         const c = Number(r.codigo);
@@ -350,7 +403,6 @@
         }
       }
       if (best) return { codigo_ultima_inspecao: String(best.c), qtd_pend_ultima_inspecao: best.q };
-      // fallback: usa a última do array
       const last = reaberturas[reaberturas.length - 1];
       return {
         codigo_ultima_inspecao: last.codigo ?? null,
@@ -384,21 +436,15 @@
         maxHeight = Math.max(maxHeight, y + height);
 
         const data = duracoesMap[group.value];
-        let fillColor = '#666'; // cinza padrão (sem dados)
-
+        let fillColor = '#6e7681'; /* GitHub neutral gray */
         let textoCentro = '';
         if (data) {
           textoCentro = `${data.duracao_real ?? ''}`;
-
-          // Regras de cor:
-          // - Azul: tem abertura mas NÃO tem data_termino_inicial
-          // - Verde: tem data_termino_inicial e última inspeção com pendência 0
-          // - Amarelo: tem data_termino_inicial e última inspeção com pendência > 0
           if (!data.data_termino_inicial) {
-            fillColor = '#1976d2'; // azul
+            fillColor = '#1f6feb'; /* GitHub blue */
           } else {
             const { qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(data.reaberturas);
-            fillColor = qtd_pend_ultima_inspecao > 0 ? '#ffc107' : '#28a745';
+            fillColor = qtd_pend_ultima_inspecao > 0 ? '#d29922' : '#238636'; /* GitHub yellow/green */
           }
         }
 
@@ -454,7 +500,6 @@
         }
         html += `<p><strong>Duração inicial:</strong> ${info.duracao_inicial}</p>`;
 
-        // Reinspeções (agora com coluna Código)
         if (info.reaberturas?.length) {
           html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th></tr>`;
           info.reaberturas.forEach(r => {
@@ -464,9 +509,7 @@
           html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
         }
 
-        // Última inspeção (pedido)
         html += `<p><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</p>`;
-
         html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
         modalContent.innerHTML = html;
       } catch (err) {
@@ -535,8 +578,6 @@
             const res = await fetch(`${API_BASE}?tipo=apartamento&fvs=${encodeURIComponent(fvsSelecionada)}`);
             if(!res.ok) throw new Error(`HTTP status ${res.status}`);
             const dados = await res.json();
-
-            // Agora guardamos tudo que precisamos para colorir e para o pop-up
             dados.forEach(({ apartamento, duracao_real, data_termino_inicial, reaberturas }) => {
               duracoesMap[apartamento] = {
                 duracao_real,
@@ -550,7 +591,7 @@
 
         draw(groups, duracoesMap, fvsSelecionada);
       } catch(e) {
-        document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#fff">Erro: ${e.message}</text>`;
+        document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
       } finally {
         hideLoading();
       }
