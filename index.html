@@ -458,9 +458,12 @@
       lockScroll(true);
       try{
         const url = `${API_BASE}?tipo=apartamento&fvs=${encodeURIComponent(fvsSelecionada)}&apartamento=${encodeURIComponent(apartamento)}`;
-        const res = await fetch(url);
-        if(!res.ok) throw new Error(`Erro ao buscar dados: ${res.statusText}`);
-        const dados = await res.json();
+
+const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
+if (!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
+const todosDados = await res.json();
+const info = todosDados[apartamento];
+        
         if(!dados || dados.length===0){
           modalContent.innerHTML = `<p>Sem dados para o apartamento ${apartamento}.</p>`;
           return;
