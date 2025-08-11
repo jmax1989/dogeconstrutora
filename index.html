@@ -571,16 +571,15 @@
           if(cache.duracoes[fvsSelecionada]){
             duracoesMap = cache.duracoes[fvsSelecionada];
           }else{
-            const res = await fetch(`${API_BASE}?tipo=apartamento&fvs=${encodeURIComponent(fvsSelecionada)}`);
-            if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-            const dados = await res.json();
-            dados.forEach(({ apartamento, duracao_real, data_termino_inicial, reaberturas })=>{
-              duracoesMap[apartamento] = {
-                duracao_real,
-                data_termino_inicial,
-                reaberturas: Array.isArray(reaberturas) ? reaberturas : []
-              };
-            });
+
+const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
+if (!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
+const dados = await res.json();
+
+Object.keys(dados).forEach(apartamento => {
+  duracoesMap[apartamento] = dados[apartamento];
+});
+            
             cache.duracoes[fvsSelecionada] = duracoesMap;
           }
         }
