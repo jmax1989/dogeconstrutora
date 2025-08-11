@@ -77,7 +77,8 @@
       flex-grow:1;
       margin-top:8px;
     }
-    svg{
+    /* >>> escopado só para o canvas principal, NÃO afeta o ícone <<< */
+    #svg{
       background-color:#161b22;
       border-radius:12px;
       border:1px solid var(--border);
@@ -157,9 +158,7 @@
       display:none; /* toggled to flex */
       justify-content:center; align-items:center;
       z-index:10000;
-
-      /* vidro fosco no fundo */
-      background:rgba(13,17,23,0.35); /* leve escurecida */
+      background:rgba(13,17,23,0.35);
       -webkit-backdrop-filter: blur(14px) saturate(120%);
       backdrop-filter: blur(14px) saturate(120%);
       animation:fadeIn .25s ease;
@@ -174,8 +173,6 @@
       overflow:auto;
       padding:22px;
       border-radius:16px;
-
-      /* vidro fosco no próprio card */
       background:rgba(22,27,34,0.4);
       border:1px solid rgba(240,246,252,0.08);
       box-shadow:
@@ -183,7 +180,6 @@
         inset 0 1px 0 rgba(255,255,255,.03);
       -webkit-backdrop-filter: blur(6px) saturate(110%);
       backdrop-filter: blur(6px) saturate(110%);
-
       color:var(--text);
       font-size:14px;
       animation:slideUp .25s ease;
@@ -229,13 +225,28 @@
       transform:scale(1.03);
     }
 
-    /* link no modal */
-    #modal a{
-      color:var(--blue);
+    /* link “linha inteira” no modal */
+    #modal a.link-row{
+      color:inherit;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:2px 6px;
+      border-radius:8px;
+      transition:background-color .15s ease, transform .05s ease;
+      vertical-align:middle;
+    }
+    #modal a.link-row:hover{
+      background-color:rgba(240,246,252,0.06);
       text-decoration:none;
     }
-    #modal a:hover{
-      text-decoration:underline;
+    #modal a.link-row:active{ transform:scale(0.99) }
+    #modal a.link-row svg{
+      width:14px; height:14px;       /* força tamanho do ícone */
+      display:inline-block;
+      flex:0 0 auto;
+      stroke:currentColor;
     }
 
     @media (max-width:600px){
@@ -245,7 +256,6 @@
       #modal table{ font-size:12px }
     }
 
-    /* preferências de movimento */
     @media (prefers-reduced-motion: reduce){
       *{ animation:none !important; transition:none !important }
     }
@@ -458,7 +468,6 @@
         const info = dados[0];
         const { codigo_ultima_inspecao, qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(info.reaberturas);
 
-        // monta link INMETA se houver id
         const inmetaUrl = info.id
           ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(info.id)}`
           : null;
@@ -479,16 +488,26 @@
           html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
         }
 
-        // linha "Última inspeção" com link clicável quando houver id
-        const codigoHtml = (inmetaUrl && codigo_ultima_inspecao)
-          ? `<a href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">código ${codigo_ultima_inspecao}</a>`
-          : `código ${codigo_ultima_inspecao ?? '-'}`;
+        if(inmetaUrl){
+          html += `
+          <p>
+            <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer" aria-label="Abrir a última inspeção em nova aba">
+              <span><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 3h6v6"/>
+                <path d="M10 14L21 3"/>
+                <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              </svg>
+            </a>
+          </p>`;
+        } else {
+          html += `<p><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</p>`;
+        }
 
-        html += `<p><strong>Última inspeção:</strong> ${codigoHtml} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</p>`;
         html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
         modalContent.innerHTML = html;
 
-        // foco no modal para acessibilidade
         requestAnimationFrame(()=> document.getElementById('modal').focus());
       }catch(err){
         modalContent.innerHTML = `<p>Erro ao carregar dados: ${err.message}</p>`;
