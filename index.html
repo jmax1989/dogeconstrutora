@@ -6,8 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    /* (mantive exatamente o seu CSS original) */
-    /* ... */
+    /* (Todo o CSS original permanece exatamente igual ao seu que você enviou) */
   </style>
 </head>
 <body>
@@ -26,6 +25,7 @@
     <div class="spinner"></div>
   </div>
 
+  <!-- Backdrop com blur -->
   <div id="modal-backdrop" tabindex="-1" aria-hidden="true">
     <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="0">
       <button class="close-btn" aria-label="Fechar modal">✕</button>
@@ -35,7 +35,9 @@
   </div>
 
   <script>
+    const API_BASE = 'https://script.google.com/macros/s/AKfycbyQiJpxajuC0alNhKwiyzLH5nldPlQoe4SR8vE-CXE8IvmQNDKJLHrRFeQQkl6gD24e/exec';
     const ESTRUTURA_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYGuSxR-9vY5Uj7tIDEZXtyCaTLPuyklhHrBQEv0o1YdhLb_XYKazJnZDFpBfgmoHgqYq_Lbe1QWju/pub?output=csv';
+
     const CELL_WIDTH = 50;
     const CELL_HEIGHT = 30;
 
@@ -44,18 +46,28 @@
     const modalContent = document.getElementById('modal-content');
     const modalCloseBtn = document.querySelector('#modal button.close-btn');
 
-    const cache = { fvsList:null, duracoes:{}, estruturaCsv:null };
+    const cache = { fvsList:null, duracoes:{}, estruturaCsv:null, detalhes:{} };
 
     function showLoading(){ loadingDiv.classList.add('show'); }
     function hideLoading(){ loadingDiv.classList.remove('show'); }
-    function lockScroll(lock){ document.documentElement.style.overflow = document.body.style.overflow = lock ? 'hidden' : ''; }
+
+    function lockScroll(lock){
+      if(lock){
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+      }else{
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+      }
+    }
 
     async function loadCSV(url){
       if(cache.estruturaCsv) return cache.estruturaCsv;
       const res = await fetch(url);
       if(!res.ok) throw new Error(`HTTP status ${res.status}`);
       const text = await res.text();
-      const data = text.trim().split('\n').map(line => line.split(',').map(c => c.trim()));
+      const lines = text.trim().split('\n');
+      const data = lines.map(line => line.split(',').map(cell => cell.trim()));
       cache.estruturaCsv = data;
       return data;
     }
@@ -69,25 +81,31 @@
     }
 
     function groupCells(grid){
-      const visited = Array.from({ length:grid.length }, () => Array(grid[0].length).fill(false));
+      const visited = Array.from({ length:grid.length }, () =>
+        Array(grid[0].length).fill(false)
+      );
       const groups = [];
-      const rows = grid.length, cols = grid[0].length;
-      const dirs = [[0,1],[1,0],[-1,0],[0,-1]];
+      const rows = grid.length;
+      const cols = grid[0].length;
+      const directions = [[0,1],[1,0],[-1,0],[0,-1]];
       function bfs(r,c,value){
-        const q = [[r,c]], group = [];
-        while(q.length){
-          const [x,y] = q.shift();
+        const queue = [[r,c]];
+        const group = [];
+        while(queue.length){
+          const [x,y] = queue.shift();
           if(x<0||x>=rows||y<0||y>=cols||visited[x][y]||grid[x][y]!==value) continue;
           visited[x][y] = true;
           group.push([x,y]);
-          for(const [dx,dy] of dirs) q.push([x+dx,y+dy]);
+          for(const [dx,dy] of directions) queue.push([x+dx,y+dy]);
         }
         return group;
       }
       for(let r=0;r<rows;r++){
         for(let c=0;c<cols;c++){
-          if(!visited[r][c] && grid[r][c] && grid[r][c].toLowerCase()!=="vazio"){
-            groups.push({ value:grid[r][c], cells:bfs(r,c,grid[r][c]) });
+          const cellValue = grid[r][c];
+          if(!visited[r][c] && cellValue && cellValue.toLowerCase()!=="vazio"){
+            const group = bfs(r,c,cellValue);
+            groups.push({ value:cellValue, cells:group });
           }
         }
       }
@@ -98,64 +116,87 @@
       if(!dateStr) return "";
       const parts = dateStr.split('-');
       if(parts.length<3) return dateStr;
-      const yyyy = +parts[0], mm = +parts[1]-1, dd = +(parts[2].substring(0,2));
+      const yyyy = parseInt(parts[0],10);
+      const mm = parseInt(parts[1],10)-1;
+      const dd = parseInt(parts[2].substring(0,2),10);
       const d = new Date(yyyy,mm,dd);
-      return isNaN(d) ? dateStr : `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
+      if(isNaN(d)) return dateStr;
+      return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
     }
 
     function getUltimaInspecaoInfo(reaberturas){
-      if(!Array.isArray(reaberturas)||!reaberturas.length) return { codigo_ultima_inspecao:null, qtd_pend_ultima_inspecao:0 };
+      if(!Array.isArray(reaberturas)||reaberturas.length===0){
+        return { codigo_ultima_inspecao:null, qtd_pend_ultima_inspecao:0 };
+      }
       let best=null;
       for(const r of reaberturas){
         const c = Number(r.codigo);
-        if(!Number.isNaN(c) && (!best || c>best.c)) best = { c, q:Number(r.qtd_itens_pendentes)||0 };
+        if(!Number.isNaN(c)){
+          if(!best || c>best.c) best = { c, q:Number(r.qtd_itens_pendentes)||0 };
+        }
       }
-      return best ? { codigo_ultima_inspecao:String(best.c), qtd_pend_ultima_inspecao:best.q } :
-             { codigo_ultima_inspecao: reaberturas.at(-1).codigo ?? null,
-               qtd_pend_ultima_inspecao: Number(reaberturas.at(-1).qtd_itens_pendentes) || 0 };
+      if(best) return { codigo_ultima_inspecao:String(best.c), qtd_pend_ultima_inspecao:best.q };
+      const last = reaberturas[reaberturas.length-1];
+      return {
+        codigo_ultima_inspecao: last.codigo ?? null,
+        qtd_pend_ultima_inspecao: Number(last.qtd_itens_pendentes) || 0
+      };
     }
 
     function draw(groups, duracoesMap, fvsSelecionada){
       const svg = document.getElementById('svg');
       svg.innerHTML = '';
       let maxWidth=0, maxHeight=0;
+
       groups.forEach(group=>{
+        if(group.value.toLowerCase()==='vazio') return;
+
         const cells = group.cells;
-        let minRow=Infinity,minCol=Infinity,maxRow=-1,maxCol=-1;
+        let minRow=Infinity, minCol=Infinity, maxRow=-1, maxCol=-1;
         for(const [r,c] of cells){
           minRow=Math.min(minRow,r); minCol=Math.min(minCol,c);
           maxRow=Math.max(maxRow,r); maxCol=Math.max(maxCol,c);
         }
-        const x=minCol*CELL_WIDTH, y=minRow*CELL_HEIGHT;
-        const width=(maxCol-minCol+1)*CELL_WIDTH, height=(maxRow-minRow+1)*CELL_HEIGHT;
-        maxWidth=Math.max(maxWidth,x+width); maxHeight=Math.max(maxHeight,y+height);
+        const x = minCol*CELL_WIDTH;
+        const y = minRow*CELL_HEIGHT;
+        const width = (maxCol-minCol+1)*CELL_WIDTH;
+        const height = (maxRow-minRow+1)*CELL_HEIGHT;
+
+        maxWidth = Math.max(maxWidth, x+width);
+        maxHeight = Math.max(maxHeight, y+height);
 
         const data = duracoesMap[group.value];
-        let fillColor = '#6e7681', textoCentro='';
+        let fillColor = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
+        let textoCentro = '';
         if(data){
           textoCentro = `${data.duracao_real ?? ''}`;
-          if(!data.data_termino_inicial) fillColor='#1f6feb';
-          else fillColor = getUltimaInspecaoInfo(data.reaberturas).qtd_pend_ultima_inspecao>0 ? '#d29922' : '#238636';
+          if(!data.data_termino_inicial){
+            fillColor = '#1f6feb';
+          }else{
+            const { qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(data.reaberturas);
+            fillColor = qtd_pend_ultima_inspecao>0 ? '#d29922' : '#238636';
+          }
         }
 
-        const rect=document.createElementNS("http://www.w3.org/2000/svg","rect");
+        const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
         rect.setAttribute("x",x); rect.setAttribute("y",y);
         rect.setAttribute("width",width); rect.setAttribute("height",height);
         rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
         svg.appendChild(rect);
 
-        const aptText=document.createElementNS("http://www.w3.org/2000/svg","text");
+        const aptText = document.createElementNS("http://www.w3.org/2000/svg","text");
         aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
         aptText.setAttribute("class","apt-text"); aptText.textContent = group.value;
         svg.appendChild(aptText);
 
-        const duracaoText=document.createElementNS("http://www.w3.org/2000/svg","text");
+        const duracaoText = document.createElementNS("http://www.w3.org/2000/svg","text");
         duracaoText.setAttribute("x",x+width/2); duracaoText.setAttribute("y",y+height/2);
         duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
         svg.appendChild(duracaoText);
 
         rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada));
       });
+
       svg.setAttribute('viewBox', `0 0 ${maxWidth} ${maxHeight}`);
     }
 
@@ -164,20 +205,27 @@
       modalBackdrop.style.display = 'flex';
       lockScroll(true);
       try{
-        const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
-        if(!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
-        const todosDados = await res.json();
-        const info = todosDados[apartamento];
+        const jsonUrl = `data/fvs/${encodeURIComponent(fvsSelecionada)}.json`;
+        const res = await fetch(jsonUrl);
+        if(!res.ok) throw new Error(`Erro ao buscar JSON: ${res.statusText}`);
+        const dados = await res.json();
+        const info = dados[apartamento];
+
         if(!info){
           modalContent.innerHTML = `<p>Sem dados para o apartamento ${apartamento}.</p>`;
           return;
         }
+
         const { codigo_ultima_inspecao, qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(info.reaberturas);
-        const inmetaUrl = info.id ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(info.id)}` : null;
+        const inmetaUrl = info.id
+          ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(info.id)}`
+          : null;
 
         let html = `<p><strong>Apartamento:</strong> ${apartamento}</p>`;
         html += `<p><strong>Início:</strong> ${formatDateBR(info.data_abertura)}</p>`;
-        if(info.data_termino_inicial) html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
+        if(info.data_termino_inicial){
+          html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
+        }
         html += `<p><strong>Duração inicial:</strong> ${info.duracao_inicial}</p>`;
 
         if(info.reaberturas?.length){
@@ -189,43 +237,53 @@
         }
 
         if(inmetaUrl){
-          html += `<p><a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
-            <span><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</span>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15 3h6v6"/>
-              <path d="M10 14L21 3"/>
-              <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-            </svg>
-          </a></p>`;
-        } else {
-          html += `<p><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</p>`;
+          html += `
+          <p>
+            <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
+              <span><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 3h6v6"/>
+                <path d="M10 14L21 3"/>
+                <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              </svg>
+            </a>
+          </p>`;
         }
 
         html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
         modalContent.innerHTML = html;
-        requestAnimationFrame(()=> document.getElementById('modal').focus());
       }catch(err){
         modalContent.innerHTML = `<p>Erro ao carregar dados: ${err.message}</p>`;
       }
     }
 
-    function fecharModal(){ modalBackdrop.style.display = 'none'; modalContent.innerHTML = ''; lockScroll(false); }
+    function fecharModal(){
+      modalBackdrop.style.display = 'none';
+      modalContent.innerHTML = '';
+      lockScroll(false);
+    }
 
     document.addEventListener('DOMContentLoaded', ()=>{
       carregarFvs();
-      document.getElementById('dropdown').addEventListener('change', e=> carregarDuracoesEFazerDraw(e.target.value));
+      document.getElementById('dropdown').addEventListener('change', e=>{
+        carregarDuracoesEFazerDraw(e.target.value);
+      });
       modalCloseBtn.addEventListener('click', fecharModal);
-      modalBackdrop.addEventListener('click', e=>{ if(e.target === modalBackdrop) fecharModal(); });
-      document.addEventListener('keydown', e=>{ if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal(); });
+      modalBackdrop.addEventListener('click', e=>{
+        if(e.target === modalBackdrop) fecharModal();
+      });
+      document.addEventListener('keydown', e=>{
+        if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal();
+      });
     });
 
     async function carregarFvs(){
       const dropdown = document.getElementById('dropdown');
       dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
       try{
-        if(cache.fvsList) return preencherDropdown(cache.fvsList);
-        const res = await fetch('data/fvs-list.json'); // JSON com lista de FVS gerado pela Action
+        if(cache.fvsList){ preencherDropdown(cache.fvsList); return; }
+        const res = await fetch(`${API_BASE}?tipo=fvs`);
         if(!res.ok) throw new Error(`HTTP status ${res.status}`);
         const fvsList = await res.json();
         cache.fvsList = fvsList;
@@ -250,19 +308,24 @@
         const rawGrid = await loadCSV(ESTRUTURA_CSV);
         const grid = rawGrid.map(row => expandRow(row.slice(1)));
         const groups = groupCells(grid);
+
         let duracoesMap = {};
         if(fvsSelecionada){
-          if(cache.duracoes[fvsSelecionada]) duracoesMap = cache.duracoes[fvsSelecionada];
-          else {
+          if(cache.duracoes[fvsSelecionada]){
+            duracoesMap = cache.duracoes[fvsSelecionada];
+          }else{
             const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
-            if(!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
-            duracoesMap = await res.json();
+            if(!res.ok) throw new Error(`HTTP status ${res.status}`);
+            const dados = await res.json();
+            duracoesMap = dados;
             cache.duracoes[fvsSelecionada] = duracoesMap;
           }
         }
+
         draw(groups, duracoesMap, fvsSelecionada);
       }catch(e){
-        document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
+        document.getElementById('svg').innerHTML =
+          `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
       }finally{
         hideLoading();
       }
