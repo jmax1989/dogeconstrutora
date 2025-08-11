@@ -6,7 +6,259 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    /* (Todo o CSS original permanece exatamente igual ao seu que você enviou) */
+    :root{
+      --bg:#0d1117;
+      --card:#161b22;
+      --text:#c9d1d9;
+      --muted:#8b949e;
+      --border:#30363d;
+      --blue:#58a6ff;
+      --green:#238636;
+      --yellow:#d29922;
+      --gray:#6e7681;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      padding:0;
+      background-color:var(--bg);
+      color:var(--text);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      min-height:100vh;
+      font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height:1.5;
+    }
+
+    /* Top bar */
+    #dropdown-container{
+      position:sticky;
+      top:0;
+      background-color:var(--bg);
+      border-bottom:1px solid var(--border);
+      z-index:1000;
+      padding:16px;
+      width:100%;
+      max-width:600px;
+      text-align:center;
+    }
+    select#dropdown{
+      background-color:#161b22;
+      color:var(--text);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px 40px 10px 12px;
+      font-size:14px;
+      font-family:'Inter',sans-serif;
+      transition:border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
+      outline:none;
+      width:100%;
+      cursor:pointer;
+      appearance:none;
+      background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%23c9d1d9" d="M6 8.5L11 3.5H1z"/></svg>');
+      background-repeat:no-repeat;
+      background-position:right 12px center;
+      background-size:12px;
+    }
+    select#dropdown:hover{ border-color:#8b949e }
+    select#dropdown:focus{
+      border-color:var(--blue);
+      box-shadow:0 0 0 3px rgba(88,166,255,.2);
+      background-color:#21262d;
+    }
+
+    /* SVG area */
+    #svg-container{
+      padding:24px;
+      max-width:100%;
+      overflow-x:auto;
+      width:100%;
+      flex-grow:1;
+      margin-top:8px;
+    }
+    /* >>> escopado só para o canvas principal, NÃO afeta o ícone <<< */
+    #svg{
+      background-color:#161b22;
+      border-radius:12px;
+      border:1px solid var(--border);
+      display:block;
+      margin:auto;
+      max-width:100%;
+      height:auto;
+      min-height:300px;
+      box-shadow:0 1px 3px rgba(0,0,0,.1);
+    }
+    text{
+      font-family:'Inter',sans-serif;
+      pointer-events:none;
+      fill:var(--text);
+      font-size:clamp(6px,1.2vw,12px);
+      text-anchor:start;
+      dominant-baseline:hanging;
+      user-select:none;
+    }
+    .cell{
+      cursor:pointer;
+      transition:filter .2s ease, transform .15s ease;
+      stroke:var(--border);
+      stroke-width:1;
+      rx:0; ry:0;
+    }
+    .cell:hover{ filter:brightness(1.2) }
+    .apt-text{
+      pointer-events:none;
+      font-size:clamp(5px,1vw,8px);
+      fill:var(--text);
+      font-weight:500;
+      text-anchor:start;
+      dominant-baseline:hanging;
+      user-select:none;
+      opacity:0;
+      transition:opacity .2s ease;
+    }
+    rect.cell.active + .apt-text,
+    rect.cell:hover + .apt-text{ opacity:1 }
+    .duracao-text{
+      pointer-events:none;
+      fill:var(--text);
+      font-weight:600;
+      font-size:clamp(6px,1.2vw,12px);
+      text-anchor:middle;
+      dominant-baseline:middle;
+      transition:opacity .2s ease;
+      opacity:1;
+      user-select:none;
+    }
+    rect.cell.active + .apt-text + .duracao-text,
+    rect.cell:hover + .apt-text + .duracao-text{ opacity:0 }
+
+    /* Loading */
+    #loading{
+      position:fixed; inset:0;
+      background-color:rgba(13,17,23,.8);
+      display:flex; justify-content:center; align-items:center;
+      z-index:9999; visibility:hidden; opacity:0;
+      transition:opacity .3s ease;
+      pointer-events:none;
+    }
+    #loading.show{ visibility:visible; opacity:1; pointer-events:auto }
+    .spinner{
+      border:4px solid var(--border);
+      border-top:4px solid var(--blue);
+      border-radius:50%;
+      width:40px; height:40px;
+      animation:spin 1s linear infinite;
+    }
+    @keyframes spin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+    /* ====== ANDROID-LIKE SHADE EFFECT ====== */
+    #modal-backdrop{
+      position:fixed; inset:0;
+      display:none; /* toggled to flex */
+      justify-content:center; align-items:center;
+      z-index:10000;
+      background:rgba(13,17,23,0.35);
+      -webkit-backdrop-filter: blur(14px) saturate(120%);
+      backdrop-filter: blur(14px) saturate(120%);
+      animation:fadeIn .25s ease;
+    }
+    @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+
+    /* Card do modal com translucidez */
+    #modal{
+      position:relative;
+      width:clamp(280px, 90vw, 520px);
+      max-height:80vh;
+      overflow:auto;
+      padding:22px;
+      border-radius:16px;
+      background:rgba(22,27,34,0.4);
+      border:1px solid rgba(240,246,252,0.08);
+      box-shadow:
+        0 10px 30px rgba(0,0,0,.45),
+        inset 0 1px 0 rgba(255,255,255,.03);
+      -webkit-backdrop-filter: blur(6px) saturate(110%);
+      backdrop-filter: blur(6px) saturate(110%);
+      color:var(--text);
+      font-size:14px;
+      animation:slideUp .25s ease;
+    }
+    @keyframes slideUp{ from{ transform:translateY(10px); opacity:0 } to{ transform:translateY(0); opacity:1 } }
+
+    /* esconder a barra mas manter rolagem */
+    #modal::-webkit-scrollbar{ width:0; height:0 }
+    #modal{ scrollbar-width:none; -ms-overflow-style:none; overscroll-behavior:contain; }
+
+    #modal h2{
+      margin:0 0 12px; font-weight:600; font-size:18px; color:#f0f6fc;
+      border-bottom:1px solid rgba(240,246,252,0.06);
+      padding-bottom:8px; text-align:left;
+    }
+    #modal p{ margin:8px 0; line-height:1.6; color:var(--text) }
+    #modal hr{
+      border:none; border-top:1px solid rgba(240,246,252,0.06); margin:12px 0;
+    }
+    #modal table{
+      width:100%; border-collapse:collapse; margin-top:8px; font-size:13px;
+    }
+    #modal th, #modal td{
+      text-align:left; padding:8px 4px;
+      border-bottom:1px solid rgba(240,246,252,0.06);
+    }
+    #modal th{ color:var(--muted); font-weight:500 }
+    #modal td{ color:var(--text) }
+
+    #modal button.close-btn{
+      position:absolute; top:10px; right:10px;
+      background:rgba(240,246,252,0.04);
+      border:1px solid rgba(240,246,252,0.08);
+      color:#f0f6fc; font-size:16px; cursor:pointer; font-weight:700;
+      line-height:1; padding:6px 10px; border-radius:10px;
+      transition:transform .12s ease, background-color .15s ease, border-color .15s ease;
+      -webkit-backdrop-filter: blur(2px);
+      backdrop-filter: blur(2px);
+    }
+    #modal button.close-btn:hover{
+      background:rgba(240,246,252,0.08);
+      border-color:rgba(240,246,252,0.14);
+      transform:scale(1.03);
+    }
+
+    /* link “linha inteira” no modal */
+    #modal a.link-row{
+      color:inherit;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:2px 6px;
+      border-radius:8px;
+      transition:background-color .15s ease, transform .05s ease;
+      vertical-align:middle;
+    }
+    #modal a.link-row:hover{
+      background-color:rgba(240,246,252,0.06);
+      text-decoration:none;
+    }
+    #modal a.link-row:active{ transform:scale(0.99) }
+    #modal a.link-row svg{
+      width:14px; height:14px;       /* força tamanho do ícone */
+      display:inline-block;
+      flex:0 0 auto;
+      stroke:currentColor;
+    }
+
+    @media (max-width:600px){
+      #dropdown-container{ padding:12px; max-width:100% }
+      #modal{ width:95%; padding:16px }
+      #modal h2{ font-size:16px }
+      #modal table{ font-size:12px }
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      *{ animation:none !important; transition:none !important }
+    }
   </style>
 </head>
 <body>
@@ -25,7 +277,7 @@
     <div class="spinner"></div>
   </div>
 
-  <!-- Backdrop com blur -->
+  <!-- Backdrop com blur (Android-like) -->
   <div id="modal-backdrop" tabindex="-1" aria-hidden="true">
     <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="0">
       <button class="close-btn" aria-label="Fechar modal">✕</button>
@@ -46,7 +298,7 @@
     const modalContent = document.getElementById('modal-content');
     const modalCloseBtn = document.querySelector('#modal button.close-btn');
 
-    const cache = { fvsList:null, duracoes:{}, estruturaCsv:null, detalhes:{} };
+    const cache = { fvsList:null, duracoes:{}, estruturaCsv:null };
 
     function showLoading(){ loadingDiv.classList.add('show'); }
     function hideLoading(){ loadingDiv.classList.remove('show'); }
@@ -205,11 +457,11 @@
       modalBackdrop.style.display = 'flex';
       lockScroll(true);
       try{
-        const jsonUrl = `data/fvs/${encodeURIComponent(fvsSelecionada)}.json`;
-        const res = await fetch(jsonUrl);
-        if(!res.ok) throw new Error(`Erro ao buscar JSON: ${res.statusText}`);
-        const dados = await res.json();
-        const info = dados[apartamento];
+        // LÊ OS DETALHES DO JSON LOCAL (gerado pela Action)
+        const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
+        if(!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
+        const todosDados = await res.json();
+        const info = todosDados[apartamento];
 
         if(!info){
           modalContent.innerHTML = `<p>Sem dados para o apartamento ${apartamento}.</p>`;
@@ -217,6 +469,7 @@
         }
 
         const { codigo_ultima_inspecao, qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(info.reaberturas);
+
         const inmetaUrl = info.id
           ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(info.id)}`
           : null;
@@ -234,25 +487,31 @@
             html += `<tr><td>${r.codigo ?? '-'}</td><td>${formatDateBR(r.data_abertura)}</td><td>${r.qtd_itens_pendentes}</td></tr>`;
           });
           html += `</table>`;
+          html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
         }
 
         if(inmetaUrl){
           html += `
           <p>
-            <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
+            <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer" aria-label="Abrir a última inspeção em nova aba">
               <span><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</span>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M15 3h6v6"/>
                 <path d="M10 14L21 3"/>
                 <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
               </svg>
             </a>
           </p>`;
+        } else {
+          html += `<p><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</p>`;
         }
 
         html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
         modalContent.innerHTML = html;
+
+        // foco no modal
+        requestAnimationFrame(()=> document.getElementById('modal').focus());
       }catch(err){
         modalContent.innerHTML = `<p>Erro ao carregar dados: ${err.message}</p>`;
       }
@@ -276,6 +535,7 @@
       document.addEventListener('keydown', e=>{
         if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal();
       });
+      carregarDuracoesEFazerDraw('');
     });
 
     async function carregarFvs(){
@@ -314,10 +574,10 @@
           if(cache.duracoes[fvsSelecionada]){
             duracoesMap = cache.duracoes[fvsSelecionada];
           }else{
+            // LÊ O JSON LOCAL EM VEZ DE CHAMAR A API
             const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
-            if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-            const dados = await res.json();
-            duracoesMap = dados;
+            if(!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
+            duracoesMap = await res.json();
             cache.duracoes[fvsSelecionada] = duracoesMap;
           }
         }
