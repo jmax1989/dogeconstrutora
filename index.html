@@ -329,16 +329,21 @@
   </div>
 
   <script>
-    /* ===== NOVO: base de dados estática no GitHub Pages ===== */
+    /* ===== Base de dados estática no GitHub Pages ===== */
     const DATA_BASE = 'https://dogeconstrutora.github.io/doge/data';
     const FVS_LIST_URL = `${DATA_BASE}/fvs-list.json`;
     const APARTAMENTOS_URL = `${DATA_BASE}/apartamentos.json`;
 
-    /* Mantemos sua estrutura CSV (andares/apts) como está */
+    /* Estrutura CSV (com dimensões): 
+       - A: número do pavimento (IGNORADO)
+       - B (linhas 2..): ALTURA
+       - Linha 1 (C..): LARGURA
+       - C2..: matriz de apartamentos
+    */
     const ESTRUTURA_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYGuSxR-9vY5Uj7tIDEZXtyCaTLPuyklhHrBQEv0o1YdhLb_XYKazJnZDFpBfgmoHgqYq_Lbe1QWju/pub?output=csv';
 
-    const CELL_WIDTH = 50;
-    const CELL_HEIGHT = 30;
+    const DEFAULT_CELL_WIDTH = 50;
+    const DEFAULT_CELL_HEIGHT = 30;
 
     const loadingDiv = document.getElementById('loading');
     const modalBackdrop = document.getElementById('modal-backdrop');
@@ -433,6 +438,11 @@
       return groups;
     }
 
+    function formatFloat(v, fallback){
+      const n = parseFloat(String(v??'').replace(',', '.'));
+      return Number.isFinite(n) ? n : fallback;
+    }
+
     function formatDateBR(dateStr){
       if(!dateStr) return "";
       const parts = dateStr.split('-');
@@ -484,12 +494,26 @@
       requestAnimationFrame(()=> bars.forEach(b => { b.style.width = b.dataset.w; }));
     }
 
-    function draw(groups, duracoesMap, fvsSelecionada){
+    function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       const svg = document.getElementById('svg');
       svg.innerHTML = '';
-      let maxWidth=0, maxHeight=0;
+
+      // normaliza larguras para quantidade real de colunas do grid
+      const maxCols = groups.length ? Math.max(...groups.map(g => Math.max(...g.cells.map(c => c[1])))) + 1
+                                    : (colWidths?.length || 0);
+      const colW = Array.from({length: maxCols}, (_,i) => formatFloat(colWidths[i], DEFAULT_CELL_WIDTH));
+
+      // prefix sums para converter índice -> coordenada
+      const cumX = [0];
+      for(let i=0;i<colW.length;i++) cumX.push(cumX[i] + (colW[i]||DEFAULT_CELL_WIDTH));
+      const cumY = [0];
+      for(let i=0;i<rowHeights.length;i++) cumY.push(cumY[i] + formatFloat(rowHeights[i], DEFAULT_CELL_HEIGHT));
+
+      const totalW = cumX[cumX.length-1] || 0;
+      const totalH = cumY[cumY.length-1] || 0;
 
       if(!fvsSelecionada){
+        svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
         svg.innerHTML = '<text x="10" y="20" fill="#c9d1d9">Selecione uma FVS</text>';
         return;
       }
@@ -497,19 +521,19 @@
       groups.forEach(group=>{
         if(group.value.toLowerCase()==='vazio') return;
 
+        // bounding box em índices de célula
         const cells = group.cells;
         let minRow=Infinity, minCol=Infinity, maxRow=-1, maxCol=-1;
         for(const [r,c] of cells){
-          minRow=Math.min(minRow,r); minCol=Math.min(minCol,c);
-          maxRow=Math.max(maxRow,r); maxCol=Math.max(maxCol,c);
+          if(r<minRow) minRow=r; if(c<minCol) minCol=c;
+          if(r>maxRow) maxRow=r; if(c>maxCol) maxCol=c;
         }
-        const x = minCol*CELL_WIDTH;
-        const y = minRow*CELL_HEIGHT;
-        const width = (maxCol-minCol+1)*CELL_WIDTH;
-        const height = (maxRow-minRow+1)*CELL_HEIGHT;
 
-        maxWidth = Math.max(maxWidth, x+width);
-        maxHeight = Math.max(maxHeight, y+height);
+        // coordenadas reais pela soma cumulativa
+        const x = cumX[minCol];
+        const y = cumY[minRow];
+        const width  = cumX[maxCol+1] - cumX[minCol];
+        const height = cumY[maxRow+1] - cumY[minRow];
 
         const data = duracoesMap[group.value];
         let fillColor = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
@@ -517,10 +541,10 @@
         if(data){
           textoCentro = `${data.duracao_real ?? ''}`;
           if(!data.data_termino_inicial){
-            fillColor = '#1f6feb'; // azul: sem término inicial (em andamento)
+            fillColor = '#1f6feb';
           }else{
             const pend = Number(data.qtd_pend_ultima_inspecao||0);
-            fillColor = pend>0 ? '#d29922' : '#238636'; // amarelo / verde
+            fillColor = pend>0 ? '#d29922' : '#238636';
           }
         }
 
@@ -536,14 +560,16 @@
         svg.appendChild(aptText);
 
         const duracaoText = document.createElementNS("http://www.w3.org/2000/svg","text");
-        duracaoText.setAttribute("x",x+width/2); duracaoText.setAttribute("y",y+height/2);
+        duracaoText.setAttribute("x",x + width/2);
+        duracaoText.setAttribute("y",y + height/2);
         duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
         svg.appendChild(duracaoText);
 
         rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada));
       });
 
-      svg.setAttribute('viewBox', `0 0 ${maxWidth} ${maxHeight}`);
+      // usa tamanho total calculado para caber no container responsivo
+      svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
     }
 
     async function abrirModalDetalhes(apartamento, fvsSelecionada){
@@ -672,8 +698,26 @@
     async function carregarDuracoesEFazerDraw(fvsSelecionada){
       showLoading();
       try{
-        const rawGrid = await loadCSV(ESTRUTURA_CSV);
-        const grid = rawGrid.map(row => expandRow(row.slice(1)));
+        const raw = await loadCSV(ESTRUTURA_CSV);
+
+        // Linha 1: larguras a partir de C1 (índice 2)
+        const header = raw[0] || [];
+        const GRID_START_COL = 2; // C
+        const colWidthsRaw = header.slice(GRID_START_COL).map(v =>
+          formatFloat(v, DEFAULT_CELL_WIDTH)
+        );
+
+        // Corpo (linhas 2..)
+        const body = raw.slice(1);
+
+        // Coluna B (índice 1): alturas das linhas
+        const rowHeights = body.map(r =>
+          formatFloat(r[1], DEFAULT_CELL_HEIGHT)
+        );
+
+        // Matriz de apartamentos: a partir de C (índice 2) com forward-fill
+        const grid = body.map(r => expandRow(r.slice(GRID_START_COL)));
+
         const groups = groupCells(grid);
 
         currentFvs = fvsSelecionada || '';
@@ -700,7 +744,7 @@
           }
         }
 
-        draw(groups, duracoesMap, currentFvs);
+        draw(groups, duracoesMap, currentFvs, colWidthsRaw, rowHeights);
       }catch(e){
         document.getElementById('svg').innerHTML =
           `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
@@ -711,3 +755,4 @@
   </script>
 </body>
 </html>
+
