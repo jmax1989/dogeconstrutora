@@ -259,6 +259,34 @@
     @media (prefers-reduced-motion: reduce){
       *{ animation:none !important; transition:none !important }
     }
+
+    /* ===== Progress bar (aparece só para "em andamento") ===== */
+    .q-linear-progress{
+      display:flex; align-items:center; gap:8px;
+      padding:4px 6px; border-radius:10px;
+      background:rgba(240,246,252,0.06);
+      border:1px solid rgba(240,246,252,0.10);
+    }
+    .q-linear-progress__track{
+      position:relative; flex:1; height:8px;
+      background:rgba(240,246,252,0.08);
+      border:1px solid rgba(240,246,252,0.10);
+      border-radius:999px; overflow:hidden;
+    }
+    .q-linear-progress__bar{
+      position:absolute; inset:0 100% 0 0;
+      background:currentColor; transition:width .45s ease;
+    }
+    .q-linear-progress__label{
+      font-variant-numeric:tabular-nums;
+      min-width:3ch; text-align:right;
+    }
+    .line-progress{ display:flex; align-items:center; gap:12px; }
+    .line-progress .q-linear-progress{ margin-left:auto; min-width:140px; max-width:200px; }
+
+    @media (prefers-reduced-motion: reduce){
+      .q-linear-progress__bar{ transition:none; }
+    }
   </style>
 </head>
 <body>
@@ -389,7 +417,7 @@
       return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
     }
 
-    /* Mantido como fallback (caso precise deduzir a última inspeção das reaberturas) */
+    /* Fallback de última inspeção, se necessário */
     function getUltimaInspecaoInfo(reaberturas){
       if(!Array.isArray(reaberturas)||reaberturas.length===0){
         return { codigo_ultima_inspecao:null, qtd_pend_ultima_inspecao:0 };
@@ -407,6 +435,25 @@
         codigo_ultima_inspecao: last.codigo ?? null,
         qtd_pend_ultima_inspecao: Number(last.qtd_itens_pendentes) || 0
       };
+    }
+
+    /* ===== Helpers da progress bar ===== */
+    function linearProgress(pct, overrideColor){
+      const p = Math.max(0, Math.min(100, Number(pct) || 0));
+      const color = overrideColor || 'var(--blue)'; // azul para "em andamento"
+      return `
+        <span class="q-linear-progress" role="progressbar"
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"
+              aria-label="${p}% executado" style="color:${color}">
+          <span class="q-linear-progress__track">
+            <span class="q-linear-progress__bar" data-w="${p}%"></span>
+          </span>
+          <span class="q-linear-progress__label"><strong>${p}%</strong></span>
+        </span>`;
+    }
+    function animateProgressBars(root=document){
+      const bars = root.querySelectorAll('.q-linear-progress__bar[data-w]');
+      requestAnimationFrame(()=> bars.forEach(b => { b.style.width = b.dataset.w; }));
     }
 
     function draw(groups, duracoesMap, fvsSelecionada){
@@ -442,10 +489,10 @@
         if(data){
           textoCentro = `${data.duracao_real ?? ''}`;
           if(!data.data_termino_inicial){
-            fillColor = '#1f6feb'; // azul: sem término inicial
+            fillColor = '#1f6feb'; // azul: sem término inicial (em andamento)
           }else{
             const pend = Number(data.qtd_pend_ultima_inspecao||0);
-            fillColor = pend>0 ? '#d29922' : '#238636'; // amarelo com pendências / verde sem
+            fillColor = pend>0 ? '#d29922' : '#238636'; // amarelo / verde
           }
         }
 
@@ -491,18 +538,28 @@
           pendUlt = aux.qtd_pend_ultima_inspecao;
         }
 
-// depois (prefere a última; cai pra primeira como fallback):
-const idLink = info.id_ultima_inspecao || info.id;
-const inmetaUrl = idLink
-  ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
-  : null;
-        
+        // Link para a última inspeção (fallback para a primeira)
+        const idLink = info.id_ultima_inspecao || info.id;
+        const inmetaUrl = idLink
+          ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
+          : null;
+
         let html = `<p><strong>Apartamento:</strong> ${info.apartamento}</p>`;
         html += `<p><strong>Início:</strong> ${formatDateBR(info.data_abertura)}</p>`;
         if(info.data_termino_inicial){
           html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
         }
-        html += `<p><strong>Duração inicial:</strong> ${info.duracao_inicial}</p>`;
+
+        /* Linha "Duração inicial:" com barra à direita (apenas em andamento = azul) */
+        const isAndamento = !info.data_termino_inicial;
+        let progressMarkup = '';
+        if (isAndamento) {
+          const pct = Number(info.percentual_ultima_inspecao);
+          if (!Number.isNaN(pct)) {
+            progressMarkup = linearProgress(pct, 'var(--blue)');
+          }
+        }
+        html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${info.duracao_inicial}</span>${progressMarkup}</p>`;
 
         if(info.reaberturas?.length){
           html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th></tr>`;
@@ -535,6 +592,7 @@ const inmetaUrl = idLink
           html += `<p><strong>Término final:</strong> ${formatDateBR(info.termino_final)}</p>`;
         }
         modalContent.innerHTML = html;
+        animateProgressBars(modalContent);
 
         requestAnimationFrame(()=> document.getElementById('modal').focus());
       }catch(err){
