@@ -69,7 +69,7 @@
       background-color:#21262d;
     }
 
-    /* SVG area - ocupa a janela e centraliza o SVG */
+    /* SVG area */
     #svg-container{
       padding:24px;
       width:100%;
@@ -77,9 +77,8 @@
       display:flex;
       align-items:center;
       justify-content:center;
-      overflow:hidden;     /* sem barras de rolagem */
+      overflow:hidden;
     }
-    /* Canvas SVG escala para caber */
     #svg{
       background-color:#161b22;
       border-radius:12px;
@@ -107,7 +106,9 @@
       stroke-width:1;
       rx:0; ry:0;
     }
-    .cell:hover{ filter:brightness(1.2) }
+    .cell.disabled{ cursor:default; }
+    .cell:not(.disabled):hover{ filter:brightness(1.2) }
+
     .apt-text{
       pointer-events:none;
       font-size:clamp(5px,1vw,8px);
@@ -154,10 +155,10 @@
     }
     @keyframes spin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
-    /* ====== ANDROID-LIKE SHADE EFFECT ====== */
+    /* Modal */
     #modal-backdrop{
       position:fixed; inset:0;
-      display:none; /* toggled to flex */
+      display:none;
       justify-content:center; align-items:center;
       z-index:10000;
       background:rgba(13,17,23,0.35);
@@ -167,7 +168,6 @@
     }
     @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
 
-    /* Card do modal com translucidez */
     #modal{
       position:relative;
       width:clamp(280px, 90vw, 520px);
@@ -177,9 +177,7 @@
       border-radius:16px;
       background:rgba(22,27,34,0.4);
       border:1px solid rgba(240,246,252,0.08);
-      box-shadow:
-        0 10px 30px rgba(0,0,0,.45),
-        inset 0 1px 0 rgba(255,255,255,.03);
+      box-shadow:0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
       -webkit-backdrop-filter: blur(6px) saturate(110%);
       backdrop-filter: blur(6px) saturate(110%);
       color:var(--text);
@@ -188,7 +186,6 @@
     }
     @keyframes slideUp{ from{ transform:translateY(10px); opacity:0 } to{ transform:translateY(0); opacity:1 } }
 
-    /* esconder a barra mas manter rolagem */
     #modal::-webkit-scrollbar{ width:0; height:0 }
     #modal{ scrollbar-width:none; -ms-overflow-style:none; overscroll-behavior:contain; }
 
@@ -198,16 +195,9 @@
       padding-bottom:8px; text-align:left;
     }
     #modal p{ margin:8px 0; line-height:1.6; color:var(--text) }
-    #modal hr{
-      border:none; border-top:1px solid rgba(240,246,252,0.06); margin:12px 0;
-    }
-    #modal table{
-      width:100%; border-collapse:collapse; margin-top:8px; font-size:13px;
-    }
-    #modal th, #modal td{
-      text-align:left; padding:8px 4px;
-      border-bottom:1px solid rgba(240,246,252,0.06);
-    }
+    #modal hr{ border:none; border-top:1px solid rgba(240,246,252,0.06); margin:12px 0; }
+    #modal table{ width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+    #modal th, #modal td{ text-align:left; padding:8px 4px; border-bottom:1px solid rgba(240,246,252,0.06); }
     #modal th{ color:var(--muted); font-weight:500 }
     #modal td{ color:var(--text) }
 
@@ -227,29 +217,13 @@
       transform:scale(1.03);
     }
 
-    /* link “linha inteira” no modal */
     #modal a.link-row{
-      color:inherit;
-      text-decoration:none;
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:2px 6px;
-      border-radius:8px;
-      transition:background-color .15s ease, transform .05s ease;
-      vertical-align:middle;
+      color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:8px;
+      padding:2px 6px; border-radius:8px; transition:background-color .15s ease, transform .05s ease; vertical-align:middle;
     }
-    #modal a.link-row:hover{
-      background-color:rgba(240,246,252,0.06);
-      text-decoration:none;
-    }
+    #modal a.link-row:hover{ background-color:rgba(240,246,252,0.06); text-decoration:none; }
     #modal a.link-row:active{ transform:scale(0.99) }
-    #modal a.link-row svg{
-      width:14px; height:14px;
-      display:inline-block;
-      flex:0 0 auto;
-      stroke:currentColor;
-    }
+    #modal a.link-row svg{ width:14px; height:14px; display:inline-block; flex:0 0 auto; stroke:currentColor; }
 
     @media (max-width:600px){
       #dropdown-container{ padding:12px; max-width:100% }
@@ -257,47 +231,23 @@
       #modal h2{ font-size:16px }
       #modal table{ font-size:12px }
     }
-
     @media (prefers-reduced-motion: reduce){
       *{ animation:none !important; transition:none !important }
     }
 
-    /* ===== Progress bar (aparece só para "em andamento") ===== */
-    .q-linear-progress{
-      display:flex; align-items:center; gap:8px;
-      padding:4px 6px; border-radius:10px;
-      background:rgba(240,246,252,0.06);
-      border:1px solid rgba(240,246,252,0.10);
-    }
-    .q-linear-progress__track{
-      position:relative; flex:1; height:8px;
-      background:rgba(240,246,252,0.08);
-      border:1px solid rgba(240,246,252,0.10);
-      border-radius:999px; overflow:hidden;
-    }
-    .q-linear-progress__bar{
-      position:absolute; inset:0 100% 0 0;
-      background:currentColor; transition:width .45s ease;
-    }
-    .q-linear-progress__label{
-      font-variant-numeric:tabular-nums;
-      min-width:3ch; text-align:right;
-    }
+    /* Progress bar */
+    .q-linear-progress{ display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:10px; background:rgba(240,246,252,0.06); border:1px solid rgba(240,246,252,0.10); }
+    .q-linear-progress__track{ position:relative; flex:1; height:8px; background:rgba(240,246,252,0.08); border:1px solid rgba(240,246,252,0.10); border-radius:999px; overflow:hidden; }
+    .q-linear-progress__bar{ position:absolute; inset:0 100% 0 0; background:currentColor; transition:width .45s ease; }
+    .q-linear-progress__label{ font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; }
     .line-progress{ display:flex; align-items:center; gap:12px; }
     .line-progress .q-linear-progress{ margin-left:auto; min-width:96px; max-width:140px; }
-
-    /* modo compacto */
     .q-linear-progress--sm{ padding:2px 4px; gap:6px; }
     .q-linear-progress--sm .q-linear-progress__track{ height:6px; }
-    .q-linear-progress--sm .q-linear-progress__label{
-      font-size:12px; font-weight:500; min-width:2.6ch; opacity:.9;
-    }
-
-    /* desktop ainda mais compacto */
+    .q-linear-progress--sm .q-linear-progress__label{ font-size:11px; font-weight:500; min-width:2.6ch; opacity:.9; }
     @media (min-width: 720px){
       .line-progress .q-linear-progress{ min-width:110px; max-width:130px; }
       .q-linear-progress--sm .q-linear-progress__track{ height:4px; }
-      .q-linear-progress--sm .q-linear-progress__label{ font-size:11px; }
     }
   </style>
 </head>
@@ -315,11 +265,8 @@
     </svg>
   </div>
 
-  <div id="loading">
-    <div class="spinner"></div>
-  </div>
+  <div id="loading"><div class="spinner"></div></div>
 
-  <!-- Backdrop com blur (Android-like) -->
   <div id="modal-backdrop" tabindex="-1" aria-hidden="true">
     <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="0">
       <button class="close-btn" aria-label="Fechar modal">✕</button>
@@ -329,16 +276,16 @@
   </div>
 
   <script>
-    /* ===== Base de dados estática no GitHub Pages ===== */
+    /* ===== Base de dados no GitHub Pages ===== */
     const DATA_BASE = 'https://dogeconstrutora.github.io/doge/data';
     const FVS_LIST_URL = `${DATA_BASE}/fvs-list.json`;
     const APARTAMENTOS_URL = `${DATA_BASE}/apartamentos.json`;
 
-    /* Estrutura CSV (com dimensões): 
-       - A: número do pavimento (IGNORADO)
-       - B (linhas 2..): ALTURA
-       - Linha 1 (C..): LARGURA
-       - C2..: matriz de apartamentos
+    /* Estrutura CSV:
+       - A: número do pavimento (rótulo, não desenhamos)
+       - B (linhas 2..): ALTURA por linha
+       - Linha 1 (C..): LARGURA por coluna
+       - C2..: matriz de apartamentos (pode conter "!101" para desabilitar por pavimento)
     */
     const ESTRUTURA_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYGuSxR-9vY5Uj7tIDEZXtyCaTLPuyklhHrBQEv0o1YdhLb_XYKazJnZDFpBfgmoHgqYq_Lbe1QWju/pub?output=csv';
 
@@ -350,10 +297,8 @@
     const modalContent = document.getElementById('modal-content');
     const modalCloseBtn = document.querySelector('#modal button.close-btn');
 
-    /* Cache */
     const cache = { estruturaCsv:null, apartamentos:null };
 
-    /* Estado atual da FVS */
     let currentFvs = '';
     let currentFvsItems = [];
     let currentByApt = Object.create(null);
@@ -362,26 +307,17 @@
     function hideLoading(){ loadingDiv.classList.remove('show'); }
 
     function lockScroll(lock){
-      if(lock){
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.overflow = 'hidden';
-      }else{
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
-      }
+      if(lock){ document.documentElement.style.overflow='hidden'; document.body.style.overflow='hidden'; }
+      else { document.documentElement.style.overflow=''; document.body.style.overflow=''; }
     }
 
-    // Ajusta a área do SVG para caber na janela
     function resizeSvgArea(){
       const topbar = document.getElementById('dropdown-container');
       const container = document.getElementById('svg-container');
-
       const topH = topbar.getBoundingClientRect().height;
       const vh = window.innerHeight;
-
       const cs = getComputedStyle(container);
       const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-
       const available = Math.max(300, vh - topH);
       container.style.height = (available - padY) + 'px';
     }
@@ -455,7 +391,16 @@
       return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
     }
 
-    /* Fallback de última inspeção, se necessário */
+    // Normaliza rótulo para o desenho (remove "!" somente na visualização)
+    function normalizeCellLabel(cell){
+      if(cell == null) return '';
+      let s = String(cell).trim();
+      if(!s) return '';
+      if (s.toLowerCase() === 'vazio') return 'vazio';
+      if (s[0] === '!') s = s.slice(1);
+      return s;
+    }
+
     function getUltimaInspecaoInfo(reaberturas){
       if(!Array.isArray(reaberturas)||reaberturas.length===0){
         return { codigo_ultima_inspecao:null, qtd_pend_ultima_inspecao:0 };
@@ -475,10 +420,10 @@
       };
     }
 
-    /* ===== Helpers da progress bar ===== */
+    /* Progress bar */
     function linearProgress(pct, overrideColor){
       const p = Math.max(0, Math.min(100, Number(pct) || 0));
-      const color = overrideColor || 'var(--blue)'; // azul para "em andamento"
+      const color = overrideColor || 'var(--blue)';
       return `
         <span class="q-linear-progress q-linear-progress--sm" role="progressbar"
               aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"
@@ -498,12 +443,10 @@
       const svg = document.getElementById('svg');
       svg.innerHTML = '';
 
-      // normaliza larguras para quantidade real de colunas do grid
       const maxCols = groups.length ? Math.max(...groups.map(g => Math.max(...g.cells.map(c => c[1])))) + 1
                                     : (colWidths?.length || 0);
       const colW = Array.from({length: maxCols}, (_,i) => formatFloat(colWidths[i], DEFAULT_CELL_WIDTH));
 
-      // prefix sums para converter índice -> coordenada
       const cumX = [0];
       for(let i=0;i<colW.length;i++) cumX.push(cumX[i] + (colW[i]||DEFAULT_CELL_WIDTH));
       const cumY = [0];
@@ -521,15 +464,12 @@
       groups.forEach(group=>{
         if(group.value.toLowerCase()==='vazio') return;
 
-        // bounding box em índices de célula
-        const cells = group.cells;
         let minRow=Infinity, minCol=Infinity, maxRow=-1, maxCol=-1;
-        for(const [r,c] of cells){
+        for(const [r,c] of group.cells){
           if(r<minRow) minRow=r; if(c<minCol) minCol=c;
           if(r>maxRow) maxRow=r; if(c>maxCol) maxCol=c;
         }
 
-        // coordenadas reais pela soma cumulativa
         const x = cumX[minCol];
         const y = cumY[minRow];
         const width  = cumX[maxCol+1] - cumX[minCol];
@@ -552,6 +492,7 @@
         rect.setAttribute("x",x); rect.setAttribute("y",y);
         rect.setAttribute("width",width); rect.setAttribute("height",height);
         rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
+        if(!data){ rect.classList.add('disabled'); }
         svg.appendChild(rect);
 
         const aptText = document.createElementNS("http://www.w3.org/2000/svg","text");
@@ -565,10 +506,11 @@
         duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
         svg.appendChild(duracaoText);
 
-        rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada));
+        if (data) {
+          rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada));
+        }
       });
 
-      // usa tamanho total calculado para caber no container responsivo
       svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
     }
 
@@ -583,7 +525,6 @@
           return;
         }
 
-        // Preferir os campos diretos do JSON; fallback para cálculo nas reaberturas
         let codUlt = info.codigo_ultima_inspecao;
         let pendUlt = info.qtd_pend_ultima_inspecao;
         if(codUlt == null){
@@ -592,19 +533,20 @@
           pendUlt = aux.qtd_pend_ultima_inspecao;
         }
 
-        // Link para a última inspeção (fallback para a primeira)
         const idLink = info.id_ultima_inspecao || info.id;
         const inmetaUrl = idLink
           ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
           : null;
 
         let html = `<p><strong>Apartamento:</strong> ${info.apartamento}</p>`;
+        if (info.pavimento_origem) {
+          html += `<p><strong>Pavimento origem:</strong> ${info.pavimento_origem}</p>`;
+        }
         html += `<p><strong>Início:</strong> ${formatDateBR(info.data_abertura)}</p>`;
         if(info.data_termino_inicial){
           html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
         }
 
-        /* Linha "Duração inicial:" com barra à direita (apenas em andamento = azul) */
         const isAndamento = !info.data_termino_inicial;
         let progressMarkup = '';
         if (isAndamento) {
@@ -661,7 +603,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', ()=>{
-      resizeSvgArea();  // ajusta área do SVG ao carregar
+      resizeSvgArea();
       carregarFvs();
       document.getElementById('dropdown').addEventListener('change', e=>{
         carregarDuracoesEFazerDraw(e.target.value);
@@ -675,7 +617,6 @@
       });
     });
 
-    /* ======= Lê fvs-list.json do GitHub ======= */
     async function carregarFvs(){
       const dropdown = document.getElementById('dropdown');
       dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
@@ -694,29 +635,22 @@
       }
     }
 
-    /* ======= Ao escolher FVS, filtra apartamentos.json e desenha ======= */
     async function carregarDuracoesEFazerDraw(fvsSelecionada){
       showLoading();
       try{
         const raw = await loadCSV(ESTRUTURA_CSV);
 
-        // Linha 1: larguras a partir de C1 (índice 2)
         const header = raw[0] || [];
         const GRID_START_COL = 2; // C
-        const colWidthsRaw = header.slice(GRID_START_COL).map(v =>
-          formatFloat(v, DEFAULT_CELL_WIDTH)
-        );
+        const colWidthsRaw = header.slice(GRID_START_COL).map(v => formatFloat(v, DEFAULT_CELL_WIDTH));
 
-        // Corpo (linhas 2..)
         const body = raw.slice(1);
 
-        // Coluna B (índice 1): alturas das linhas
-        const rowHeights = body.map(r =>
-          formatFloat(r[1], DEFAULT_CELL_HEIGHT)
-        );
+        const rowHeights = body.map(r => formatFloat(r[1], DEFAULT_CELL_HEIGHT));
 
-        // Matriz de apartamentos: a partir de C (índice 2) com forward-fill
-        const grid = body.map(r => expandRow(r.slice(GRID_START_COL)));
+        const grid = body
+          .map(r => expandRow(r.slice(GRID_START_COL)))
+          .map(row => row.map(normalizeCellLabel));
 
         const groups = groupCells(grid);
 
@@ -729,9 +663,8 @@
           if(!cache.apartamentos){
             const res = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
             if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-            cache.apartamentos = await res.json(); // array com TODOS os aptos de TODAS as FVS
+            cache.apartamentos = await res.json();
           }
-          // filtra pela FVS escolhida
           currentFvsItems = cache.apartamentos.filter(it => it.fvs === currentFvs);
 
           for(const item of currentFvsItems){
@@ -755,4 +688,3 @@
   </script>
 </body>
 </html>
-
