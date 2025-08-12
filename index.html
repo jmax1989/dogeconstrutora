@@ -264,7 +264,6 @@
 
   <div id="svg-container">
     <svg id="svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
-      <text x="10" y="20" fill="#c9d1d9">Selecione uma FVS</text>
     </svg>
   </div>
 
@@ -482,7 +481,7 @@
 
       if(!fvsSelecionada){
         svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
-        svg.innerHTML = '<text x="10" y="20" fill="#c9d1d9">Selecione uma FVS</text>';
+        svg.innerHTML = '';
         return;
       }
 
