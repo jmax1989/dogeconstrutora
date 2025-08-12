@@ -155,13 +155,13 @@
     }
     @keyframes spin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
-    /* Modal */
+    /* Modal (com tint herdado) */
     #modal-backdrop{
       position:fixed; inset:0;
       display:none;
       justify-content:center; align-items:center;
       z-index:10000;
-      background:rgba(13,17,23,0.35);
+      background: rgba(13,17,23,0.35); /* fixo, neutro */
       -webkit-backdrop-filter: blur(14px) saturate(120%);
       backdrop-filter: blur(14px) saturate(120%);
       animation:fadeIn .25s ease;
@@ -175,8 +175,11 @@
       overflow:auto;
       padding:22px;
       border-radius:16px;
-      background:rgba(22,27,34,0.4);
-      border:1px solid rgba(240,246,252,0.08);
+      background:
+        linear-gradient(135deg, var(--modal-tint-strong, rgba(88,166,255,0.20)), transparent 60%),
+        linear-gradient( 45deg, var(--modal-tint-soft,   rgba(88,166,255,0.10)), transparent 55%),
+        rgba(22,27,34,0.40);
+      border: 1px solid var(--modal-border, rgba(240,246,252,0.08));
       box-shadow:0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
       -webkit-backdrop-filter: blur(6px) saturate(110%);
       backdrop-filter: blur(6px) saturate(110%);
@@ -439,6 +442,28 @@
       requestAnimationFrame(()=> bars.forEach(b => { b.style.width = b.dataset.w; }));
     }
 
+    /* ===== Tint do modal: herda a cor do retângulo clicado ===== */
+    function hexToRgb(hex){
+      const h = hex.replace('#','').trim();
+      if (h.length === 3) {
+        const r = parseInt(h[0]+h[0],16), g = parseInt(h[1]+h[1],16), b = parseInt(h[2]+h[2],16);
+        return [r,g,b];
+      }
+      const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+      return [r,g,b];
+    }
+    function rgbaStr([r,g,b], a){ return `rgba(${r}, ${g}, ${b}, ${a})`; }
+    function applyModalTint(fillHex){
+      try{
+        const modal = document.getElementById('modal');
+        const backdrop = document.getElementById('modal-backdrop');
+        const [r,g,b] = hexToRgb(fillHex || '#58a6ff');
+        modal.style.setProperty('--modal-tint-strong', rgbaStr([r,g,b], 0.20));
+        modal.style.setProperty('--modal-tint-soft',   rgbaStr([r,g,b], 0.10));
+        modal.style.setProperty('--modal-border',      rgbaStr([r,g,b], 0.28));
+      }catch(e){ console.warn('Tint modal error:', e); }
+    }
+
     function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       const svg = document.getElementById('svg');
       svg.innerHTML = '';
@@ -507,14 +532,16 @@
         svg.appendChild(duracaoText);
 
         if (data) {
-          rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada));
+          rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada, fillColor));
         }
       });
 
       svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
     }
 
-    async function abrirModalDetalhes(apartamento, fvsSelecionada){
+    async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
+      applyModalTint(fillColor);
+
       modalContent.innerHTML = `<p>Carregando dados do apartamento ${apartamento}...</p>`;
       modalBackdrop.style.display = 'flex';
       lockScroll(true);
@@ -672,7 +699,8 @@
             duracoesMap[item.apartamento] = {
               duracao_real: item.duracao_real,
               data_termino_inicial: item.data_termino_inicial,
-              qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0
+              qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
+              pavimento_origem: item.pavimento_origem || null
             };
           }
         }
