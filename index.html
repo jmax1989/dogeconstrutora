@@ -40,7 +40,7 @@
       z-index:1000;
       padding:16px;
       width:100%;
-      max-width:600px;
+      max-width:100%;
       text-align:center;
     }
     select#dropdown{
@@ -54,6 +54,7 @@
       transition:border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
       outline:none;
       width:100%;
+      max-width:600px;
       cursor:pointer;
       appearance:none;
       background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%23c9d1d9" d="M6 8.5L11 3.5H1z"/></svg>');
@@ -68,25 +69,26 @@
       background-color:#21262d;
     }
 
-    /* SVG area */
+    /* SVG area - ocupa a janela e centraliza o SVG */
     #svg-container{
       padding:24px;
-      max-width:100%;
-      overflow-x:auto;
       width:100%;
-      flex-grow:1;
-      margin-top:8px;
+      flex:1 1 auto;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;     /* sem barras de rolagem */
     }
-    /* >>> escopado só para o canvas principal, NÃO afeta o ícone <<< */
+    /* Canvas SVG escala para caber */
     #svg{
       background-color:#161b22;
       border-radius:12px;
       border:1px solid var(--border);
       display:block;
-      margin:auto;
+      width:100%;
+      height:100%;
       max-width:100%;
-      height:auto;
-      min-height:300px;
+      max-height:100%;
       box-shadow:0 1px 3px rgba(0,0,0,.1);
     }
     text{
@@ -282,10 +284,20 @@
       min-width:3ch; text-align:right;
     }
     .line-progress{ display:flex; align-items:center; gap:12px; }
-    .line-progress .q-linear-progress{ margin-left:auto; min-width:140px; max-width:200px; }
+    .line-progress .q-linear-progress{ margin-left:auto; min-width:96px; max-width:140px; }
 
-    @media (prefers-reduced-motion: reduce){
-      .q-linear-progress__bar{ transition:none; }
+    /* modo compacto */
+    .q-linear-progress--sm{ padding:2px 4px; gap:6px; }
+    .q-linear-progress--sm .q-linear-progress__track{ height:6px; }
+    .q-linear-progress--sm .q-linear-progress__label{
+      font-size:12px; font-weight:500; min-width:2.6ch; opacity:.9;
+    }
+
+    /* desktop ainda mais compacto */
+    @media (min-width: 720px){
+      .line-progress .q-linear-progress{ min-width:110px; max-width:130px; }
+      .q-linear-progress--sm .q-linear-progress__track{ height:4px; }
+      .q-linear-progress--sm .q-linear-progress__label{ font-size:11px; }
     }
   </style>
 </head>
@@ -298,7 +310,7 @@
   </div>
 
   <div id="svg-container">
-    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
       <text x="10" y="20" fill="#c9d1d9">Selecione uma FVS</text>
     </svg>
   </div>
@@ -353,6 +365,22 @@
         document.body.style.overflow = '';
       }
     }
+
+    // Ajusta a área do SVG para caber na janela
+    function resizeSvgArea(){
+      const topbar = document.getElementById('dropdown-container');
+      const container = document.getElementById('svg-container');
+
+      const topH = topbar.getBoundingClientRect().height;
+      const vh = window.innerHeight;
+
+      const cs = getComputedStyle(container);
+      const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+
+      const available = Math.max(300, vh - topH);
+      container.style.height = (available - padY) + 'px';
+    }
+    window.addEventListener('resize', resizeSvgArea);
 
     async function loadCSV(url){
       if(cache.estruturaCsv) return cache.estruturaCsv;
@@ -442,13 +470,13 @@
       const p = Math.max(0, Math.min(100, Number(pct) || 0));
       const color = overrideColor || 'var(--blue)'; // azul para "em andamento"
       return `
-        <span class="q-linear-progress" role="progressbar"
+        <span class="q-linear-progress q-linear-progress--sm" role="progressbar"
               aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"
               aria-label="${p}% executado" style="color:${color}">
           <span class="q-linear-progress__track">
             <span class="q-linear-progress__bar" data-w="${p}%"></span>
           </span>
-          <span class="q-linear-progress__label"><strong>${p}%</strong></span>
+          <span class="q-linear-progress__label">${p}%</span>
         </span>`;
     }
     function animateProgressBars(root=document){
@@ -607,6 +635,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', ()=>{
+      resizeSvgArea();  // ajusta área do SVG ao carregar
       carregarFvs();
       document.getElementById('dropdown').addEventListener('change', e=>{
         carregarDuracoesEFazerDraw(e.target.value);
@@ -618,7 +647,6 @@
       document.addEventListener('keydown', e=>{
         if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal();
       });
-      // estado inicial do SVG já mostra "Selecione uma FVS"
     });
 
     /* ======= Lê fvs-list.json do GitHub ======= */
