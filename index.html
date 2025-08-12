@@ -243,7 +243,7 @@
     }
     #modal a.link-row:active{ transform:scale(0.99) }
     #modal a.link-row svg{
-      width:14px; height:14px;       /* força tamanho do ícone */
+      width:14px; height:14px;
       display:inline-block;
       flex:0 0 auto;
       stroke:currentColor;
@@ -270,7 +270,9 @@
   </div>
 
   <div id="svg-container">
-    <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <text x="10" y="20" fill="#c9d1d9">Selecione uma FVS</text>
+    </svg>
   </div>
 
   <div id="loading">
@@ -287,7 +289,12 @@
   </div>
 
   <script>
-    const API_BASE = 'https://script.google.com/macros/s/AKfycbyQiJpxajuC0alNhKwiyzLH5nldPlQoe4SR8vE-CXE8IvmQNDKJLHrRFeQQkl6gD24e/exec';
+    /* ===== NOVO: base de dados estática no GitHub Pages ===== */
+    const DATA_BASE = 'https://dogeconstrutora.github.io/doge/data';
+    const FVS_LIST_URL = `${DATA_BASE}/fvs-list.json`;
+    const APARTAMENTOS_URL = `${DATA_BASE}/apartamentos.json`;
+
+    /* Mantemos sua estrutura CSV (andares/apts) como está */
     const ESTRUTURA_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYGuSxR-9vY5Uj7tIDEZXtyCaTLPuyklhHrBQEv0o1YdhLb_XYKazJnZDFpBfgmoHgqYq_Lbe1QWju/pub?output=csv';
 
     const CELL_WIDTH = 50;
@@ -298,7 +305,13 @@
     const modalContent = document.getElementById('modal-content');
     const modalCloseBtn = document.querySelector('#modal button.close-btn');
 
-    const cache = { fvsList:null, duracoes:{}, estruturaCsv:null };
+    /* Cache */
+    const cache = { estruturaCsv:null, apartamentos:null };
+
+    /* Estado atual da FVS */
+    let currentFvs = '';
+    let currentFvsItems = [];
+    let currentByApt = Object.create(null);
 
     function showLoading(){ loadingDiv.classList.add('show'); }
     function hideLoading(){ loadingDiv.classList.remove('show'); }
@@ -376,6 +389,7 @@
       return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
     }
 
+    /* Mantido como fallback (caso precise deduzir a última inspeção das reaberturas) */
     function getUltimaInspecaoInfo(reaberturas){
       if(!Array.isArray(reaberturas)||reaberturas.length===0){
         return { codigo_ultima_inspecao:null, qtd_pend_ultima_inspecao:0 };
@@ -400,6 +414,11 @@
       svg.innerHTML = '';
       let maxWidth=0, maxHeight=0;
 
+      if(!fvsSelecionada){
+        svg.innerHTML = '<text x="10" y="20" fill="#c9d1d9">Selecione uma FVS</text>';
+        return;
+      }
+
       groups.forEach(group=>{
         if(group.value.toLowerCase()==='vazio') return;
 
@@ -423,10 +442,10 @@
         if(data){
           textoCentro = `${data.duracao_real ?? ''}`;
           if(!data.data_termino_inicial){
-            fillColor = '#1f6feb';
+            fillColor = '#1f6feb'; // azul: sem término inicial
           }else{
-            const { qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(data.reaberturas);
-            fillColor = qtd_pend_ultima_inspecao>0 ? '#d29922' : '#238636';
+            const pend = Number(data.qtd_pend_ultima_inspecao||0);
+            fillColor = pend>0 ? '#d29922' : '#238636'; // amarelo com pendências / verde sem
           }
         }
 
@@ -457,24 +476,28 @@
       modalBackdrop.style.display = 'flex';
       lockScroll(true);
       try{
-        // LÊ OS DETALHES DO JSON LOCAL (gerado pela Action)
-        const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
-        if(!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
-        const todosDados = await res.json();
-        const info = todosDados[apartamento];
-
+        const info = currentByApt[apartamento];
         if(!info){
           modalContent.innerHTML = `<p>Sem dados para o apartamento ${apartamento}.</p>`;
           return;
         }
 
-        const { codigo_ultima_inspecao, qtd_pend_ultima_inspecao } = getUltimaInspecaoInfo(info.reaberturas);
+        // Preferir os campos diretos do JSON; fallback para cálculo nas reaberturas
+        let codUlt = info.codigo_ultima_inspecao;
+        let pendUlt = info.qtd_pend_ultima_inspecao;
+        if(codUlt == null){
+          const aux = getUltimaInspecaoInfo(info.reaberturas);
+          codUlt = aux.codigo_ultima_inspecao;
+          pendUlt = aux.qtd_pend_ultima_inspecao;
+        }
 
-        const inmetaUrl = info.id
-          ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(info.id)}`
-          : null;
-
-        let html = `<p><strong>Apartamento:</strong> ${apartamento}</p>`;
+// depois (prefere a última; cai pra primeira como fallback):
+const idLink = info.id_ultima_inspecao || info.id;
+const inmetaUrl = idLink
+  ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
+  : null;
+        
+        let html = `<p><strong>Apartamento:</strong> ${info.apartamento}</p>`;
         html += `<p><strong>Início:</strong> ${formatDateBR(info.data_abertura)}</p>`;
         if(info.data_termino_inicial){
           html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
@@ -494,23 +517,25 @@
           html += `
           <p>
             <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer" aria-label="Abrir a última inspeção em nova aba">
-              <span><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</span>
+              <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}</span>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M15 3h6v6"/>
                 <path d="M10 14L21 3"/>
-                <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
               </svg>
             </a>
           </p>`;
         } else {
-          html += `<p><strong>Última inspeção:</strong> código ${codigo_ultima_inspecao ?? '-'} | pendências ${qtd_pend_ultima_inspecao ?? '-'}</p>`;
+          html += `<p><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}</p>`;
         }
 
         html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
+        if(info.termino_final){
+          html += `<p><strong>Término final:</strong> ${formatDateBR(info.termino_final)}</p>`;
+        }
         modalContent.innerHTML = html;
 
-        // foco no modal
         requestAnimationFrame(()=> document.getElementById('modal').focus());
       }catch(err){
         modalContent.innerHTML = `<p>Erro ao carregar dados: ${err.message}</p>`;
@@ -535,33 +560,29 @@
       document.addEventListener('keydown', e=>{
         if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal();
       });
-      carregarDuracoesEFazerDraw('');
+      // estado inicial do SVG já mostra "Selecione uma FVS"
     });
 
+    /* ======= Lê fvs-list.json do GitHub ======= */
     async function carregarFvs(){
       const dropdown = document.getElementById('dropdown');
       dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
       try{
-        if(cache.fvsList){ preencherDropdown(cache.fvsList); return; }
-        const res = await fetch(`${API_BASE}?tipo=fvs`);
+        const res = await fetch(FVS_LIST_URL, { cache: 'no-store' });
         if(!res.ok) throw new Error(`HTTP status ${res.status}`);
         const fvsList = await res.json();
-        cache.fvsList = fvsList;
-        preencherDropdown(fvsList);
+        dropdown.innerHTML = '<option value="">-- Selecione uma FVS --</option>';
+        for(const fvs of fvsList){
+          const opt = document.createElement('option');
+          opt.value = fvs; opt.textContent = fvs;
+          dropdown.appendChild(opt);
+        }
       }catch(e){
         dropdown.innerHTML = '<option value="">Erro ao carregar FVS</option>';
       }
     }
-    function preencherDropdown(fvsList){
-      const dropdown = document.getElementById('dropdown');
-      dropdown.innerHTML = '<option value="">-- Selecione uma FVS --</option>';
-      for(const fvs of fvsList){
-        const opt = document.createElement('option');
-        opt.value = fvs; opt.textContent = fvs;
-        dropdown.appendChild(opt);
-      }
-    }
 
+    /* ======= Ao escolher FVS, filtra apartamentos.json e desenha ======= */
     async function carregarDuracoesEFazerDraw(fvsSelecionada){
       showLoading();
       try{
@@ -569,20 +590,31 @@
         const grid = rawGrid.map(row => expandRow(row.slice(1)));
         const groups = groupCells(grid);
 
+        currentFvs = fvsSelecionada || '';
+        currentFvsItems = [];
+        currentByApt = Object.create(null);
+
         let duracoesMap = {};
-        if(fvsSelecionada){
-          if(cache.duracoes[fvsSelecionada]){
-            duracoesMap = cache.duracoes[fvsSelecionada];
-          }else{
-            // LÊ O JSON LOCAL EM VEZ DE CHAMAR A API
-            const res = await fetch(`data/fvs/${encodeURIComponent(fvsSelecionada)}.json`);
-            if(!res.ok) throw new Error(`JSON não encontrado para ${fvsSelecionada}`);
-            duracoesMap = await res.json();
-            cache.duracoes[fvsSelecionada] = duracoesMap;
+        if(currentFvs){
+          if(!cache.apartamentos){
+            const res = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
+            if(!res.ok) throw new Error(`HTTP status ${res.status}`);
+            cache.apartamentos = await res.json(); // array com TODOS os aptos de TODAS as FVS
+          }
+          // filtra pela FVS escolhida
+          currentFvsItems = cache.apartamentos.filter(it => it.fvs === currentFvs);
+
+          for(const item of currentFvsItems){
+            currentByApt[item.apartamento] = item;
+            duracoesMap[item.apartamento] = {
+              duracao_real: item.duracao_real,
+              data_termino_inicial: item.data_termino_inicial,
+              qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0
+            };
           }
         }
 
-        draw(groups, duracoesMap, fvsSelecionada);
+        draw(groups, duracoesMap, currentFvs);
       }catch(e){
         document.getElementById('svg').innerHTML =
           `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
