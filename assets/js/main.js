@@ -262,6 +262,13 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       pendUlt = aux.qtd_pend_ultima_inspecao;
     }
 
+    // NOVO: NC da última inspeção (usa campo de topo; fallback: última reabertura)
+    let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
+    if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
+      const lastReab = info.reaberturas[info.reaberturas.length - 1];
+      ncUlt = Number(lastReab.qtd_nao_conformidades);
+    }
+
     const idLink = info.id_ultima_inspecao || info.id;
     const inmetaUrl = idLink
       ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
@@ -286,10 +293,21 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
     }
     html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${info.duracao_inicial}</span>${progressMarkup}</p>`;
 
+    // NOVO: mostrar NC mesmo em andamento (se houver > 0)
+    if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0) {
+      html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
+    }
+
     if(info.reaberturas?.length){
-      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th></tr>`;
+      // NOVO: adiciona coluna NC à tabela
+      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>NC</th></tr>`;
       info.reaberturas.forEach(r=>{
-        html += `<tr><td>${r.codigo ?? '-'}</td><td>${formatDateBR(r.data_abertura)}</td><td>${r.qtd_itens_pendentes}</td></tr>`;
+        html += `<tr>
+          <td>${r.codigo ?? '-'}</td>
+          <td>${formatDateBR(r.data_abertura)}</td>
+          <td>${r.qtd_itens_pendentes}</td>
+          <td>${r.qtd_nao_conformidades ?? '-'}</td>
+        </tr>`;
       });
       html += `</table>`;
       html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
@@ -299,7 +317,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       html += `
       <p>
         <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
-          <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}</span>
+          <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</span>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15 3h6v6"/>
@@ -309,7 +327,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
         </a>
       </p>`;
     } else {
-      html += `<p><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}</p>`;
+      html += `<p><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</p>`;
     }
 
     html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
@@ -397,6 +415,7 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
           duracao_real: item.duracao_real,
           data_termino_inicial: item.data_termino_inicial,
           qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
+          // (cores permanecem como antes; NC não muda a cor do azul em andamento)
           pavimento_origem: item.pavimento_origem || null
         };
       }
