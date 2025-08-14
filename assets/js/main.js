@@ -343,19 +343,29 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
     }
 
     if(info.reaberturas?.length){
-      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
-      info.reaberturas.forEach(r=>{
-        html += `<tr>
-          <td>${r.codigo ?? '-'}</td>
-          <td>${formatDateBR(r.data_abertura)}</td>
-          <td>${r.qtd_itens_pendentes}</td>
-          <td>${r.qtd_nao_conformidades ?? '-'}</td>
-        </tr>`;
-      });
-      html += `</table>`;
-      html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
-    }
+  // ordena por Código (numérico), mais recente primeiro
+  const reabs = [...info.reaberturas].sort((a, b) => {
+    const na = Number(a.codigo), nb = Number(b.codigo);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return nb - na; // DESC
+    if (Number.isFinite(na)) return -1;
+    if (Number.isFinite(nb)) return 1;
+    // fallback lexicográfico com comparação numérica natural
+    return String(b.codigo ?? '').localeCompare(String(a.codigo ?? ''), 'pt-BR', { numeric: true });
+  });
 
+  html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
+  reabs.forEach(r => {
+    html += `<tr>
+      <td>${r.codigo ?? '-'}</td>
+      <td>${formatDateBR(r.data_abertura)}</td>
+      <td>${r.qtd_itens_pendentes}</td>
+      <td>${r.qtd_nao_conformidades ?? '-'}</td>
+    </tr>`;
+  });
+  html += `</table>`;
+  html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
+}
+    
     if(inmetaUrl){
       html += `
       <p>
