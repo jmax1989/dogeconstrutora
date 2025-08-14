@@ -346,6 +346,83 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       });
       html += `</table>`;
       html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
+async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
+  applyModalTint(fillColor);
+
+  modalContent.innerHTML = `<p>Carregando dados do apartamento ${apartamento}...</p>`;
+  modalBackdrop.style.display = 'flex';
+  lockScroll(true);
+  try{
+    const info = currentByApt[apartamento];
+    if(!info){
+      modalContent.innerHTML = `<p>Sem dados para o apartamento ${apartamento}.</p>`;
+      return;
+    }
+
+    let codUlt = info.codigo_ultima_inspecao;
+    let pendUlt = info.qtd_pend_ultima_inspecao;
+    if(codUlt == null){
+      const aux = getUltimaInspecaoInfo(info.reaberturas);
+      codUlt = aux.codigo_ultima_inspecao;
+      pendUlt = aux.qtd_pend_ultima_inspecao;
+    }
+
+    let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
+    if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
+      const lastReab = info.reaberturas[info.reaberturas.length - 1];
+      ncUlt = Number(lastReab.qtd_nao_conformidades);
+    }
+
+    const idLink = info.id_ultima_inspecao || info.id;
+    const inmetaUrl = idLink
+      ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
+      : null;
+
+    let html = `<p><strong>Apartamento:</strong> ${info.apartamento}</p>`;
+    if (info.pavimento_origem) {
+      html += `<p><strong>Pavimento origem:</strong> ${info.pavimento_origem}</p>`;
+    }
+    html += `<p><strong>Início:</strong> ${formatDateBR(info.data_abertura)}</p>`;
+    if(info.data_termino_inicial){
+      html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
+    }
+
+    // --- Barrinha de progresso (azul para andamento, amarelo para reaberta) ---
+    let progressMarkup = '';
+    const pct = Number(info.percentual_ultima_inspecao);
+    if (!Number.isNaN(pct)) {
+      if (!info.data_termino_inicial) {
+        // andamento (azul)
+        progressMarkup = linearProgress(pct, 'var(--blue)');
+      } else if (
+        Number(info.qtd_nao_conformidades_ultima_inspecao || 0) > 0 ||
+        Number(info.qtd_pend_ultima_inspecao || 0) > 0 ||
+        pct < 100
+      ) {
+        // reaberta (amarelo)
+        progressMarkup = linearProgress(pct, 'var(--yellow)');
+      }
+    }
+
+    html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${info.duracao_inicial}</span>${progressMarkup}</p>`;
+
+    // Mostrar NC mesmo em andamento (se houver > 0)
+    if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0) {
+      html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
+    }
+
+    if(info.reaberturas?.length){
+      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
+      info.reaberturas.forEach(r=>{
+        html += `<tr>
+          <td>${r.codigo ?? '-'}</td>
+          <td>${formatDateBR(r.data_abertura)}</td>
+          <td>${r.qtd_itens_pendentes}</td>
+          <td>${r.qtd_nao_conformidades ?? '-'}</td>
+        </tr>`;
+      });
+      html += `</table>`;
+      html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
     }
 
     if(inmetaUrl){
