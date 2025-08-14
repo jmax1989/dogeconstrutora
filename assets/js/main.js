@@ -307,7 +307,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
     }
 
     if(info.reaberturas?.length){
-      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>NC</th></tr>`;
+      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
       info.reaberturas.forEach(r=>{
         html += `<tr>
           <td>${r.codigo ?? '-'}</td>
@@ -422,8 +422,8 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
           duracao_real: item.duracao_real,
           data_termino_inicial: item.data_termino_inicial,
           qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
-          qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,     // <- NOVO
-          percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null, // <- NOVO
+          qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,     // <- NC para cores
+          percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null, // <- % para cores
           pavimento_origem: item.pavimento_origem || null
         };
       }
