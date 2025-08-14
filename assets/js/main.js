@@ -15,11 +15,14 @@ const modalBackdrop = document.getElementById('modal-backdrop');
 const modalContent = document.getElementById('modal-content');
 const modalCloseBtn = document.querySelector('#modal button.close-btn');
 
+
+
 /* ===== Estado ===== */
 const cache = { estruturaCsv:null, apartamentos:null };
 let currentFvs = '';
 let currentFvsItems = [];
 let currentByApt = Object.create(null);
+let ncMode = false; // modo destaque de Não Conformidades
 
 /* ===== Utils ===== */
 const showLoading = ()=> loadingDiv.classList.add('show');
@@ -188,63 +191,74 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     return;
   }
 
-  groups.forEach(group=>{
-    if(group.value.toLowerCase()==='vazio') return;
+groups.forEach(group=>{
+  if (group.value.toLowerCase() === 'vazio') return;
 
-    let minRow=Infinity, minCol=Infinity, maxRow=-1, maxCol=-1;
-    for(const [r,c] of group.cells){
-      if(r<minRow) minRow=r; if(c<minCol) minCol=c;
-      if(r>maxRow) maxRow=r; if(c>maxCol) maxCol=c;
-    }
+  let minRow=Infinity, minCol=Infinity, maxRow=-1, maxCol=-1;
+  for (const [r,c] of group.cells){
+    if (r<minRow) minRow=r; if (c<minCol) minCol=c;
+    if (r>maxRow) maxRow=r; if (c>maxCol) maxCol=c;
+  }
 
-    const x = cumX[minCol];
-    const y = cumY[minRow];
-    const width  = cumX[maxCol+1] - cumX[minCol];
-    const height = cumY[maxRow+1] - cumY[minRow];
+  const x = cumX[minCol];
+  const y = cumY[minRow];
+  const width  = cumX[maxCol+1] - cumX[minCol];
+  const height = cumY[maxRow+1] - cumY[minRow];
 
-    const data = duracoesMap[group.value];
-    let fillColor = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
-    let textoCentro = '';
-    if (data) {
-      textoCentro = `${data.duracao_real ?? ''}`;
+  const data = duracoesMap[group.value];
+  const gray = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
+  let fillColor = gray;
+  let textoCentro = '';
 
-      // Azul: sem término inicial ainda
-      if (!data.data_termino_inicial) {
-        fillColor = '#1f6feb';
+  if (data) {
+    textoCentro = `${data.duracao_real ?? ''}`;
+
+    const pend = Number(data.qtd_pend_ultima_inspecao || 0);
+    const nc   = Number(data.qtd_nc_ultima_inspecao || 0);
+    const pct  = Number(data.percentual_ultima_inspecao);
+    const terminouInicial = !!data.data_termino_inicial;
+
+    if (ncMode) {
+      // MODO NC: vermelho vivo se há NC atual; caso contrário, cinza
+      fillColor = (nc > 0) ? '#f85149' : gray;
+    } else {
+      // MODO NORMAL (lógica estrita sem fallback)
+      if (!terminouInicial) {
+        fillColor = '#1f6feb'; // azul
       } else {
-        const pend = Number(data.qtd_pend_ultima_inspecao || 0);
-        const nc   = Number(data.qtd_nc_ultima_inspecao || 0);
-        const pct  = Number(data.percentual_ultima_inspecao);
-
-        // Versão estrita (sem fallback):
-        // Verde somente se a ÚLTIMA inspeção for 100% e 0 pendências e 0 NC.
         const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
-        fillColor = ultimaOK ? '#238636' : '#d29922';
+        fillColor = ultimaOK ? '#238636' : '#d29922'; // verde : amarelo
       }
     }
+  }
 
-    const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
-    rect.setAttribute("x",x); rect.setAttribute("y",y);
-    rect.setAttribute("width",width); rect.setAttribute("height",height);
-    rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
-    if(!data){ rect.classList.add('disabled'); }
-    svg.appendChild(rect);
+  const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
+  rect.setAttribute("x",x); rect.setAttribute("y",y);
+  rect.setAttribute("width",width); rect.setAttribute("height",height);
+  rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
 
-    const aptText = document.createElementNS("http://www.w3.org/2000/svg","text");
-    aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
-    aptText.setAttribute("class","apt-text"); aptText.textContent = group.value;
-    svg.appendChild(aptText);
+  // Clicável apenas se houver dados e:
+  // - modo normal: sempre clicável
+  // - modo NC: só se tiver NC atual
+  const podeClicar = !!data && (!ncMode || Number(data.qtd_nc_ultima_inspecao || 0) > 0);
+  if (!podeClicar) rect.classList.add('disabled');
+  svg.appendChild(rect);
 
-    const duracaoText = document.createElementNS("http://www.w3.org/2000/svg","text");
-    duracaoText.setAttribute("x",x + width/2);
-    duracaoText.setAttribute("y",y + height/2);
-    duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
-    svg.appendChild(duracaoText);
+  const aptText = document.createElementNS("http://www.w3.org/2000/svg","text");
+  aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
+  aptText.setAttribute("class","apt-text"); aptText.textContent = group.value;
+  svg.appendChild(aptText);
 
-    if (data) {
-      rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada, fillColor));
-    }
-  });
+  const duracaoText = document.createElementNS("http://www.w3.org/2000/svg","text");
+  duracaoText.setAttribute("x",x + width/2);
+  duracaoText.setAttribute("y",y + height/2);
+  duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
+  svg.appendChild(duracaoText);
+
+  if (podeClicar) {
+    rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada, fillColor));
+  }
+});
 
   svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
 }
@@ -364,6 +378,16 @@ document.addEventListener('DOMContentLoaded', ()=>{
   modalCloseBtn.addEventListener('click', fecharModal);
   modalBackdrop.addEventListener('click', e=>{ if(e.target === modalBackdrop) fecharModal(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal(); });
+// Botão NC: alterna o modo e refaz o draw
+const btnNc = document.getElementById('btn-nc');
+if (btnNc) {
+  btnNc.addEventListener('click', ()=>{
+    ncMode = !ncMode;
+    btnNc.classList.toggle('is-active', ncMode);
+    // re-render aproveitando cache e FVS atual
+    carregarDuracoesEFazerDraw(currentFvs);
+  });
+}
 });
 
 /* Dados + draw */
@@ -385,7 +409,7 @@ async function carregarFvs(){
   }
 }
 
-async function carregarDuracoesEFazerDraw(fvsSelecionada){
+async function carregarDuracoesEFazerDraw(fvsSelecionada, modoNcAtivo = false){
   showLoading();
   try{
     const raw = await loadCSV(ESTRUTURA_CSV);
