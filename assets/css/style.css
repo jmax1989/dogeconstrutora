@@ -9,6 +9,8 @@
   --green:#238636;
   --yellow:#d29922;
   --gray:#6e7681;
+  --red: #f85149;         /* vermelho vivo */
+  --red-muted: #8b3431;   /* vermelho esmaecido */
 }
 *{box-sizing:border-box}
 body{
@@ -24,6 +26,17 @@ body{
   border-bottom:1px solid var(--border); z-index:1000; padding:16px;
   width:100%; max-width:100%; text-align:center;
 }
+
+/* Linha do select + botão NC */
+#dropdown-container .controls{
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap; /* quebra em telas pequenas */
+  width: 100%;
+}
+
 select#dropdown{
   background-color:#161b22; color:var(--text); border:1px solid var(--border);
   border-radius:12px; padding:10px 40px 10px 12px; font-size:14px;
@@ -38,6 +51,32 @@ select#dropdown:focus{
   box-shadow:0 0 0 3px rgba(88,166,255,.2);
   background-color:#21262d;
 }
+
+/* Botão NC */
+.btn-nc{
+  background-color: var(--red-muted);
+  color: #f0f6fc;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: transform .12s ease, background-color .15s ease, border-color .15s ease, filter .15s ease;
+  line-height: 1;
+}
+.btn-nc:hover{
+  filter: brightness(1.05);
+}
+.btn-nc:active{
+  transform: scale(0.98);
+}
+/* Estado ativo (vermelho vivo) */
+.btn-nc.is-active{
+  background-color: var(--red);
+  border-color: #aa2620;
+}
+
 
 /* SVG area */
 #svg-container{ padding:24px; width:100%; flex:1 1 auto; display:flex; align-items:center; justify-content:center; overflow:hidden; }
