@@ -346,7 +346,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
   // ordena por Código (numérico), mais recente primeiro
   const reabs = [...info.reaberturas].sort((a, b) => {
     const na = Number(a.codigo), nb = Number(b.codigo);
-    if (Number.isFinite(na) && Number.isFinite(nb)) return nb - na; // DESC
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb; // ASC
     if (Number.isFinite(na)) return -1;
     if (Number.isFinite(nb)) return 1;
     // fallback lexicográfico com comparação numérica natural
