@@ -205,13 +205,21 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     const data = duracoesMap[group.value];
     let fillColor = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
     let textoCentro = '';
-    if(data){
+    if (data) {
       textoCentro = `${data.duracao_real ?? ''}`;
-      if(!data.data_termino_inicial){
+
+      // Azul: sem término inicial ainda
+      if (!data.data_termino_inicial) {
         fillColor = '#1f6feb';
-      }else{
-        const pend = Number(data.qtd_pend_ultima_inspecao||0);
-        fillColor = pend>0 ? '#d29922' : '#238636';
+      } else {
+        const pend = Number(data.qtd_pend_ultima_inspecao || 0);
+        const nc   = Number(data.qtd_nc_ultima_inspecao || 0);
+        const pct  = Number(data.percentual_ultima_inspecao);
+
+        // Versão estrita (sem fallback):
+        // Verde somente se a ÚLTIMA inspeção for 100% e 0 pendências e 0 NC.
+        const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+        fillColor = ultimaOK ? '#238636' : '#d29922';
       }
     }
 
@@ -262,7 +270,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       pendUlt = aux.qtd_pend_ultima_inspecao;
     }
 
-    // NOVO: NC da última inspeção (usa campo de topo; fallback: última reabertura)
+    // NC da última inspeção (campo de topo; fallback: última reabertura)
     let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
     if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
       const lastReab = info.reaberturas[info.reaberturas.length - 1];
@@ -293,13 +301,12 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
     }
     html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${info.duracao_inicial}</span>${progressMarkup}</p>`;
 
-    // NOVO: mostrar NC mesmo em andamento (se houver > 0)
+    // Mostrar NC mesmo em andamento (se houver > 0)
     if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0) {
       html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
     }
 
     if(info.reaberturas?.length){
-      // NOVO: adiciona coluna NC à tabela
       html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>NC</th></tr>`;
       info.reaberturas.forEach(r=>{
         html += `<tr>
@@ -415,7 +422,8 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
           duracao_real: item.duracao_real,
           data_termino_inicial: item.data_termino_inicial,
           qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
-          // (cores permanecem como antes; NC não muda a cor do azul em andamento)
+          qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,     // <- NOVO
+          percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null, // <- NOVO
           pavimento_origem: item.pavimento_origem || null
         };
       }
