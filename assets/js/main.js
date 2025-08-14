@@ -4,7 +4,7 @@
 const DATA_BASE = 'https://dogeconstrutora.github.io/doge/data';
 const FVS_LIST_URL = `${DATA_BASE}/fvs-list.json`;
 const APARTAMENTOS_URL = `${DATA_BASE}/apartamentos.json`;
-const ESTRUTURA_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYGuSxR-9vY5Uj7tIDEZXtyCaTLPuyklhHrBQEv0o1YdhLb_XYKazJnZDFpBfgmoHgqYq_Lbe1QWju/pub?output=csv`;
+const ESTRUTURA_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYGuSxR-9vY5Uj7tIDEZXtyCaTLPuyklhHrBQEv0o1YdhLb_XYKazJnZDFpBfgmoHgqYq_Lbe1QWju/pub?output=csv';
 
 const DEFAULT_CELL_WIDTH = 50;
 const DEFAULT_CELL_HEIGHT = 30;
@@ -20,7 +20,6 @@ const cache = { estruturaCsv:null, apartamentos:null };
 let currentFvs = '';
 let currentFvsItems = [];
 let currentByApt = Object.create(null);
-let ncMode = false; // modo destaque de Não Conformidades
 
 /* ===== Utils ===== */
 const showLoading = ()=> loadingDiv.classList.add('show');
@@ -206,26 +205,21 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     const data = duracoesMap[group.value];
     let fillColor = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
     let textoCentro = '';
-
     if (data) {
       textoCentro = `${data.duracao_real ?? ''}`;
 
-      const pend = Number(data.qtd_pend_ultima_inspecao || 0);
-      const nc   = Number(data.qtd_nc_ultima_inspecao || 0);
-      const pct  = Number(data.percentual_ultima_inspecao);
-      const terminouInicial = !!data.data_termino_inicial;
-
-      if (ncMode) {
-        // MODO NC: vermelho para quem tem NC atual; demais cinza
-        fillColor = (nc > 0) ? '#f85149' : '#6e7681';
+      // Azul: sem término inicial ainda
+      if (!data.data_termino_inicial) {
+        fillColor = '#1f6feb';
       } else {
-        // MODO NORMAL (regra estrita)
-        if (!terminouInicial) {
-          fillColor = '#1f6feb'; // azul
-        } else {
-          const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
-          fillColor = ultimaOK ? '#238636' : '#d29922'; // verde ou amarelo
-        }
+        const pend = Number(data.qtd_pend_ultima_inspecao || 0);
+        const nc   = Number(data.qtd_nc_ultima_inspecao || 0);
+        const pct  = Number(data.percentual_ultima_inspecao);
+
+        // Versão estrita (sem fallback):
+        // Verde somente se a ÚLTIMA inspeção for 100% e 0 pendências e 0 NC.
+        const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+        fillColor = ultimaOK ? '#238636' : '#d29922';
       }
     }
 
@@ -370,16 +364,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   modalCloseBtn.addEventListener('click', fecharModal);
   modalBackdrop.addEventListener('click', e=>{ if(e.target === modalBackdrop) fecharModal(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal(); });
-
-  // Botão NC
-  const btnNc = document.getElementById('btn-nc');
-  if (btnNc) {
-    btnNc.addEventListener('click', ()=>{
-      ncMode = !ncMode;
-      btnNc.classList.toggle('is-active', ncMode);
-      carregarDuracoesEFazerDraw(currentFvs); // re-render
-    });
-  }
 });
 
 /* Dados + draw */
@@ -438,8 +422,8 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
           duracao_real: item.duracao_real,
           data_termino_inicial: item.data_termino_inicial,
           qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
-          qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,
-          percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null,
+          qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,     // <- NC para cores
+          percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null, // <- % para cores
           pavimento_origem: item.pavimento_origem || null
         };
       }
