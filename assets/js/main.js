@@ -444,15 +444,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 });
 
-/* Dados + draw */
-async function carregarFvs(){
+/* Dados + draw */async function carregarFvs(){
   const dropdown = document.getElementById('dropdown');
   dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
   try{
     // 1) lista bruta de FVS (filtrada por ALVO no backend)
     const res = await fetch(FVS_LIST_URL, { cache: 'no-store' });
     if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-    allFvsList = await res.json(); // array de strings
+    allFvsList = await res.json(); // array de strings (IDs de FVS)
 
     // 2) garantir apartamentos no cache
     if(!cache.apartamentos){
@@ -461,48 +460,51 @@ async function carregarFvs(){
       cache.apartamentos = await ra.json();
     }
 
-    // 3) construir metadados NC por FVS sem supercontar
-    // - modo = 'apt' se existir pelo menos uma linha dessa FVS sem pavimento_origem
-    // - caso contrário, 'pav'
-    // - ncCount = qtd de unidades afetadas (apt únicos OU pav únicos) com NC>0
-    const modeByFvs = Object.create(null);          // { fvsId: 'apt' | 'pav' }
-    const aptsWithNcByFvs = Object.create(null);    // { fvsId: Set(apartamento) }
-    const pavsWithNcByFvs = Object.create(null);    // { fvsId: Set(pavimento_origem) }
+    // 3) detectar modo por FVS ('apt' prioriza sobre 'pav')
+    const modeByFvs = Object.create(null); // { fvsId: 'apt' | 'pav' }
+    for (const it of cache.apartamentos) {
+      const f = it.fvs;
+      if (!f) continue;
+      const isPav = !!it.pavimento_origem;
+      if (!modeByFvs[f]) modeByFvs[f] = isPav ? 'pav' : 'apt';
+      if (!isPav) modeByFvs[f] = 'apt'; // prioridade para apartamento
+    }
+
+    // 4) somar NCs por unidade deduplicada:
+    //    - se 'apt': chave = apartamento
+    //    - se 'pav': chave = pavimento_origem
+    //    Duplicatas de mesma unidade não acumulam; usamos o MAIOR valor visto por segurança.
+    const unitNcMapByFvs = Object.create(null); // { fvsId: Map(unitKey -> nc) }
 
     for (const it of cache.apartamentos) {
       const f = it.fvs;
       if (!f) continue;
+      const mode = modeByFvs[f] || 'apt';
 
-      // detecta modo
-      const isPav = !!it.pavimento_origem;
-      if (!modeByFvs[f]) modeByFvs[f] = isPav ? 'pav' : 'apt';
-      // prioridade para 'apt' se aparecer qualquer linha por apartamento
-      if (!isPav) modeByFvs[f] = 'apt';
+      // se modo é 'apt', ignorar linhas replicadas por pavimento (com pavimento_origem)
+      if (mode === 'apt' && it.pavimento_origem) continue;
 
-      // coleta unidades com NC > 0
-      const nc = Number(it.qtd_nao_conformidades_ultima_inspecao || 0);
-      if (nc > 0) {
-        if (isPav) {
-          if (!pavsWithNcByFvs[f]) pavsWithNcByFvs[f] = new Set();
-          pavsWithNcByFvs[f].add(it.pavimento_origem);
-        } else {
-          if (!aptsWithNcByFvs[f]) aptsWithNcByFvs[f] = new Set();
-          aptsWithNcByFvs[f].add(it.apartamento);
-        }
-      }
+      const key = (mode === 'apt') ? it.apartamento : it.pavimento_origem;
+      if (!key) continue;
+
+      const ncItems = Number(it.qtd_nao_conformidades_ultima_inspecao || 0);
+      if (!unitNcMapByFvs[f]) unitNcMapByFvs[f] = new Map();
+
+      const prev = unitNcMapByFvs[f].get(key) || 0;
+      // usamos o maior para evitar super/duplicar caso haja múltiplas linhas da mesma unidade
+      unitNcMapByFvs[f].set(key, Math.max(prev, ncItems));
     }
 
-    // zera meta e preenche contagens
+    // 5) preencher metadados (ncCount = soma dos valores por unidade)
     for (const k of Object.keys(fvsMetaById)) delete fvsMetaById[k];
     allFvsList.forEach(id => {
       const mode = modeByFvs[id] || 'apt';
-      const cnt = (mode === 'apt')
-        ? (aptsWithNcByFvs[id]?.size || 0)
-        : (pavsWithNcByFvs[id]?.size || 0);
-      fvsMetaById[id] = { ncCount: cnt, mode };
+      const map = unitNcMapByFvs[id];
+      const sum = map ? Array.from(map.values()).reduce((a,b)=>a+b,0) : 0;
+      fvsMetaById[id] = { ncCount: sum, mode };
     });
 
-    // 4) render dropdown conforme estado atual (NC on/off)
+    // 6) render dropdown conforme estado atual (NC on/off)
     renderFvsDropdown(/*preserveValue=*/false);
   }catch(e){
     console.error(e);
