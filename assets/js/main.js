@@ -449,36 +449,60 @@ async function carregarFvs(){
   const dropdown = document.getElementById('dropdown');
   dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
   try{
-    // 1) carregar lista bruta de FVS
+    // 1) lista bruta de FVS (filtrada por ALVO no backend)
     const res = await fetch(FVS_LIST_URL, { cache: 'no-store' });
     if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-    // fvs-list.json esperado como array de strings
-    allFvsList = await res.json();
+    allFvsList = await res.json(); // array de strings
 
-    // 2) garantir apartamentos no cache, para calcular NC por FVS
+    // 2) garantir apartamentos no cache
     if(!cache.apartamentos){
       const ra = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
       if(!ra.ok) throw new Error(`HTTP status ${ra.status}`);
       cache.apartamentos = await ra.json();
     }
 
-    // 3) construir metadados de NC por FVS
-    // zera meta
-    for (const k of Object.keys(fvsMetaById)) delete fvsMetaById[k];
+    // 3) construir metadados NC por FVS sem supercontar
+    // - modo = 'apt' se existir pelo menos uma linha dessa FVS sem pavimento_origem
+    // - caso contrário, 'pav'
+    // - ncCount = qtd de unidades afetadas (apt únicos OU pav únicos) com NC>0
+    const modeByFvs = Object.create(null);          // { fvsId: 'apt' | 'pav' }
+    const aptsWithNcByFvs = Object.create(null);    // { fvsId: Set(apartamento) }
+    const pavsWithNcByFvs = Object.create(null);    // { fvsId: Set(pavimento_origem) }
 
-    // inicializa meta com 0
-    allFvsList.forEach(id => { fvsMetaById[id] = { ncCount: 0 }; });
-
-    // conta NC por FVS usando apartamentos.json (campo qtd_nao_conformidades_ultima_inspecao)
     for (const it of cache.apartamentos) {
-      const fvsId = it.fvs;
+      const f = it.fvs;
+      if (!f) continue;
+
+      // detecta modo
+      const isPav = !!it.pavimento_origem;
+      if (!modeByFvs[f]) modeByFvs[f] = isPav ? 'pav' : 'apt';
+      // prioridade para 'apt' se aparecer qualquer linha por apartamento
+      if (!isPav) modeByFvs[f] = 'apt';
+
+      // coleta unidades com NC > 0
       const nc = Number(it.qtd_nao_conformidades_ultima_inspecao || 0);
-      if (fvsId && fvsMetaById[fvsId]) {
-        if (nc > 0) fvsMetaById[fvsId].ncCount += nc;
+      if (nc > 0) {
+        if (isPav) {
+          if (!pavsWithNcByFvs[f]) pavsWithNcByFvs[f] = new Set();
+          pavsWithNcByFvs[f].add(it.pavimento_origem);
+        } else {
+          if (!aptsWithNcByFvs[f]) aptsWithNcByFvs[f] = new Set();
+          aptsWithNcByFvs[f].add(it.apartamento);
+        }
       }
     }
 
-    // 4) renderizar dropdown conforme estado atual (NC on/off)
+    // zera meta e preenche contagens
+    for (const k of Object.keys(fvsMetaById)) delete fvsMetaById[k];
+    allFvsList.forEach(id => {
+      const mode = modeByFvs[id] || 'apt';
+      const cnt = (mode === 'apt')
+        ? (aptsWithNcByFvs[id]?.size || 0)
+        : (pavsWithNcByFvs[id]?.size || 0);
+      fvsMetaById[id] = { ncCount: cnt, mode };
+    });
+
+    // 4) render dropdown conforme estado atual (NC on/off)
     renderFvsDropdown(/*preserveValue=*/false);
   }catch(e){
     console.error(e);
