@@ -22,6 +22,10 @@ let currentFvsItems = [];
 let currentByApt = Object.create(null);
 let ncMode = false; // modo destaque de Não Conformidades
 
+// NOVO: listas/metadados de FVS para filtrar quando NC estiver ativo
+let allFvsList = [];                 // array de strings (IDs/nome da FVS)
+const fvsMetaById = Object.create(null); // { [fvsId]: { ncCount:number } }
+
 /* ===== Utils ===== */
 const showLoading = ()=> loadingDiv.classList.add('show');
 const hideLoading = ()=> loadingDiv.classList.remove('show');
@@ -166,6 +170,13 @@ function applyModalTint(fillHex){
   }catch(e){ console.warn('Tint modal error:', e); }
 }
 
+/* ====== SVG helpers ====== */
+function clearSvg(){
+  const svg = document.getElementById('svg');
+  svg.innerHTML = '';
+  svg.setAttribute('viewBox', `0 0 0 0`);
+}
+
 /* Desenho */
 function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   const svg = document.getElementById('svg');
@@ -220,7 +231,7 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
         // MODO NC: vermelho vivo se há NC atual; caso contrário, cinza
         fillColor = (nc > 0) ? '#f85149' : gray;
 
-        // <<< AJUSTE: esconder duração se não houver NC no modo NC
+        // esconder duração se não houver NC no modo NC
         if (nc === 0) {
           textoCentro = '';
         }
@@ -371,23 +382,63 @@ function fecharModal(){
   lockScroll(false);
 }
 
+/* ===== Dropdown de FVS com filtro por NC ===== */
+function renderFvsDropdown(preserveValue=true){
+  const dropdown = document.getElementById('dropdown');
+  const prev = preserveValue ? dropdown.value : '';
+
+  const list = ncMode
+    ? allFvsList.filter(id => (fvsMetaById[id]?.ncCount ?? 0) > 0)
+    : allFvsList.slice();
+
+  if (!list.length) {
+    dropdown.innerHTML = `<option value="">Nenhuma FVS com NC</option>`;
+    return;
+  }
+
+  const opts = ['<option value="">-- Selecione uma FVS --</option>']
+    .concat(list.map(id => {
+      const meta = fvsMetaById[id];
+      const labelNC = (meta && meta.ncCount > 0) ? ` (${meta.ncCount} NC)` : '';
+      return `<option value="${id}">${id}${labelNC}</option>`;
+    }));
+  dropdown.innerHTML = opts.join('');
+
+  // restabelece seleção se ainda existir
+  if (prev && list.includes(prev)) {
+    dropdown.value = prev;
+  } else if (ncMode && prev && !list.includes(prev)) {
+    // se ativou NC e a FVS anterior não tem NC, limpar seleção e SVG
+    dropdown.value = '';
+    currentFvs = '';
+    clearSvg();
+  }
+}
+
 /* Boot */
 document.addEventListener('DOMContentLoaded', ()=>{
   resizeSvgArea();
   carregarFvs();
+
   document.getElementById('dropdown').addEventListener('change', e=>{
     carregarDuracoesEFazerDraw(e.target.value);
   });
+
   modalCloseBtn.addEventListener('click', fecharModal);
   modalBackdrop.addEventListener('click', e=>{ if(e.target === modalBackdrop) fecharModal(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal(); });
-  // Botão NC: alterna o modo e refaz o draw
+
+  // Botão NC: alterna o modo, re-renderiza dropdown e redesenha
   const btnNc = document.getElementById('btn-nc');
   if (btnNc) {
     btnNc.addEventListener('click', ()=>{
       ncMode = !ncMode;
       btnNc.classList.toggle('is-active', ncMode);
-      // re-render aproveitando cache e FVS atual
+
+      // 1) re-renderiza o dropdown conforme filtro NC
+      renderFvsDropdown(/*preserveValue=*/true);
+
+      // 2) redesenha o grid (se houver FVS selecionada)
       carregarDuracoesEFazerDraw(currentFvs);
     });
   }
@@ -398,21 +449,44 @@ async function carregarFvs(){
   const dropdown = document.getElementById('dropdown');
   dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
   try{
+    // 1) carregar lista bruta de FVS
     const res = await fetch(FVS_LIST_URL, { cache: 'no-store' });
     if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-    const fvsList = await res.json();
-    dropdown.innerHTML = '<option value="">-- Selecione uma FVS --</option>';
-    for(const fvs of fvsList){
-      const opt = document.createElement('option');
-      opt.value = fvs; opt.textContent = fvs;
-      dropdown.appendChild(opt);
+    // fvs-list.json esperado como array de strings
+    allFvsList = await res.json();
+
+    // 2) garantir apartamentos no cache, para calcular NC por FVS
+    if(!cache.apartamentos){
+      const ra = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
+      if(!ra.ok) throw new Error(`HTTP status ${ra.status}`);
+      cache.apartamentos = await ra.json();
     }
+
+    // 3) construir metadados de NC por FVS
+    // zera meta
+    for (const k of Object.keys(fvsMetaById)) delete fvsMetaById[k];
+
+    // inicializa meta com 0
+    allFvsList.forEach(id => { fvsMetaById[id] = { ncCount: 0 }; });
+
+    // conta NC por FVS usando apartamentos.json (campo qtd_nao_conformidades_ultima_inspecao)
+    for (const it of cache.apartamentos) {
+      const fvsId = it.fvs;
+      const nc = Number(it.qtd_nao_conformidades_ultima_inspecao || 0);
+      if (fvsId && fvsMetaById[fvsId]) {
+        if (nc > 0) fvsMetaById[fvsId].ncCount += nc;
+      }
+    }
+
+    // 4) renderizar dropdown conforme estado atual (NC on/off)
+    renderFvsDropdown(/*preserveValue=*/false);
   }catch(e){
+    console.error(e);
     dropdown.innerHTML = '<option value="">Erro ao carregar FVS</option>';
   }
 }
 
-async function carregarDuracoesEFazerDraw(fvsSelecionada, modoNcAtivo = false){
+async function carregarDuracoesEFazerDraw(fvsSelecionada){
   showLoading();
   try{
     const raw = await loadCSV(ESTRUTURA_CSV);
@@ -463,4 +537,3 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada, modoNcAtivo = false){
     hideLoading();
   }
 }
-
