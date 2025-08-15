@@ -152,8 +152,10 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   const svg = document.getElementById('svg');
   svg.innerHTML = '';
 
-  const maxCols = groups.length ? Math.max(...groups.map(g => Math.max(...g.cells.map(c => c[1])))) + 1
-                                : (colWidths?.length || 0);
+  const maxCols = groups.length
+    ? Math.max(...groups.map(g => Math.max(...g.cells.map(c => c[1])))) + 1
+    : (colWidths?.length || 0);
+
   const colW = Array.from({length: maxCols}, (_,i) => formatFloat(colWidths[i], DEFAULT_CELL_WIDTH));
 
   const cumX = [0];
@@ -170,7 +172,10 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     return;
   }
 
+  const svgNS = "http://www.w3.org/2000/svg";
+
   groups.forEach(group=>{
+    if (!group?.value) return;
     if (group.value.toLowerCase() === 'vazio') return;
 
     let minRow=Infinity, minCol=Infinity, maxRow=-1, maxCol=-1;
@@ -202,7 +207,7 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
         if (nc === 0) textoCentro = '';
       } else {
         if (!terminouInicial) {
-          fillColor = '#1f6feb'; // azul
+          fillColor = '#1f6feb'; // azul (em andamento)
         } else {
           const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
           fillColor = ultimaOK ? '#238636' : '#d29922'; // verde : amarelo
@@ -210,29 +215,41 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       }
     }
 
-    const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    // === NOVO: agrupa tudo num <g> com um único listener de clique ===
+    const g = document.createElementNS(svgNS, "g");
+    g.dataset.apto = group.value;
+
+    const podeClicar = !!data && (!ncMode || Number(data.qtd_nc_ultima_inspecao || 0) > 0);
+    if (podeClicar) {
+      g.style.cursor = 'pointer';
+      g.setAttribute('title', `Abrir detalhes: ${group.value}`);
+      g.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada, fillColor));
+    } else {
+      g.classList.add('disabled');
+    }
+
+    // retângulo
+    const rect = document.createElementNS(svgNS,"rect");
     rect.setAttribute("x",x); rect.setAttribute("y",y);
     rect.setAttribute("width",width); rect.setAttribute("height",height);
     rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
+    g.appendChild(rect);
 
-    const podeClicar = !!data && (!ncMode || Number(data.qtd_nc_ultima_inspecao || 0) > 0);
-    if (!podeClicar) rect.classList.add('disabled');
-    svg.appendChild(rect);
-
-    const aptText = document.createElementNS("http://www.w3.org/2000/svg","text");
+    // textos (não capturam clique)
+    const aptText = document.createElementNS(svgNS,"text");
     aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
     aptText.setAttribute("class","apt-text"); aptText.textContent = group.value;
-    svg.appendChild(aptText);
+    aptText.setAttribute("pointer-events","none"); // 👈 evita bloquear o clique
+    g.appendChild(aptText);
 
-    const duracaoText = document.createElementNS("http://www.w3.org/2000/svg","text");
+    const duracaoText = document.createElementNS(svgNS,"text");
     duracaoText.setAttribute("x",x + width/2);
     duracaoText.setAttribute("y",y + height/2);
     duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
-    svg.appendChild(duracaoText);
+    duracaoText.setAttribute("pointer-events","none"); // 👈 idem
+    g.appendChild(duracaoText);
 
-    if (podeClicar) {
-      rect.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada, fillColor));
-    }
+    svg.appendChild(g);
   });
 
   svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
