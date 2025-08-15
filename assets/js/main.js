@@ -1,10 +1,10 @@
 'use strict';
 
 /* ===== Config ===== */
-const DATA_BASE = 'https://dogeconstrutora.github.io/doge/data';
+const DATA_BASE = './data';
 const FVS_LIST_URL = `${DATA_BASE}/fvs-list.json`;
 const APARTAMENTOS_URL = `${DATA_BASE}/apartamentos.json`;
-const ESTRUTURA_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYGuSxR-9vY5Uj7tIDEZXtyCaTLPuyklhHrBQEv0o1YdhLb_XYKazJnZDFpBfgmoHgqYq_Lbe1QWju/pub?output=csv';
+const ESTRUTURA_URL = `${DATA_BASE}/estrutura.json`;
 
 const DEFAULT_CELL_WIDTH = 50;
 const DEFAULT_CELL_HEIGHT = 30;
@@ -16,15 +16,15 @@ const modalContent = document.getElementById('modal-content');
 const modalCloseBtn = document.querySelector('#modal button.close-btn');
 
 /* ===== Estado ===== */
-const cache = { estruturaCsv:null, apartamentos:null };
+const cache = { estruturaJson:null, apartamentos:null };
 let currentFvs = '';
 let currentFvsItems = [];
 let currentByApt = Object.create(null);
 let ncMode = false; // modo destaque de Não Conformidades
 
-// NOVO: listas/metadados de FVS para filtrar quando NC estiver ativo
-let allFvsList = [];                 // array de strings (IDs/nome da FVS)
-const fvsMetaById = Object.create(null); // { [fvsId]: { ncCount:number } }
+// Metadados de FVS para filtro NC
+let allFvsList = [];
+const fvsMetaById = Object.create(null);
 
 /* ===== Utils ===== */
 const showLoading = ()=> loadingDiv.classList.add('show');
@@ -46,22 +46,6 @@ function resizeSvgArea(){
   container.style.height = (available - padY) + 'px';
 }
 window.addEventListener('resize', resizeSvgArea);
-
-async function loadCSV(url){
-  if(cache.estruturaCsv) return cache.estruturaCsv;
-  const res = await fetch(url);
-  if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-  const text = await res.text();
-  const lines = text.trim().split('\n');
-  const data = lines.map(line => line.split(',').map(cell => cell.trim()));
-  cache.estruturaCsv = data;
-  return data;
-}
-
-function expandRow(row){
-  let lastValue = "";
-  return row.map(cell => { if(cell) lastValue = cell; return lastValue; });
-}
 
 function groupCells(grid){
   const visited = Array.from({ length:grid.length }, () => Array(grid[0].length).fill(false));
@@ -149,32 +133,18 @@ function animateProgressBars(root=document){
   requestAnimationFrame(()=> bars.forEach(b => { b.style.width = b.dataset.w; }));
 }
 
-/* Modal tint */
-function hexToRgb(hex){
-  const h = hex.replace('#','').trim();
-  if (h.length === 3) {
-    const r = parseInt(h[0]+h[0],16), g = parseInt(h[1]+h[1],16), b = parseInt(h[2]+h[2],16);
-    return [r,g,b];
-  }
-  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
-  return [r,g,b];
-}
-const rgbaStr = ([r,g,b], a)=> `rgba(${r}, ${g}, ${b}, ${a})`;
-function applyModalTint(fillHex){
-  try{
-    const modal = document.getElementById('modal');
-    const [r,g,b] = hexToRgb(fillHex || '#58a6ff');
-    modal.style.setProperty('--modal-tint-strong', rgbaStr([r,g,b], 0.20));
-    modal.style.setProperty('--modal-tint-soft',   rgbaStr([r,g,b], 0.10));
-    modal.style.setProperty('--modal-border',      rgbaStr([r,g,b], 0.28));
-  }catch(e){ console.warn('Tint modal error:', e); }
-}
-
 /* ====== SVG helpers ====== */
 function clearSvg(){
   const svg = document.getElementById('svg');
   svg.innerHTML = '';
   svg.setAttribute('viewBox', `0 0 0 0`);
+}
+
+/* ===== Carregadores ===== */
+async function loadJSON(url){
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status} em ${url}`);
+  return res.json();
 }
 
 /* Desenho */
@@ -228,15 +198,9 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       const terminouInicial = !!data.data_termino_inicial;
 
       if (ncMode) {
-        // MODO NC: vermelho vivo se há NC atual; caso contrário, cinza
         fillColor = (nc > 0) ? '#f85149' : gray;
-
-        // esconder duração se não houver NC no modo NC
-        if (nc === 0) {
-          textoCentro = '';
-        }
+        if (nc === 0) textoCentro = '';
       } else {
-        // MODO NORMAL (lógica estrita sem fallback)
         if (!terminouInicial) {
           fillColor = '#1f6feb'; // azul
         } else {
@@ -251,9 +215,6 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     rect.setAttribute("width",width); rect.setAttribute("height",height);
     rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
 
-    // Clicável apenas se houver dados e:
-    // - modo normal: sempre clicável
-    // - modo NC: só se tiver NC atual
     const podeClicar = !!data && (!ncMode || Number(data.qtd_nc_ultima_inspecao || 0) > 0);
     if (!podeClicar) rect.classList.add('disabled');
     svg.appendChild(rect);
@@ -298,7 +259,6 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       pendUlt = aux.qtd_pend_ultima_inspecao;
     }
 
-    // NC da última inspeção (campo de topo; fallback: última reabertura)
     let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
     if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
       const lastReab = info.reaberturas[info.reaberturas.length - 1];
@@ -319,53 +279,43 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
     }
 
-    // --- Barrinha de progresso (azul: andamento; amarelo: reaberta/pendente) ---
     let progressMarkup = '';
     const pct = Number(info.percentual_ultima_inspecao);
     if (!Number.isNaN(pct)) {
       if (!info.data_termino_inicial) {
-        // andamento
         progressMarkup = linearProgress(pct, 'var(--blue)');
-      } else if (
-        Number(pendUlt || 0) > 0 ||      // pendências após término
-        Number(ncUlt  || 0) > 0 ||       // NCs após término
-        pct < 100                        // ou percentual ainda < 100
-      ) {
-        // reaberta/pendente
+      } else if ((Number(pendUlt||0)>0) || (Number(ncUlt||0)>0) || pct<100) {
         progressMarkup = linearProgress(pct, 'var(--yellow)');
       }
     }
     html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${info.duracao_inicial}</span>${progressMarkup}</p>`;
 
-    // Mostrar NC mesmo em andamento (se houver > 0)
     if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0) {
       html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
     }
 
     if(info.reaberturas?.length){
-  // ordena por Código (numérico), mais recente primeiro
-  const reabs = [...info.reaberturas].sort((a, b) => {
-    const na = Number(a.codigo), nb = Number(b.codigo);
-    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb; // ASC
-    if (Number.isFinite(na)) return -1;
-    if (Number.isFinite(nb)) return 1;
-    // fallback lexicográfico com comparação numérica natural
-    return String(b.codigo ?? '').localeCompare(String(a.codigo ?? ''), 'pt-BR', { numeric: true });
-  });
+      const reabs = [...info.reaberturas].sort((a, b) => {
+        const na = Number(a.codigo), nb = Number(b.codigo);
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+        if (Number.isFinite(na)) return -1;
+        if (Number.isFinite(nb)) return 1;
+        return String(b.codigo ?? '').localeCompare(String(a.codigo ?? ''), 'pt-BR', { numeric: true });
+      });
 
-  html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
-  reabs.forEach(r => {
-    html += `<tr>
-      <td>${r.codigo ?? '-'}</td>
-      <td>${formatDateBR(r.data_abertura)}</td>
-      <td>${r.qtd_itens_pendentes}</td>
-      <td>${r.qtd_nao_conformidades ?? '-'}</td>
-    </tr>`;
-  });
-  html += `</table>`;
-  html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
-}
-    
+      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
+      reabs.forEach(r => {
+        html += `<tr>
+          <td>${r.codigo ?? '-'}</td>
+          <td>${formatDateBR(r.data_abertura)}</td>
+          <td>${r.qtd_itens_pendentes}</td>
+          <td>${r.qtd_nao_conformidades ?? '-'}</td>
+        </tr>`;
+      });
+      html += `</table>`;
+      html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
+    }
+
     if(inmetaUrl){
       html += `
       <p>
@@ -373,9 +323,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
           <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</span>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 3h6v6"/>
-            <path d="M10 14L21 3"/>
-            <path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
+            <path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
           </svg>
         </a>
       </p>`;
@@ -422,11 +370,9 @@ function renderFvsDropdown(preserveValue=true){
     }));
   dropdown.innerHTML = opts.join('');
 
-  // restabelece seleção se ainda existir
   if (prev && list.includes(prev)) {
     dropdown.value = prev;
   } else if (ncMode && prev && !list.includes(prev)) {
-    // se ativou NC e a FVS anterior não tem NC, limpar seleção e SVG
     dropdown.value = '';
     currentFvs = '';
     clearSvg();
@@ -446,84 +392,69 @@ document.addEventListener('DOMContentLoaded', ()=>{
   modalBackdrop.addEventListener('click', e=>{ if(e.target === modalBackdrop) fecharModal(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && getComputedStyle(modalBackdrop).display==='flex') fecharModal(); });
 
-  // Botão NC: alterna o modo, re-renderiza dropdown e redesenha
   const btnNc = document.getElementById('btn-nc');
   if (btnNc) {
     btnNc.addEventListener('click', ()=>{
       ncMode = !ncMode;
       btnNc.classList.toggle('is-active', ncMode);
-
-      // 1) re-renderiza o dropdown conforme filtro NC
-      renderFvsDropdown(/*preserveValue=*/true);
-
-      // 2) redesenha o grid (se houver FVS selecionada)
+      renderFvsDropdown(true);
       carregarDuracoesEFazerDraw(currentFvs);
     });
   }
 });
 
-/* Dados + draw */async function carregarFvs(){
+/* Dados + draw */
+async function carregarFvs(){
   const dropdown = document.getElementById('dropdown');
   dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
   try{
-    // 1) lista bruta de FVS (filtrada por ALVO no backend)
+    // 1) lista bruta de FVS
     const res = await fetch(FVS_LIST_URL, { cache: 'no-store' });
-    if(!res.ok) throw new Error(`HTTP status ${res.status}`);
-    allFvsList = await res.json(); // array de strings (IDs de FVS)
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    allFvsList = await res.json();
 
     // 2) garantir apartamentos no cache
     if(!cache.apartamentos){
       const ra = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
-      if(!ra.ok) throw new Error(`HTTP status ${ra.status}`);
+      if(!ra.ok) throw new Error(`HTTP ${ra.status}`);
       cache.apartamentos = await ra.json();
     }
 
-    // 3) detectar modo por FVS ('apt' prioriza sobre 'pav')
+    // 3) detectar modo por FVS
     const modeByFvs = Object.create(null); // { fvsId: 'apt' | 'pav' }
     for (const it of cache.apartamentos) {
       const f = it.fvs;
       if (!f) continue;
       const isPav = !!it.pavimento_origem;
       if (!modeByFvs[f]) modeByFvs[f] = isPav ? 'pav' : 'apt';
-      if (!isPav) modeByFvs[f] = 'apt'; // prioridade para apartamento
+      if (!isPav) modeByFvs[f] = 'apt';
     }
 
-    // 4) somar NCs por unidade deduplicada:
-    //    - se 'apt': chave = apartamento
-    //    - se 'pav': chave = pavimento_origem
-    //    Duplicatas de mesma unidade não acumulam; usamos o MAIOR valor visto por segurança.
+    // 4) somar NCs por unidade deduplicada
     const unitNcMapByFvs = Object.create(null); // { fvsId: Map(unitKey -> nc) }
-
     for (const it of cache.apartamentos) {
       const f = it.fvs;
       if (!f) continue;
       const mode = modeByFvs[f] || 'apt';
-
-      // se modo é 'apt', ignorar linhas replicadas por pavimento (com pavimento_origem)
       if (mode === 'apt' && it.pavimento_origem) continue;
-
       const key = (mode === 'apt') ? it.apartamento : it.pavimento_origem;
       if (!key) continue;
-
       const ncItems = Number(it.qtd_nao_conformidades_ultima_inspecao || 0);
       if (!unitNcMapByFvs[f]) unitNcMapByFvs[f] = new Map();
-
       const prev = unitNcMapByFvs[f].get(key) || 0;
-      // usamos o maior para evitar super/duplicar caso haja múltiplas linhas da mesma unidade
       unitNcMapByFvs[f].set(key, Math.max(prev, ncItems));
     }
 
-    // 5) preencher metadados (ncCount = soma dos valores por unidade)
+    // 5) preencher metadados (ncCount)
     for (const k of Object.keys(fvsMetaById)) delete fvsMetaById[k];
     allFvsList.forEach(id => {
-      const mode = modeByFvs[id] || 'apt';
       const map = unitNcMapByFvs[id];
       const sum = map ? Array.from(map.values()).reduce((a,b)=>a+b,0) : 0;
-      fvsMetaById[id] = { ncCount: sum, mode };
+      fvsMetaById[id] = { ncCount: sum };
     });
 
-    // 6) render dropdown conforme estado atual (NC on/off)
-    renderFvsDropdown(/*preserveValue=*/false);
+    // 6) render dropdown
+    renderFvsDropdown(false);
   }catch(e){
     console.error(e);
     dropdown.innerHTML = '<option value="">Erro ao carregar FVS</option>';
@@ -533,21 +464,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
 async function carregarDuracoesEFazerDraw(fvsSelecionada){
   showLoading();
   try{
-    const raw = await loadCSV(ESTRUTURA_CSV);
-
-    const header = raw[0] || [];
-    const GRID_START_COL = 2; // C
-    const colWidthsRaw = header.slice(GRID_START_COL).map(v => formatFloat(v, DEFAULT_CELL_WIDTH));
-
-    const body = raw.slice(1);
-    const rowHeights = body.map(r => formatFloat(r[1], DEFAULT_CELL_HEIGHT));
-
-    const grid = body
-      .map(r => expandRow(r.slice(GRID_START_COL)))
-      .map(row => row.map(normalizeCellLabel));
+    // 1) carrega estrutura do próprio site
+    if (!cache.estruturaJson) cache.estruturaJson = await loadJSON(ESTRUTURA_URL);
+    const { colWidths, rowHeights, grid } = cache.estruturaJson;
 
     const groups = groupCells(grid);
 
+    // 2) filtra dados por FVS e monta duracoesMap
     currentFvs = fvsSelecionada || '';
     currentFvsItems = [];
     currentByApt = Object.create(null);
@@ -556,7 +479,7 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
     if(currentFvs){
       if(!cache.apartamentos){
         const res = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
-        if(!res.ok) throw new Error(`HTTP status ${res.status}`);
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
         cache.apartamentos = await res.json();
       }
       currentFvsItems = cache.apartamentos.filter(it => it.fvs === currentFvs);
@@ -567,14 +490,14 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
           duracao_real: item.duracao_real,
           data_termino_inicial: item.data_termino_inicial,
           qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
-          qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,     // <- NC para cores
-          percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null, // <- % para cores
+          qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,
+          percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null,
           pavimento_origem: item.pavimento_origem || null
         };
       }
     }
 
-    draw(groups, duracoesMap, currentFvs, colWidthsRaw, rowHeights);
+    draw(groups, duracoesMap, currentFvs, colWidths, rowHeights);
   }catch(e){
     document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
   }finally{
