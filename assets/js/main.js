@@ -19,7 +19,7 @@ const modalCloseBtn = document.querySelector('#modal button.close-btn');
 const cache = { estruturaJson:null, apartamentos:null };
 let currentFvs = '';
 let currentFvsItems = [];
-let currentByApt = Object.create(null);
+let currentByApt = Object.create(null);   // <- indexado por aptKey(...)
 let ncMode = false; // modo destaque de Não Conformidades
 
 // Metadados de FVS para filtro NC
@@ -116,6 +116,19 @@ function getUltimaInspecaoInfo(reaberturas){
   return { codigo_ultima_inspecao: last.codigo ?? null, qtd_pend_ultima_inspecao: Number(last.qtd_itens_pendentes) || 0 };
 }
 
+/* Normaliza o texto do apartamento para usar como chave: "Apartamento 101-A" -> "101A" */
+function aptKey(s){
+  if (s == null) return '';
+  let t = String(s).trim().toUpperCase();
+  // remove acentos
+  t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  // remove prefixos comuns
+  t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, '');
+  // remove separadores comuns (espaço, hífen, underline, ponto, barra)
+  t = t.replace(/[\s\-\._\/]/g, '');
+  return t;
+}
+
 /* Progress bar (sem ARIA) */
 function linearProgress(pct, overrideColor){
   const p = Math.max(0, Math.min(100, Number(pct) || 0));
@@ -133,6 +146,27 @@ function animateProgressBars(root=document){
   requestAnimationFrame(()=> bars.forEach(b => { b.style.width = b.dataset.w; }));
 }
 
+/* Modal tint */
+function hexToRgb(hex){
+  const h = hex.replace('#','').trim();
+  if (h.length === 3) {
+    const r = parseInt(h[0]+h[0],16), g = parseInt(h[1]+h[1],16), b = parseInt(h[2]+h[2],16);
+    return [r,g,b];
+  }
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  return [r,g,b];
+}
+const rgbaStr = ([r,g,b], a)=> `rgba(${r}, ${g}, ${b}, ${a})`;
+function applyModalTint(fillHex){
+  try{
+    const modal = document.getElementById('modal');
+    const [r,g,b] = hexToRgb(fillHex || '#58a6ff');
+    modal.style.setProperty('--modal-tint-strong', rgbaStr([r,g,b], 0.20));
+    modal.style.setProperty('--modal-tint-soft',   rgbaStr([r,g,b], 0.10));
+    modal.style.setProperty('--modal-border',      rgbaStr([r,g,b], 0.28));
+  }catch(e){ console.warn('Tint modal error:', e); }
+}
+
 /* ====== SVG helpers ====== */
 function clearSvg(){
   const svg = document.getElementById('svg');
@@ -147,7 +181,7 @@ async function loadJSON(url){
   return res.json();
 }
 
-/* Desenho */
+/* ===== Desenho ===== */
 function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   const svg = document.getElementById('svg');
   svg.innerHTML = '';
@@ -189,7 +223,10 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     const width  = cumX[maxCol+1] - cumX[minCol];
     const height = cumY[maxRow+1] - cumY[minRow];
 
-    const data = duracoesMap[group.value];
+    // Usa chave normalizada para mapear dados
+    const key = aptKey(group.value);
+    const data = duracoesMap[key];
+
     const gray = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
     let fillColor = gray;
     let textoCentro = '';
@@ -215,11 +252,12 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       }
     }
 
-    // === NOVO: agrupa tudo num <g> com um único listener de clique ===
+    // Agrupa tudo num <g> com um único listener de clique
     const g = document.createElementNS(svgNS, "g");
     g.dataset.apto = group.value;
 
-    const podeClicar = !!data && (!ncMode || Number(data.qtd_nc_ultima_inspecao || 0) > 0);
+    // Agora: sempre clicável SE houver dados mapeados
+    const podeClicar = !!data;
     if (podeClicar) {
       g.style.cursor = 'pointer';
       g.setAttribute('title', `Abrir detalhes: ${group.value}`);
@@ -239,14 +277,14 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     const aptText = document.createElementNS(svgNS,"text");
     aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
     aptText.setAttribute("class","apt-text"); aptText.textContent = group.value;
-    aptText.setAttribute("pointer-events","none"); // 👈 evita bloquear o clique
+    aptText.setAttribute("pointer-events","none");
     g.appendChild(aptText);
 
     const duracaoText = document.createElementNS(svgNS,"text");
     duracaoText.setAttribute("x",x + width/2);
     duracaoText.setAttribute("y",y + height/2);
     duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
-    duracaoText.setAttribute("pointer-events","none"); // 👈 idem
+    duracaoText.setAttribute("pointer-events","none");
     g.appendChild(duracaoText);
 
     svg.appendChild(g);
@@ -255,6 +293,7 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
 }
 
+/* ===== Modal ===== */
 async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
   applyModalTint(fillColor);
 
@@ -262,7 +301,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
   modalBackdrop.style.display = 'flex';
   lockScroll(true);
   try{
-    const info = currentByApt[apartamento];
+    const info = currentByApt[aptKey(apartamento)]; // <- usa chave normalizada
     if(!info){
       modalContent.innerHTML = `<p>Sem dados para o apartamento ${apartamento}.</p>`;
       return;
@@ -276,6 +315,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       pendUlt = aux.qtd_pend_ultima_inspecao;
     }
 
+    // NC da última inspeção (campo de topo; fallback: última reabertura)
     let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
     if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
       const lastReab = info.reaberturas[info.reaberturas.length - 1];
@@ -312,12 +352,21 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
     }
 
     if(info.reaberturas?.length){
+      const toTime = (d) => {
+        const [yy, mm, dd] = (d || '').split('-').map(x => parseInt(x, 10));
+        const t = new Date(yy, (mm||1)-1, dd||1).getTime();
+        return Number.isFinite(t) ? t : 0;
+      };
       const reabs = [...info.reaberturas].sort((a, b) => {
-        const na = Number(a.codigo), nb = Number(b.codigo);
-        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
-        if (Number.isFinite(na)) return -1;
-        if (Number.isFinite(nb)) return 1;
-        return String(b.codigo ?? '').localeCompare(String(a.codigo ?? ''), 'pt-BR', { numeric: true });
+        const ta = toTime(a.data_abertura), tb = toTime(b.data_abertura);
+        if (ta !== tb) return ta - tb;            // por data (ASC)
+        const pa = Number(a.qtd_itens_pendentes) || 0;
+        const pb = Number(b.qtd_itens_pendentes) || 0;
+        if (pa !== pb) return pa - pb;
+        const na = Number(a.qtd_nao_conformidades) || 0;
+        const nb = Number(b.qtd_nao_conformidades) || 0;
+        if (na !== nb) return na - nb;
+        return String(a.codigo ?? '').localeCompare(String(b.codigo ?? ''), 'pt-BR', { numeric: true });
       });
 
       html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
@@ -396,7 +445,7 @@ function renderFvsDropdown(preserveValue=true){
   }
 }
 
-/* Boot */
+/* ===== Boot ===== */
 document.addEventListener('DOMContentLoaded', ()=>{
   resizeSvgArea();
   carregarFvs();
@@ -420,7 +469,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 });
 
-/* Dados + draw */
+/* ===== Dados + draw ===== */
 async function carregarFvs(){
   const dropdown = document.getElementById('dropdown');
   dropdown.innerHTML = '<option value="">Carregando FVS...</option>';
@@ -454,7 +503,7 @@ async function carregarFvs(){
       if (!f) continue;
       const mode = modeByFvs[f] || 'apt';
       if (mode === 'apt' && it.pavimento_origem) continue;
-      const key = (mode === 'apt') ? it.apartamento : it.pavimento_origem;
+      const key = (mode === 'apt') ? aptKey(it.apartamento) : it.pavimento_origem;
       if (!key) continue;
       const ncItems = Number(it.qtd_nao_conformidades_ultima_inspecao || 0);
       if (!unitNcMapByFvs[f]) unitNcMapByFvs[f] = new Map();
@@ -487,7 +536,7 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
 
     const groups = groupCells(grid);
 
-    // 2) filtra dados por FVS e monta duracoesMap
+    // 2) filtra dados por FVS e monta duracoesMap (indexado por aptKey)
     currentFvs = fvsSelecionada || '';
     currentFvsItems = [];
     currentByApt = Object.create(null);
@@ -502,8 +551,9 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
       currentFvsItems = cache.apartamentos.filter(it => it.fvs === currentFvs);
 
       for(const item of currentFvsItems){
-        currentByApt[item.apartamento] = item;
-        duracoesMap[item.apartamento] = {
+        const k = aptKey(item.apartamento);
+        currentByApt[k] = item;
+        duracoesMap[k] = {
           duracao_real: item.duracao_real,
           data_termino_inicial: item.data_termino_inicial,
           qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
