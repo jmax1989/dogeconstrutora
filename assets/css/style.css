@@ -144,3 +144,11 @@ rect.cell:hover + .apt-text + .duracao-text{ opacity:0 }
   .line-progress .q-linear-progress{ min-width:110px; max-width:130px; }
   .q-linear-progress--sm .q-linear-progress__track{ height:4px; }
 }
+
+
+/* assets/css/style.css */
+
+/* Garante que os textos não bloqueiem o clique no retângulo */
+.apt-text, .duracao-text {
+  pointer-events: none;
+}
