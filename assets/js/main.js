@@ -20,11 +20,15 @@ const cache = { estruturaJson:null, apartamentos:null };
 let currentFvs = '';
 let currentFvsItems = [];
 let currentByApt = Object.create(null);   // <- indexado por aptKey(...)
+let currentByPav = Object.create(null);   // <- NOVO: indexado por pavimento_origem
 let ncMode = false; // modo destaque de Não Conformidades
 
 // Metadados de FVS para filtro NC
 let allFvsList = [];
 const fvsMetaById = Object.create(null);
+
+// NOVO: modo da FVS ('apt' | 'pav')
+let modeByFvs = Object.create(null);
 
 /* ===== Utils ===== */
 const showLoading = ()=> loadingDiv.classList.add('show');
@@ -181,10 +185,42 @@ async function loadJSON(url){
   return res.json();
 }
 
+/* ===== (NOVO) Agrupamento por pavimento ===== */
+/** Cria um único grupo por linha (andar), cobrindo do primeiro ao último bloco ocupado. */
+function buildFloorGroupsFromGrid(grid){
+  const groups = [];
+  for(let r=0; r<grid.length; r++){
+    let first = null, last = null;
+    for(let c=0; c<grid[r].length; c++){
+      const v = grid[r][c];
+      if(v && v.toLowerCase()!=='vazio'){
+        if(first===null) first = c;
+        last = c;
+      }
+    }
+    if(first!==null){
+      const cells = [];
+      for(let c=first; c<=last; c++) cells.push([r,c]);
+      groups.push({ value:`Pavimento ${r}`, floorIndex:r, cells });
+    }
+  }
+  return groups;
+}
+
 /* ===== Desenho ===== */
-function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
+function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   const svg = document.getElementById('svg');
   svg.innerHTML = '';
+
+  // Determina se a FVS atual é por pavimento
+  const isPav = !!(currentFvs && modeByFvs[currentFvs] === 'pav');
+
+  // Se for pavimento, gera grupos por linha (andar); senão, usa agrupamento normal por apartamento
+  const groups = isPav ? (()=>{
+    // Precisamos da grid para calcular os grupos por pavimento
+    const grid = cache.estruturaJson?.grid || [];
+    return buildFloorGroupsFromGrid(grid);
+  })() : groupsApt;
 
   const maxCols = groups.length
     ? Math.max(...groups.map(g => Math.max(...g.cells.map(c => c[1])))) + 1
@@ -209,8 +245,7 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   const svgNS = "http://www.w3.org/2000/svg";
 
   groups.forEach(group=>{
-    if (!group?.value) return;
-    if (group.value.toLowerCase() === 'vazio') return;
+    if (!group?.cells?.length) return;
 
     let minRow=Infinity, minCol=Infinity, maxRow=-1, maxCol=-1;
     for (const [r,c] of group.cells){
@@ -223,77 +258,154 @@ function draw(groups, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     const width  = cumX[maxCol+1] - cumX[minCol];
     const height = cumY[maxRow+1] - cumY[minRow];
 
-    // Usa chave normalizada para mapear dados
-    const key = aptKey(group.value);
-    const data = duracoesMap[key];
-
-    const gray = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
-    let fillColor = gray;
+    let fillColor = getComputedStyle(document.documentElement).getPropertyValue('--gray') || '#6e7681';
     let textoCentro = '';
+    let podeClicar = false;
 
-    if (data) {
-      textoCentro = `${data.duracao_real ?? ''}`;
+    if (!isPav) {
+      // ===== MODO APARTAMENTO (como antes) =====
+      const key = aptKey(group.value);
+      const data = duracoesMap[key];
 
-      const pend = Number(data.qtd_pend_ultima_inspecao || 0);
-      const nc   = Number(data.qtd_nc_ultima_inspecao || 0);
-      const pct  = Number(data.percentual_ultima_inspecao);
-      const terminouInicial = !!data.data_termino_inicial;
+      if (data) {
+        textoCentro = `${data.duracao_real ?? ''}`;
 
-      if (ncMode) {
-        fillColor = (nc > 0) ? '#f85149' : gray;
-        if (nc === 0) textoCentro = '';
-      } else {
-        if (!terminouInicial) {
-          fillColor = '#1f6feb'; // azul (em andamento)
+        const pend = Number(data.qtd_pend_ultima_inspecao || 0);
+        const nc   = Number(data.qtd_nc_ultima_inspecao || 0);
+        const pct  = Number(data.percentual_ultima_inspecao);
+        const terminouInicial = !!data.data_termino_inicial;
+
+        if (ncMode) {
+          fillColor = (nc > 0) ? '#f85149' : fillColor;
+          if (nc === 0) textoCentro = '';
         } else {
-          const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
-          fillColor = ultimaOK ? '#238636' : '#d29922'; // verde : amarelo
+          if (!terminouInicial) {
+            fillColor = '#1f6feb'; // azul (em andamento)
+          } else {
+            const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+            fillColor = ultimaOK ? '#238636' : '#d29922'; // verde : amarelo
+          }
+        }
+        podeClicar = true;
+      }
+
+      // Elemento:
+      const g = document.createElementNS(svgNS, "g");
+      g.dataset.apto = group.value;
+      if (podeClicar) {
+        g.style.cursor = 'pointer';
+        g.setAttribute('title', `Abrir detalhes: ${group.value}`);
+        g.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada, fillColor));
+      } else {
+        g.classList.add('disabled');
+      }
+
+      const rect = document.createElementNS(svgNS,"rect");
+      rect.setAttribute("x",x); rect.setAttribute("y",y);
+      rect.setAttribute("width",width); rect.setAttribute("height",height);
+      rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
+      g.appendChild(rect);
+
+      const aptText = document.createElementNS(svgNS,"text");
+      aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
+      aptText.setAttribute("class","apt-text"); aptText.textContent = group.value;
+      aptText.setAttribute("pointer-events","none");
+      g.appendChild(aptText);
+
+      const duracaoText = document.createElementNS(svgNS,"text");
+      duracaoText.setAttribute("x",x + width/2);
+      duracaoText.setAttribute("y",y + height/2);
+      duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
+      duracaoText.setAttribute("pointer-events","none");
+      g.appendChild(duracaoText);
+
+      svg.appendChild(g);
+    } else {
+      // ===== MODO PAVIMENTO (NOVO) =====
+      // Descobre os apartamentos presentes no retângulo do andar
+      const grid = cache.estruturaJson?.grid || [];
+      const r = group.floorIndex;
+      const aptosDoAndar = new Set();
+      for(let c=minCol; c<=maxCol; c++){
+        const raw = grid[r]?.[c];
+        const lab = normalizeCellLabel(raw);
+        if(lab && lab.toLowerCase()!=='vazio') aptosDoAndar.add(lab);
+      }
+      const aptList = Array.from(aptosDoAndar);
+
+      // Descobrir o pavimento_origem (pega do primeiro apê com dado carregado)
+      let pavId = null;
+      for (const apt of aptList){
+        const info = currentByApt[aptKey(apt)];
+        if (info?.pavimento_origem){
+          pavId = info.pavimento_origem;
+          break;
         }
       }
+      // Dados do pavimento (agregado/representativo)
+      const pavData = pavId ? currentByPav[pavId] : null;
+
+      if (pavData) {
+        textoCentro = `${pavData.duracao_real ?? ''}`;
+
+        const pend = Number(pavData.qtd_pend_ultima_inspecao || 0);
+        const nc   = Number(pavData.qtd_nao_conformidades_ultima_inspecao || pavData.qtd_nc_ultima_inspecao || 0);
+        const pct  = Number(pavData.percentual_ultima_inspecao);
+        const terminouInicial = !!pavData.data_termino_inicial;
+
+        if (ncMode) {
+          fillColor = (nc > 0) ? '#f85149' : fillColor;
+          if (nc === 0) textoCentro = '';
+        } else {
+          if (!terminouInicial) {
+            fillColor = '#1f6feb';
+          } else {
+            const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+            fillColor = ultimaOK ? '#238636' : '#d29922';
+          }
+        }
+        podeClicar = true;
+      }
+
+      const g = document.createElementNS(svgNS, "g");
+      g.dataset.pav = pavId || `floor-${r}`;
+      if (podeClicar) {
+        g.style.cursor = 'pointer';
+        const titulo = pavId ? `Abrir detalhes: ${pavId}` : `Abrir detalhes: Pavimento ${r}`;
+        g.setAttribute('title', titulo);
+        g.addEventListener('click', ()=> abrirModalDetalhesPavimento(pavId || `Pavimento ${r}`, fillColor, aptList));
+      } else {
+        g.classList.add('disabled');
+      }
+
+      const rect = document.createElementNS(svgNS,"rect");
+      rect.setAttribute("x",x); rect.setAttribute("y",y);
+      rect.setAttribute("width",width); rect.setAttribute("height",height);
+      rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
+      g.appendChild(rect);
+
+      const label = pavId || group.value;
+      const aptText = document.createElementNS(svgNS,"text");
+      aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
+      aptText.setAttribute("class","apt-text"); aptText.textContent = label;
+      aptText.setAttribute("pointer-events","none");
+      g.appendChild(aptText);
+
+      const duracaoText = document.createElementNS(svgNS,"text");
+      duracaoText.setAttribute("x",x + width/2);
+      duracaoText.setAttribute("y",y + height/2);
+      duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
+      duracaoText.setAttribute("pointer-events","none");
+      g.appendChild(duracaoText);
+
+      svg.appendChild(g);
     }
-
-    // Agrupa tudo num <g> com um único listener de clique
-    const g = document.createElementNS(svgNS, "g");
-    g.dataset.apto = group.value;
-
-    // Agora: sempre clicável SE houver dados mapeados
-    const podeClicar = !!data;
-    if (podeClicar) {
-      g.style.cursor = 'pointer';
-      g.setAttribute('title', `Abrir detalhes: ${group.value}`);
-      g.addEventListener('click', ()=> abrirModalDetalhes(group.value, fvsSelecionada, fillColor));
-    } else {
-      g.classList.add('disabled');
-    }
-
-    // retângulo
-    const rect = document.createElementNS(svgNS,"rect");
-    rect.setAttribute("x",x); rect.setAttribute("y",y);
-    rect.setAttribute("width",width); rect.setAttribute("height",height);
-    rect.setAttribute("fill",fillColor); rect.setAttribute("class","cell");
-    g.appendChild(rect);
-
-    // textos (não capturam clique)
-    const aptText = document.createElementNS(svgNS,"text");
-    aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
-    aptText.setAttribute("class","apt-text"); aptText.textContent = group.value;
-    aptText.setAttribute("pointer-events","none");
-    g.appendChild(aptText);
-
-    const duracaoText = document.createElementNS(svgNS,"text");
-    duracaoText.setAttribute("x",x + width/2);
-    duracaoText.setAttribute("y",y + height/2);
-    duracaoText.setAttribute("class","duracao-text"); duracaoText.textContent = textoCentro;
-    duracaoText.setAttribute("pointer-events","none");
-    g.appendChild(duracaoText);
-
-    svg.appendChild(g);
   });
 
   svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
 }
 
-/* ===== Modal ===== */
+/* ===== Modal (APTO) ===== */
 async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
   applyModalTint(fillColor);
 
@@ -341,7 +453,133 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
     if (!Number.isNaN(pct)) {
       if (!info.data_termino_inicial) {
         progressMarkup = linearProgress(pct, 'var(--blue)');
-      } else if ((Number(pendUlt||0)>0) || (Number(ncUlt||0)>0) || pct<100) {
+      } else if ((Number((info.qtd_pend_ultima_inspecao||0))>0) || (Number((ncUlt||0))>0) || pct<100) {
+        progressMarkup = linearProgress(pct, 'var(--yellow)');
+      }
+    }
+    html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${info.duracao_inicial}</span>${progressMarkup}</p>`;
+
+    if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0) {
+      html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
+    }
+
+    if(info.reaberturas?.length){
+      const toTime = (d) => {
+        const [yy, mm, dd] = (d || '').split('-').map(x => parseInt(x, 10));
+        const t = new Date(yy, (mm||1)-1, dd||1).getTime();
+        return Number.isFinite(t) ? t : 0;
+      };
+      const reabs = [...info.reaberturas].sort((a, b) => {
+        const ta = toTime(a.data_abertura), tb = toTime(b.data_abertura);
+        if (ta !== tb) return ta - tb;            // por data (ASC)
+        const pa = Number(a.qtd_itens_pendentes) || 0;
+        const pb = Number(b.qtd_itens_pendentes) || 0;
+        if (pa !== pb) return pa - pb;
+        const na = Number(a.qtd_nao_conformidades) || 0;
+        const nb = Number(b.qtd_nao_conformidades) || 0;
+        if (na !== nb) return na - nb;
+        return String(a.codigo ?? '').localeCompare(String(b.codigo ?? ''), 'pt-BR', { numeric: true });
+      });
+
+      html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
+      reabs.forEach(r => {
+        html += `<tr>
+          <td>${r.codigo ?? '-'}</td>
+          <td>${formatDateBR(r.data_abertura)}</td>
+          <td>${r.qtd_itens_pendentes}</td>
+          <td>${r.qtd_nao_conformidades ?? '-'}</td>
+        </tr>`;
+      });
+      html += `</table>`;
+      html += `<p><strong>Duração reinspeções:</strong> ${info.duracao_reaberturas || 0}</p>`;
+    }
+
+    if(inmetaUrl){
+      html += `
+      <p>
+        <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
+          <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${info.qtd_pend_ultima_inspecao ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
+          </svg>
+        </a>
+      </p>`;
+    } else {
+      html += `<p><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${info.qtd_pend_ultima_inspecao ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</p>`;
+    }
+
+    html += `<p><strong>Duração total:</strong> ${info.duracao_real}</p>`;
+    if(info.termino_final){
+      html += `<p><strong>Término final:</strong> ${formatDateBR(info.termino_final)}</p>`;
+    }
+    modalContent.innerHTML = html;
+    animateProgressBars(modalContent);
+  }catch(err){
+    modalContent.innerHTML = `<p>Erro ao carregar dados: ${err.message}</p>`;
+  }
+}
+
+function fecharModal(){
+  modalBackdrop.style.display = 'none';
+  modalContent.innerHTML = '';
+  lockScroll(false);
+}
+
+/* ===== (NOVO) Modal PAVIMENTO ===== */
+function abrirModalDetalhesPavimento(pavId, fillColor, aptosDoAndar){
+  applyModalTint(fillColor);
+
+  modalContent.innerHTML = `<p>Carregando dados do ${pavId}...</p>`;
+  modalBackdrop.style.display = 'flex';
+  lockScroll(true);
+
+  try{
+    const info = currentByPav[pavId] || null;
+
+    let html = `<h3 style="margin:0 0 8px 0;">${pavId}</h3>`;
+    if (Array.isArray(aptosDoAndar) && aptosDoAndar.length){
+      html += `<p><strong>Apartamentos:</strong> ${aptosDoAndar.join(', ')}</p>`;
+    }
+
+    if(!info){
+      html += `<p>Sem dados desta FVS para o pavimento.</p>`;
+      modalContent.innerHTML = html;
+      return;
+    }
+
+    let codUlt = info.codigo_ultima_inspecao;
+    let pendUlt = info.qtd_pend_ultima_inspecao;
+
+    if(codUlt == null){
+      const aux = getUltimaInspecaoInfo(info.reaberturas);
+      codUlt = aux.codigo_ultima_inspecao;
+      pendUlt = aux.qtd_pend_ultima_inspecao;
+    }
+
+    // NC (igual ao apto)
+    let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
+    if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
+      const lastReab = info.reaberturas[info.reaberturas.length - 1];
+      ncUlt = Number(lastReab.qtd_nao_conformidades);
+    }
+
+    const idLink = info.id_ultima_inspecao || info.id;
+    const inmetaUrl = idLink
+      ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
+      : null;
+
+    html += `<p><strong>Início:</strong> ${formatDateBR(info.data_abertura)}</p>`;
+    if(info.data_termino_inicial){
+      html += `<p><strong>Término:</strong> ${formatDateBR(info.data_termino_inicial)}</p>`;
+    }
+
+    let progressMarkup = '';
+    const pct = Number(info.percentual_ultima_inspecao);
+    if (!Number.isNaN(pct)) {
+      if (!info.data_termino_inicial) {
+        progressMarkup = linearProgress(pct, 'var(--blue)');
+      } else if ((Number((info.qtd_pend_ultima_inspecao||0))>0) || (Number((ncUlt||0))>0) || pct<100) {
         progressMarkup = linearProgress(pct, 'var(--yellow)');
       }
     }
@@ -401,17 +639,12 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
     if(info.termino_final){
       html += `<p><strong>Término final:</strong> ${formatDateBR(info.termino_final)}</p>`;
     }
+
     modalContent.innerHTML = html;
     animateProgressBars(modalContent);
   }catch(err){
     modalContent.innerHTML = `<p>Erro ao carregar dados: ${err.message}</p>`;
   }
-}
-
-function fecharModal(){
-  modalBackdrop.style.display = 'none';
-  modalContent.innerHTML = '';
-  lockScroll(false);
 }
 
 /* ===== Dropdown de FVS com filtro por NC ===== */
@@ -486,8 +719,8 @@ async function carregarFvs(){
       cache.apartamentos = await ra.json();
     }
 
-    // 3) detectar modo por FVS
-    const modeByFvs = Object.create(null); // { fvsId: 'apt' | 'pav' }
+    // 3) detectar modo por FVS (NOVO → agora vai para a variável global modeByFvs)
+    modeByFvs = Object.create(null); // reset
     for (const it of cache.apartamentos) {
       const f = it.fvs;
       if (!f) continue;
@@ -496,7 +729,7 @@ async function carregarFvs(){
       if (!isPav) modeByFvs[f] = 'apt';
     }
 
-    // 4) somar NCs por unidade deduplicada
+    // 4) somar NCs por unidade deduplicada (mantém sua lógica)
     const unitNcMapByFvs = Object.create(null); // { fvsId: Map(unitKey -> nc) }
     for (const it of cache.apartamentos) {
       const f = it.fvs;
@@ -534,12 +767,13 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
     if (!cache.estruturaJson) cache.estruturaJson = await loadJSON(ESTRUTURA_URL);
     const { colWidths, rowHeights, grid } = cache.estruturaJson;
 
-    const groups = groupCells(grid);
+    const groups = groupCells(grid); // agrupamento por APARTAMENTO (base)
 
-    // 2) filtra dados por FVS e monta duracoesMap (indexado por aptKey)
+    // 2) filtra dados por FVS e monta os mapas
     currentFvs = fvsSelecionada || '';
     currentFvsItems = [];
     currentByApt = Object.create(null);
+    currentByPav = Object.create(null); // NOVO
 
     let duracoesMap = {};
     if(currentFvs){
@@ -550,6 +784,7 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
       }
       currentFvsItems = cache.apartamentos.filter(it => it.fvs === currentFvs);
 
+      // Mapa por APT (como antes)
       for(const item of currentFvsItems){
         const k = aptKey(item.apartamento);
         currentByApt[k] = item;
@@ -559,11 +794,42 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
           qtd_pend_ultima_inspecao: item.qtd_pend_ultima_inspecao || 0,
           qtd_nc_ultima_inspecao: item.qtd_nao_conformidades_ultima_inspecao || 0,
           percentual_ultima_inspecao: Number(item.percentual_ultima_inspecao) || null,
-          pavimento_origem: item.pavimento_origem || null
+          pavimento_origem: item.pavimento_origem || null,
+          duracao_inicial: item.duracao_inicial,
+          reaberturas: item.reaberturas || [],
+          id_ultima_inspecao: item.id_ultima_inspecao,
+          id: item.id,
+          data_abertura: item.data_abertura,
+          termino_final: item.termino_final
         };
+      }
+
+      // NOVO: Mapa por PAVIMENTO (representante por pavimento_origem)
+      // Como a FVS por pavimento replica a mesma info, qualquer item serve de representante.
+      // Abaixo escolho o com maior "codigo" (quando existir), senão o primeiro.
+      const bucket = Object.create(null); // pavId -> array de itens
+      for (const it of currentFvsItems){
+        const pavId = it.pavimento_origem;
+        if (!pavId) continue;
+        if (!bucket[pavId]) bucket[pavId] = [];
+        bucket[pavId].push(it);
+      }
+      for (const pavId of Object.keys(bucket)){
+        const arr = bucket[pavId];
+        let best = arr[0];
+        let bestCodigo = Number(arr[0]?.codigo_ultima_inspecao);
+        for (let i=1;i<arr.length;i++){
+          const cand = arr[i];
+          const c = Number(cand.codigo_ultima_inspecao);
+          if (Number.isFinite(c) && (!Number.isFinite(bestCodigo) || c > bestCodigo)){
+            best = cand; bestCodigo = c;
+          }
+        }
+        currentByPav[pavId] = best;
       }
     }
 
+    // 3) desenha (draw decide se usa grupos por APTO ou por PAV)
     draw(groups, duracoesMap, currentFvs, colWidths, rowHeights);
   }catch(e){
     document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
