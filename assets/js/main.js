@@ -188,65 +188,86 @@ async function loadJSON(url){
   return res.json();
 }
 
-/* ===== Row labels (nomes dos pavimentos) ===== */
+/* ===== Row labels (NOMES DOS PAVIMENTOS via apartamentos.json) ===== */
 /**
- * Regra: o nome do pavimento vem da primeira coluna (grid[r][0]),
- * a partir da linha 2 (índice 1). Se estiver "vazio", deduz pelo
- * primeiro valor não-vazio da linha (ex.: 3201 -> "32"; TER/GAR/LAZ mantêm).
+ * Para cada linha do grid, procuramos os apartamentos daquela linha,
+ * cruzamos com apartamentos.json e pegamos o melhor rótulo de pavimento.
+ * Preferência de campos (se existirem no JSON):
+ *   pavimento_nome > pavimento_label > pavimento > nome_pavimento > pavimento_origem
+ * Se nada vier com nome, cai para o número de pavimento_origem (string).
  */
-function buildRowLabels(ejson){
+function buildRowLabelsFromApartamentos(ejson, apartamentos){
   const grid = Array.isArray(ejson.grid) ? ejson.grid : [];
   const n = grid.length;
 
-  const norm = (v) => {
-    if (v == null) return '';
-    const s = String(v).trim();
-    if (!s) return '';
-    return s;
+  // Índice por apartamento (normalizado) -> item "melhor"
+  // Criterio "melhor": o que tiver um nome explícito de pavimento.
+  const aptBest = new Map();
+  const hasName = (it) => {
+    const cands = [
+      it.pavimento_nome, it.pavimento_label, it.pavimento, it.nome_pavimento
+    ];
+    return cands.some(v => v != null && String(v).trim() !== '');
   };
-
-  const deduzLabelDaLinha = (row) => {
-    for (let c = 0; c < row.length; c++){
-      const raw = norm(row[c]);
-      if (!raw || raw.toLowerCase() === 'vazio') continue;
-
-      // letras curtas (TER/GAR/LAZ): mantém
-      if (/^[A-Za-zÀ-ÿ]{2,6}$/.test(raw)) return raw;
-
-      const val = raw.replace(/^!+/, '');
-
-      // começa com dígitos (3201, 901, 1101...)
-      const m = val.match(/^(\d{1,4})/);
-      if (m) {
-        const num = parseInt(m[1], 10);
-        if (Number.isFinite(num)) {
-          const pav = Math.floor(num / 100);
-          return String(pav);
-        }
-      }
-      return raw;
+  for (const it of apartamentos || []) {
+    const k = aptKey(it.apartamento);
+    const prev = aptBest.get(k);
+    if (!prev) {
+      aptBest.set(k, it);
+    } else if (!hasName(prev) && hasName(it)) {
+      aptBest.set(k, it);
     }
+  }
+
+  const pavLabelFromItem = (it)=>{
+    const cand = it.pavimento_nome ?? it.pavimento_label ?? it.pavimento ?? it.nome_pavimento;
+    if (cand != null && String(cand).trim() !== '') return String(cand).trim();
+    if (it.pavimento_origem != null) return String(it.pavimento_origem).trim();
     return '';
   };
 
   const labels = new Array(n).fill('');
   for (let r = 0; r < n; r++){
-    if (r === 0) { // linha 1 (índice 0) geralmente cabeçalho
-      labels[r] = '';
+    if (r === 0) { labels[r] = ''; continue; } // linha 1 é cabeçalho
+
+    // 1) pega nome declarado na primeira coluna (se houver e não for "vazio")
+    const firstCol = (grid[r] && grid[r][0]) ? String(grid[r][0]).trim() : '';
+    if (firstCol && firstCol.toLowerCase() !== 'vazio') {
+      labels[r] = firstCol;
       continue;
     }
-    const primeiraCol = norm(grid[r]?.[0]);
-    if (primeiraCol && primeiraCol.toLowerCase() !== 'vazio') {
-      labels[r] = primeiraCol;
-    } else {
-      labels[r] = deduzLabelDaLinha(grid[r]);
+
+    // 2) varre a linha procurando um apê que exista no index
+    let label = '';
+    for (let c = 1; c < (grid[r]?.length || 0); c++){
+      const raw = normalizeCellLabel(grid[r][c]);
+      if (!raw || raw.toLowerCase()==='vazio') continue;
+      const it = aptBest.get(aptKey(raw));
+      if (it) {
+        label = pavLabelFromItem(it);
+        if (label) break;
+      }
     }
+
+    // 3) fallback: se não achou nada, deduz do primeiro não-vazio (3201 -> "32"; TER/GAR/LAZ ficam)
+    if (!label) {
+      for (let c = 1; c < (grid[r]?.length || 0); c++){
+        const raw = normalizeCellLabel(grid[r][c]);
+        if (!raw || raw.toLowerCase()==='vazio') continue;
+        if (/^[A-Za-zÀ-ÿ]{2,6}$/.test(raw)) { label = raw; break; }
+        const m = raw.match(/^(\d{1,4})/);
+        if (m) { label = String(Math.floor(parseInt(m[1],10)/100)); break; }
+        label = raw; break;
+      }
+    }
+
+    labels[r] = label || '';
   }
   return labels;
 }
 
 /* ===== Agrupamento por pavimento ===== */
-/** Um grupo por linha (andar), do primeiro ao último bloco ocupado, com rótulo real de rowLabels[r]. */
+/** Um grupo por linha (andar), do primeiro ao último bloco ocupado, com rótulo real via rowLabels[r]. */
 function buildFloorGroupsFromGrid(grid){
   const groups = [];
   for(let r=0; r<grid.length; r++){
@@ -273,10 +294,8 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   const svg = document.getElementById('svg');
   svg.innerHTML = '';
 
-  // Determina se a FVS atual é por pavimento
   const isPav = !!(currentFvs && modeByFvs[currentFvs] === 'pav');
 
-  // Se for pavimento, gera grupos por linha (andar); senão, usa agrupamento normal por apartamento
   const groups = isPav ? (()=>{
     const grid = cache.estruturaJson?.grid || [];
     return buildFloorGroupsFromGrid(grid);
@@ -323,7 +342,7 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
     let podeClicar = false;
 
     if (!isPav) {
-      // ===== MODO APARTAMENTO (como antes) =====
+      // ===== APARTAMENTO =====
       const key = aptKey(group.value);
       const data = duracoesMap[key];
 
@@ -340,10 +359,10 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
           if (nc === 0) textoCentro = '';
         } else {
           if (!terminouInicial) {
-            fillColor = '#1f6feb'; // azul (em andamento)
+            fillColor = '#1f6feb';
           } else {
             const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
-            fillColor = ultimaOK ? '#238636' : '#d29922'; // verde : amarelo
+            fillColor = ultimaOK ? '#238636' : '#d29922';
           }
         }
         podeClicar = true;
@@ -380,10 +399,10 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
 
       svg.appendChild(g);
     } else {
-      // ===== MODO PAVIMENTO (usa label real do estrutura.json) =====
-      const displayLabel = group.value; // nome real do pavimento
+      // ===== PAVIMENTO =====
+      const displayLabel = group.value; // nome real do pavimento (via apartamentos.json)
 
-      // Descobre os apartamentos presentes no retângulo do andar
+      // Apartamentos dessa faixa do andar
       const grid = cache.estruturaJson?.grid || [];
       const r = group.floorIndex;
       const aptosDoAndar = new Set();
@@ -394,8 +413,8 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       }
       const aptList = Array.from(aptosDoAndar);
 
-      // Descobrir o pavimento_origem (pega do primeiro apê com dado carregado)
-      let pavKey = null; // chave técnica para currentByPav (pavimento_origem)
+      // Chave técnica do pavimento (pavimento_origem) — pegamos do primeiro apê com dado
+      let pavKey = null;
       for (const apt of aptList){
         const info = currentByApt[aptKey(apt)];
         if (info?.pavimento_origem){
@@ -403,7 +422,7 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
           break;
         }
       }
-      // Dados do pavimento (agregado/representativo)
+
       const pavData = pavKey ? currentByPav[pavKey] : null;
 
       if (pavData) {
@@ -447,7 +466,7 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       const aptText = document.createElementNS(svgNS,"text");
       aptText.setAttribute("x",x+3); aptText.setAttribute("y",y+3);
       aptText.setAttribute("class","apt-text");
-      aptText.textContent = displayLabel; // rótulo real
+      aptText.textContent = displayLabel;
       aptText.setAttribute("pointer-events","none");
       g.appendChild(aptText);
 
@@ -531,7 +550,7 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       };
       const reabs = [...info.reaberturas].sort((a, b) => {
         const ta = toTime(a.data_abertura), tb = toTime(b.data_abertura);
-        if (ta !== tb) return ta - tb;            // por data (ASC)
+        if (ta !== tb) return ta - tb;
         const pa = Number(a.qtd_itens_pendentes) || 0;
         const pb = Number(b.qtd_itens_pendentes) || 0;
         if (pa !== pb) return pa - pb;
@@ -661,7 +680,7 @@ function abrirModalDetalhesPavimento(pavKey, displayLabel, fillColor, aptosDoAnd
       };
       const reabs = [...info.reaberturas].sort((a, b) => {
         const ta = toTime(a.data_abertura), tb = toTime(b.data_abertura);
-        if (ta !== tb) return ta - tb;            // por data (ASC)
+        if (ta !== tb) return ta - tb;
         const pa = Number(a.qtd_itens_pendentes) || 0;
         const pb = Number(b.qtd_itens_pendentes) || 0;
         if (pa !== pb) return pa - pb;
@@ -831,12 +850,19 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
     if (!cache.estruturaJson) cache.estruturaJson = await loadJSON(ESTRUTURA_URL);
     const { colWidths, rowHeights, grid } = cache.estruturaJson;
 
-    // rótulos (1ª coluna, linha 2+; fallback por dedução)
-    rowLabels = buildRowLabels(cache.estruturaJson);
+    // 2) garantir apartamentos no cache (precisamos deles para nome do pavimento)
+    if(!cache.apartamentos){
+      const ra = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
+      if(!ra.ok) throw new Error(`HTTP ${ra.status}`);
+      cache.apartamentos = await ra.json();
+    }
+
+    // 3) rótulos por linha (via apartamentos.json)
+    rowLabels = buildRowLabelsFromApartamentos(cache.estruturaJson, cache.apartamentos);
 
     const groups = groupCells(grid); // agrupamento por APARTAMENTO (base)
 
-    // 2) filtra dados por FVS e monta os mapas
+    // 4) filtra dados por FVS e monta os mapas
     currentFvs = fvsSelecionada || '';
     currentFvsItems = [];
     currentByApt = Object.create(null);
@@ -844,11 +870,6 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
 
     let duracoesMap = {};
     if(currentFvs){
-      if(!cache.apartamentos){
-        const res = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        cache.apartamentos = await res.json();
-      }
       currentFvsItems = cache.apartamentos.filter(it => it.fvs === currentFvs);
 
       // Mapa por APT
@@ -894,7 +915,7 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
       }
     }
 
-    // 3) desenha (draw decide se usa grupos por APTO ou por PAV)
+    // 5) desenha
     draw(groups, duracoesMap, currentFvs, colWidths, rowHeights);
   }catch(e){
     document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
