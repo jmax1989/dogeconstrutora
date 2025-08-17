@@ -1104,7 +1104,7 @@ async function init3D(){
   _3d.appEl.innerHTML = '';
   _3d.appEl.appendChild(_3d.renderer.domElement);
 
-  _3d.controls = new THREE.OrbitControls(_3d.camera, _3d.renderer.domElement);
+  _3d.controls = new OrbitControls(_3d.camera, _3d.renderer.domElement);
   _3d.controls.target.set(0, 10, 0);
   _3d.controls.update();
 
