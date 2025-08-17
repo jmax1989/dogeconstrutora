@@ -9,21 +9,29 @@
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
+  <!-- Barra superior com dropdown FVS e NC -->
   <div id="dropdown-container">
     <div class="controls">
       <select id="dropdown">
         <option value="">Carregando FVS...</option>
       </select>
       <button id="btn-nc" class="btn-nc" type="button">NC</button>
+
+      <!-- NOVO: botão para alternar entre visualização 2D e 3D -->
+      <button id="btn-toggle-3d" class="btn-toggle-3d" type="button" aria-pressed="false" title="Alternar 2D/3D">
+        3D
+      </button>
     </div>
   </div>
 
+  <!-- Visualização 2D existente -->
   <div id="svg-container">
     <svg id="svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
 
   <div id="loading"><div class="spinner"></div></div>
 
+  <!-- Modal existente -->
   <div id="modal-backdrop">
     <div id="modal">
       <button class="close-btn">✕</button>
@@ -32,7 +40,33 @@
     </div>
   </div>
 
+  <!-- NOVO: Contêiner de visualização 3D (fica oculto até ativar) -->
+  <div id="app3d" aria-hidden="true" style="display:none;"></div>
+
+  <!-- NOVO: Painel de UI para o 3D (flutuante) -->
+  <div id="ui-3d" aria-hidden="true" style="display:none;">
+    <div class="ui3d-header"><strong>Prédio 3D</strong></div>
+
+    <label for="mode-3d">Modo de FVS</label>
+    <select id="mode-3d">
+      <option value="apartamento">Por apartamento</option>
+      <option value="andar">Por pavimento (laje)</option>
+    </select>
+
+    <label for="floorRange-3d">Andares visíveis: <span id="floorCountLabel-3d"></span></label>
+    <input id="floorRange-3d" type="range" min="1" max="10" step="1" value="5"/>
+
+    <label for="explodeRange-3d">Explode fachada</label>
+    <input id="explodeRange-3d" type="range" min="0" max="2" step="0.01" value="0"/>
+
+    <button id="xrayBtn-3d" type="button">Modo raio-X: off</button>
+  </div>
+
+  <!-- Three.js (globais) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js" defer></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js" defer></script>
+
+  <!-- Seu JS principal -->
   <script type="module" src="assets/js/main.js" defer></script>
 </body>
 </html>
-
