@@ -33,6 +33,42 @@ let modeByFvs = Object.create(null);
 // rótulos reais dos pavimentos (por linha)
 let rowLabels = []; // rowLabels[r] => nome/label do pavimento na linha r
 
+/* ======== NOVO: estado 3D ======== */
+let _3d = {
+  enabled: false,
+  inited: false,
+  scene: null,
+  camera: null,
+  renderer: null,
+  controls: null,
+  raycaster: null,
+  mouse: null,
+  instApt: null,
+  instSlab: null,
+  metaApt: new Map(),
+  metaSlab: new Map(),
+  explode: 0,
+  visibleFloors: 5,
+  xray: false,
+  // derivados de estrutura
+  frontWidth: 6,
+  backWidth: 6,
+  cellDepth: 3.5,
+  aptHeight: 3,
+  floorGap: 0.3,
+  gap: 0.4,
+  floorsParsed: [],
+  // UI refs
+  appEl: null,
+  uiEl: null,
+  modeSel: null,
+  floorRange: null,
+  floorCountLabel: null,
+  explodeRange: null,
+  xrayBtn: null,
+  animReq: 0
+};
+
 /* ===== Utils ===== */
 const showLoading = ()=> loadingDiv.classList.add('show');
 const hideLoading = ()=> loadingDiv.classList.remove('show');
@@ -127,12 +163,9 @@ function getUltimaInspecaoInfo(reaberturas){
 function aptKey(s){
   if (s == null) return '';
   let t = String(s).trim().toUpperCase();
-  // remove acentos
-  t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  // remove prefixos comuns
-  t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, '');
-  // remove separadores comuns (espaço, hífen, underline, ponto, barra)
-  t = t.replace(/[\s\-\._\/]/g, '');
+  t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,''); // remove acentos
+  t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, ''); // prefixos
+  t = t.replace(/[\s\-\._\/]/g, ''); // separadores
   return t;
 }
 
@@ -189,24 +222,13 @@ async function loadJSON(url){
 }
 
 /* ===== Row labels (NOMES DOS PAVIMENTOS via apartamentos.json) ===== */
-/**
- * Para cada linha do grid, procuramos os apartamentos daquela linha,
- * cruzamos com apartamentos.json e pegamos o melhor rótulo de pavimento.
- * Preferência de campos (se existirem no JSON):
- *   pavimento_nome > pavimento_label > pavimento > nome_pavimento > pavimento_origem
- * Se nada vier com nome, cai para o número de pavimento_origem (string).
- */
 function buildRowLabelsFromApartamentos(ejson, apartamentos){
   const grid = Array.isArray(ejson.grid) ? ejson.grid : [];
   const n = grid.length;
 
-  // Índice por apartamento (normalizado) -> item "melhor"
-  // Criterio "melhor": o que tiver um nome explícito de pavimento.
   const aptBest = new Map();
   const hasName = (it) => {
-    const cands = [
-      it.pavimento_nome, it.pavimento_label, it.pavimento, it.nome_pavimento
-    ];
+    const cands = [ it.pavimento_nome, it.pavimento_label, it.pavimento, it.nome_pavimento ];
     return cands.some(v => v != null && String(v).trim() !== '');
   };
   for (const it of apartamentos || []) {
@@ -230,14 +252,12 @@ function buildRowLabelsFromApartamentos(ejson, apartamentos){
   for (let r = 0; r < n; r++){
     if (r === 0) { labels[r] = ''; continue; } // linha 1 é cabeçalho
 
-    // 1) pega nome declarado na primeira coluna (se houver e não for "vazio")
     const firstCol = (grid[r] && grid[r][0]) ? String(grid[r][0]).trim() : '';
     if (firstCol && firstCol.toLowerCase() !== 'vazio') {
       labels[r] = firstCol;
       continue;
     }
 
-    // 2) varre a linha procurando um apê que exista no index
     let label = '';
     for (let c = 1; c < (grid[r]?.length || 0); c++){
       const raw = normalizeCellLabel(grid[r][c]);
@@ -249,7 +269,6 @@ function buildRowLabelsFromApartamentos(ejson, apartamentos){
       }
     }
 
-    // 3) fallback: se não achou nada, deduz do primeiro não-vazio (3201 -> "32"; TER/GAR/LAZ ficam)
     if (!label) {
       for (let c = 1; c < (grid[r]?.length || 0); c++){
         const raw = normalizeCellLabel(grid[r][c]);
@@ -260,14 +279,12 @@ function buildRowLabelsFromApartamentos(ejson, apartamentos){
         label = raw; break;
       }
     }
-
     labels[r] = label || '';
   }
   return labels;
 }
 
 /* ===== Agrupamento por pavimento ===== */
-/** Um grupo por linha (andar), do primeiro ao último bloco ocupado, com rótulo real via rowLabels[r]. */
 function buildFloorGroupsFromGrid(grid){
   const groups = [];
   for(let r=0; r<grid.length; r++){
@@ -289,7 +306,7 @@ function buildFloorGroupsFromGrid(grid){
   return groups;
 }
 
-/* ===== Desenho ===== */
+/* ===== Desenho 2D ===== */
 function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
   const svg = document.getElementById('svg');
   svg.innerHTML = '';
@@ -400,9 +417,8 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       svg.appendChild(g);
     } else {
       // ===== PAVIMENTO =====
-      const displayLabel = group.value; // nome real do pavimento (via apartamentos.json)
+      const displayLabel = group.value;
 
-      // Apartamentos dessa faixa do andar
       const grid = cache.estruturaJson?.grid || [];
       const r = group.floorIndex;
       const aptosDoAndar = new Set();
@@ -413,7 +429,6 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       }
       const aptList = Array.from(aptosDoAndar);
 
-      // Chave técnica do pavimento (pavimento_origem) — pegamos do primeiro apê com dado
       let pavKey = null;
       for (const apt of aptList){
         const info = currentByApt[aptKey(apt)];
@@ -444,12 +459,11 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
             fillColor = ultimaOK ? '#238636' : '#d29922';
           }
         }
-        podeClicar = true;
       }
 
       const g = document.createElementNS(svgNS, "g");
       g.dataset.pav = pavKey || `floor-${r}`;
-      if (podeClicar) {
+      if (pavKey || aptList.length) {
         g.style.cursor = 'pointer';
         g.setAttribute('title', `Abrir detalhes: ${displayLabel}`);
         g.addEventListener('click', ()=> abrirModalDetalhesPavimento(pavKey, displayLabel, fillColor, aptList));
@@ -506,7 +520,6 @@ async function abrirModalDetalhes(apartamento, fvsSelecionada, fillColor){
       pendUlt = aux.qtd_pend_ultima_inspecao;
     }
 
-    // NC da última inspeção (fallback: última reabertura)
     let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
     if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
       const lastReab = info.reaberturas[info.reaberturas.length - 1];
@@ -606,10 +619,6 @@ function fecharModal(){
 }
 
 /* ===== Modal (PAVIMENTO) ===== */
-/**
- * pavKey: chave técnica (pavimento_origem) para buscar em currentByPav
- * displayLabel: rótulo real (ex.: "TER", "GAR", "LAZ", "32")
- */
 function abrirModalDetalhesPavimento(pavKey, displayLabel, fillColor, aptosDoAndar){
   applyModalTint(fillColor);
 
@@ -640,7 +649,6 @@ function abrirModalDetalhesPavimento(pavKey, displayLabel, fillColor, aptosDoAnd
       pendUlt = aux.qtd_pend_ultima_inspecao;
     }
 
-    // NC (igual ao apto)
     let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
     if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
       const lastReab = info.reaberturas[info.reaberturas.length - 1];
@@ -767,7 +775,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
   carregarFvs();
 
   document.getElementById('dropdown').addEventListener('change', e=>{
-    carregarDuracoesEFazerDraw(e.target.value);
+    carregarDuracoesEFazerDraw(e.target.value).then(()=> {
+      // sincroniza UI 3D se estiver ativa
+      if (_3d.enabled) sync3DModeFromFVS();
+      recolor3D();
+    });
   });
 
   modalCloseBtn.addEventListener('click', fecharModal);
@@ -780,7 +792,50 @@ document.addEventListener('DOMContentLoaded', ()=>{
       ncMode = !ncMode;
       btnNc.classList.toggle('is-active', ncMode);
       renderFvsDropdown(true);
-      carregarDuracoesEFazerDraw(currentFvs);
+      carregarDuracoesEFazerDraw(currentFvs).then(()=>{
+        if (_3d.enabled) recolor3D();
+      });
+    });
+  }
+
+  // ===== NOVO: toggle 3D
+  const btn3d = document.getElementById('btn-toggle-3d');
+  const svgContainer = document.getElementById('svg-container');
+  _3d.appEl = document.getElementById('app3d');
+  _3d.uiEl = document.getElementById('ui-3d');
+  _3d.modeSel = document.getElementById('mode-3d');
+  _3d.floorRange = document.getElementById('floorRange-3d');
+  _3d.floorCountLabel = document.getElementById('floorCountLabel-3d');
+  _3d.explodeRange = document.getElementById('explodeRange-3d');
+  _3d.xrayBtn = document.getElementById('xrayBtn-3d');
+
+  if (btn3d) {
+    btn3d.addEventListener('click', ()=>{
+      _3d.enabled = !_3d.enabled;
+      btn3d.setAttribute('aria-pressed', String(_3d.enabled));
+      btn3d.classList.toggle('is-active', _3d.enabled);
+      svgContainer.style.display = _3d.enabled ? 'none' : '';
+      _3d.appEl.style.display = _3d.enabled ? 'block' : 'none';
+      _3d.uiEl.style.display = _3d.enabled ? 'flex' : 'none';
+      _3d.appEl.setAttribute('aria-hidden', String(!_3d.enabled));
+      _3d.uiEl.setAttribute('aria-hidden', String(!_3d.enabled));
+
+      if (_3d.enabled && !_3d.inited) {
+        init3D().then(()=>{
+          build3DFromData();
+          sync3DModeFromFVS();
+          start3DLoop();
+        }).catch(err=>{
+          console.error('Erro init3D:', err);
+        });
+      } else if (_3d.enabled) {
+        // atualizar quando retornar ao 3D
+        build3DFromData();
+        sync3DModeFromFVS();
+        start3DLoop();
+      } else {
+        stop3DLoop();
+      }
     });
   }
 });
@@ -802,8 +857,8 @@ async function carregarFvs(){
       cache.apartamentos = await ra.json();
     }
 
-    // 3) detectar modo por FVS (apt/pav)
-    modeByFvs = Object.create(null); // reset
+    // 3) detectar modo por FVS (apt/pav) reaproveitando seus dados
+    modeByFvs = Object.create(null);
     for (const it of cache.apartamentos) {
       const f = it.fvs;
       if (!f) continue;
@@ -813,7 +868,7 @@ async function carregarFvs(){
     }
 
     // 4) somar NCs por unidade deduplicada
-    const unitNcMapByFvs = Object.create(null); // { fvsId: Map(unitKey -> nc) }
+    const unitNcMapByFvs = Object.create(null);
     for (const it of cache.apartamentos) {
       const f = it.fvs;
       if (!f) continue;
@@ -846,18 +901,18 @@ async function carregarFvs(){
 async function carregarDuracoesEFazerDraw(fvsSelecionada){
   showLoading();
   try{
-    // 1) carrega estrutura do próprio site
+    // 1) carrega estrutura
     if (!cache.estruturaJson) cache.estruturaJson = await loadJSON(ESTRUTURA_URL);
     const { colWidths, rowHeights, grid } = cache.estruturaJson;
 
-    // 2) garantir apartamentos no cache (precisamos deles para nome do pavimento)
+    // 2) garantir apartamentos no cache
     if(!cache.apartamentos){
       const ra = await fetch(APARTAMENTOS_URL, { cache: 'no-store' });
       if(!ra.ok) throw new Error(`HTTP ${ra.status}`);
       cache.apartamentos = await ra.json();
     }
 
-    // 3) rótulos por linha (via apartamentos.json)
+    // 3) rótulos por linha
     rowLabels = buildRowLabelsFromApartamentos(cache.estruturaJson, cache.apartamentos);
 
     const groups = groupCells(grid); // agrupamento por APARTAMENTO (base)
@@ -915,11 +970,460 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
       }
     }
 
-    // 5) desenha
+    // 5) desenha 2D
     draw(groups, duracoesMap, currentFvs, colWidths, rowHeights);
+
+    // 6) se 3D está ativo, reconstrói conforme dados novos
+    if (_3d.enabled) {
+      build3DFromData();
+      sync3DModeFromFVS();
+      recolor3D();
+    }
   }catch(e){
     document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
   }finally{
     hideLoading();
   }
 }
+
+/* ===================== 3D ===================== */
+function parseEstrutura3D(json){
+  const rows = json.grid || [];
+  const floors = [];
+  for (let r=0;r<rows.length;r++){
+    const line = rows[r];
+    if (!line) continue;
+    const tokens = line.slice(1,5);
+    const special = new Set(["AT","LAZ","GAR","TER","vazio"]);
+    if (tokens.every(t=> special.has(String(t)))){
+      const tag = tokens.find(t=> t!=="vazio");
+      floors.push({ type: String(tag||'LAJE'), apartments: [], label: String(tag||'LAJE'), rowIndex: r });
+      continue;
+    }
+    const set = new Set();
+    for (const t of tokens){
+      const v = String(t).trim();
+      if (!v || special.has(v)) continue;
+      if (/^\d+$/.test(v)) set.add(v);
+    }
+    if (set.size===0) continue;
+    const any = [...set][0];
+    const floorNumber = Math.floor(parseInt(any,10)/100);
+    floors.push({
+      type: 'andar',
+      label: rowLabels[r] || `${floorNumber}º`,
+      rowIndex: r,
+      apartments: [...set].map(id => ({ id, floor: floorNumber }))
+    });
+  }
+  return floors;
+}
+
+function compute3DLayoutFromEstrutura(){
+  const colW = cache.estruturaJson?.colWidths || [];
+  // col 1..4 são úteis; usamos escala aproximada
+  const SCALE = 0.05;
+  _3d.frontWidth = ((colW[1]||60)+(colW[2]||60)) * SCALE;
+  _3d.backWidth  = ((colW[3]||60)+(colW[4]||60)) * SCALE;
+  _3d.cellDepth = 3.5;
+  _3d.gap = 0.4;
+  _3d.aptHeight = 3;
+  _3d.floorGap = 0.3;
+}
+
+function lastDigit(apId){
+  const s = String(apId).trim();
+  return parseInt(s[s.length-1], 10);
+}
+
+// finais 1/2 = frente; 3/4 = fundo. Ímpar=esq, Par=dir
+function positionFromAptFinal3D(apId){
+  const d = lastDigit(apId);
+  const isFront = (d===1 || d===2);
+  const isLeft = (d%2===1);
+  const halfFront = _3d.frontWidth/2;
+  const halfBack  = _3d.backWidth/2;
+  const x = isFront
+    ? (isLeft ? -halfFront/2 : +halfFront/2)
+    : (isLeft ? -halfBack/2  : +halfBack/2);
+  const z = isFront ? -_3d.cellDepth/2 : +_3d.cellDepth/2;
+  const label = `${isFront?'frente':'fundo'}-${isLeft?'esq':'dir'}`;
+  return { x, z, isFront, label };
+}
+
+function colorForUnit(info){
+  // mesma lógica do 2D
+  let fill = '#6e7681'; // gray
+  if (!info) return fill;
+
+  const pend = Number(info.qtd_pend_ultima_inspecao || 0);
+  const nc   = Number(info.qtd_nao_conformidades_ultima_inspecao || info.qtd_nc_ultima_inspecao || 0);
+  const pct  = Number(info.percentual_ultima_inspecao);
+  const terminouInicial = !!info.data_termino_inicial;
+
+  if (ncMode) return (nc > 0) ? '#f85149' : fill;
+
+  if (!terminouInicial) return '#1f6feb'; // azul
+
+  const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+  return ultimaOK ? '#238636' : '#d29922';
+}
+
+async function init3D(){
+  if (_3d.inited) return;
+  if (!cache.estruturaJson) cache.estruturaJson = await loadJSON(ESTRUTURA_URL);
+  if (!cache.apartamentos) cache.apartamentos = await loadJSON(APARTAMENTOS_URL);
+
+  compute3DLayoutFromEstrutura();
+  _3d.floorsParsed = parseEstrutura3D(cache.estruturaJson);
+
+  // Cena
+  _3d.scene = new THREE.Scene();
+  _3d.scene.background = new THREE.Color('#0d1117');
+
+  const aspect = window.innerWidth / window.innerHeight;
+  _3d.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 2000);
+  _3d.camera.position.set(14, 16, 22);
+
+  _3d.renderer = new THREE.WebGLRenderer({ antialias:true });
+  _3d.renderer.setSize(window.innerWidth, window.innerHeight);
+  _3d.renderer.setPixelRatio(window.devicePixelRatio);
+  _3d.renderer.shadowMap.enabled = true;
+  _3d.appEl.innerHTML = '';
+  _3d.appEl.appendChild(_3d.renderer.domElement);
+
+  _3d.controls = new THREE.OrbitControls(_3d.camera, _3d.renderer.domElement);
+  _3d.controls.target.set(0, 10, 0);
+  _3d.controls.update();
+
+  const hemi = new THREE.HemisphereLight('#c9d1d9', '#0a0c10', 0.6);
+  _3d.scene.add(hemi);
+
+  const dir = new THREE.DirectionalLight('#ffffff', 0.9);
+  dir.position.set(10, 20, 10);
+  dir.castShadow = true;
+  _3d.scene.add(dir);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(40, 0.5, 40),
+    new THREE.MeshStandardMaterial({ color:'#11161c', roughness:0.9 })
+  );
+  base.position.y = -0.3;
+  base.receiveShadow = true;
+  _3d.scene.add(base);
+
+  _3d.raycaster = new THREE.Raycaster();
+  _3d.mouse = new THREE.Vector2();
+  _3d.renderer.domElement.addEventListener('pointerdown', on3DPointerDown);
+
+  window.addEventListener('resize', ()=>{
+    _3d.camera.aspect = window.innerWidth / window.innerHeight;
+    _3d.camera.updateProjectionMatrix();
+    _3d.renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // UI handlers
+  _3d.floorRange.max = String(_3d.floorsParsed.length);
+  _3d.floorRange.value = String(Math.min(5, _3d.floorsParsed.length));
+  _3d.visibleFloors = parseInt(_3d.floorRange.value, 10);
+  _3d.floorCountLabel.textContent = `${_3d.visibleFloors}/${_3d.floorsParsed.length}`;
+
+  _3d.floorRange.addEventListener('input', ()=>{
+    _3d.visibleFloors = parseInt(_3d.floorRange.value, 10);
+    _3d.floorCountLabel.textContent = `${_3d.visibleFloors}/${_3d.floorsParsed.length}`;
+    update3DVisibility();
+  });
+  _3d.explodeRange.addEventListener('input', ()=>{
+    _3d.explode = parseFloat(_3d.explodeRange.value);
+    update3DTransforms();
+  });
+  _3d.xrayBtn.addEventListener('click', ()=>{
+    _3d.xray = !_3d.xray;
+    _3d.xrayBtn.textContent = `Modo raio-X: ${_3d.xray ? 'on' : 'off'}`;
+    update3DXray();
+  });
+  _3d.modeSel.addEventListener('change', ()=>{
+    set3DMode(_3d.modeSel.value);
+  });
+
+  _3d.inited = true;
+}
+
+function start3DLoop(){
+  if (_3d.animReq) return;
+  const loop = () => {
+    _3d.animReq = requestAnimationFrame(loop);
+    _3d.renderer.render(_3d.scene, _3d.camera);
+  };
+  loop();
+}
+function stop3DLoop(){
+  if (_3d.animReq) cancelAnimationFrame(_3d.animReq);
+  _3d.animReq = 0;
+}
+
+function clear3DMeshes(){
+  if (_3d.instApt){
+    _3d.scene.remove(_3d.instApt);
+    _3d.instApt.geometry.dispose();
+    _3d.instApt.material.dispose();
+    _3d.instApt = null;
+  }
+  if (_3d.instSlab){
+    _3d.scene.remove(_3d.instSlab);
+    _3d.instSlab.geometry.dispose();
+    _3d.instSlab.material.dispose();
+    _3d.instSlab = null;
+  }
+  _3d.metaApt.clear();
+  _3d.metaSlab.clear();
+}
+
+function build3DFromData(){
+  if (!_3d.inited) return;
+  clear3DMeshes();
+
+  // Recalcula layout (caso colWidths mudem)
+  compute3DLayoutFromEstrutura();
+  _3d.floorsParsed = parseEstrutura3D(cache.estruturaJson);
+
+  build3DApartments();
+  build3DSlabs();
+
+  // modo inicial conforme FVS (sincronizado depois também)
+  set3DMode('apartamento');
+  update3DVisibility();
+  recolor3D();
+}
+
+function build3DApartments(){
+  const floorsOnly = _3d.floorsParsed.filter(f=> f.type === 'andar');
+  const totalApts = floorsOnly.reduce((acc,f)=> acc + Math.max(1, f.apartments.length), 0);
+
+  const geom = new THREE.BoxGeometry(
+    (Math.max(_3d.frontWidth, _3d.backWidth)/2) - _3d.gap, // largura aproximada do apto por face
+    _3d.aptHeight,
+    _3d.cellDepth - _3d.gap
+  );
+  const mat  = new THREE.MeshStandardMaterial({ color:'#8b949e', roughness:0.8, metalness:0.05 });
+  _3d.instApt = new THREE.InstancedMesh(geom, mat, totalApts);
+  _3d.instApt.castShadow = true; _3d.instApt.receiveShadow = true;
+  _3d.instApt.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  const dummy = new THREE.Object3D();
+  const color = new THREE.Color();
+  let idx = 0;
+
+  floorsOnly.forEach((f, fi)=>{
+    const y = fi * (_3d.aptHeight + _3d.floorGap) + _3d.aptHeight/2;
+    // usa apartamentos únicos
+    const uniq = new Map();
+    for (const ap of (f.apartments||[])) if (!uniq.has(ap.id)) uniq.set(ap.id, ap);
+    for (const ap of uniq.values()){
+      const pos = positionFromAptFinal3D(ap.id);
+      dummy.position.set(pos.x, y, pos.z);
+      dummy.rotation.set(0,0,0);
+      dummy.updateMatrix();
+      _3d.instApt.setMatrixAt(idx, dummy.matrix);
+
+      const info = currentByApt[aptKey(ap.id)];
+      _3d.instApt.setColorAt(idx, color.set(colorForUnit(info)));
+
+      _3d.metaApt.set(idx, { id: ap.id, floor: f.label, posLabel: pos.label, isFront: pos.isFront });
+      idx++;
+    }
+  });
+  if (_3d.instApt.instanceColor) _3d.instApt.instanceColor.needsUpdate = true;
+  _3d.scene.add(_3d.instApt);
+}
+
+function build3DSlabs(){
+  const total = _3d.floorsParsed.length;
+  const slabX = Math.max(_3d.frontWidth, _3d.backWidth) + _3d.gap;
+  const slabZ = (_3d.cellDepth*2) + _3d.gap;
+
+  const geom = new THREE.BoxGeometry(slabX, 0.4, slabZ);
+  const mat  = new THREE.MeshStandardMaterial({ color:'#374151', roughness:0.9 });
+  _3d.instSlab = new THREE.InstancedMesh(geom, mat, total);
+  _3d.instSlab.castShadow = true; _3d.instSlab.receiveShadow = true;
+  _3d.instSlab.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  const dummy = new THREE.Object3D();
+  const color = new THREE.Color();
+
+  for (let i=0;i<_3d.floorsParsed.length;i++){
+    const y = i * (_3d.aptHeight + _3d.floorGap) + 0.2;
+    dummy.position.set(0, y, 0);
+    dummy.rotation.set(0,0,0);
+    dummy.updateMatrix();
+    _3d.instSlab.setMatrixAt(i, dummy.matrix);
+
+    const f = _3d.floorsParsed[i];
+    const c = f.type==='andar' ? '#374151'
+            : (f.label==='LAZ' ? '#6b7280' : (f.label==='GAR' ? '#4b5563' : '#4b5563'));
+    _3d.instSlab.setColorAt(i, color.set(c));
+    _3d.metaSlab.set(i, { label: f.label || f.type, rowIndex: f.rowIndex });
+  }
+  if (_3d.instSlab.instanceColor) _3d.instSlab.instanceColor.needsUpdate = true;
+  _3d.scene.add(_3d.instSlab);
+}
+
+function update3DTransforms(){
+  if (!_3d.instApt) return;
+  const dummy = new THREE.Object3D();
+  let idx = 0;
+  const floorsOnly = _3d.floorsParsed.filter(f=> f.type==='andar');
+  floorsOnly.forEach((f, fi)=>{
+    const y = fi * (_3d.aptHeight + _3d.floorGap) + _3d.aptHeight/2;
+    const uniq = new Map();
+    for (const ap of (f.apartments||[])) if (!uniq.has(ap.id)) uniq.set(ap.id, ap);
+    for (const ap of uniq.values()){
+      const pos = positionFromAptFinal3D(ap.id);
+      const z = pos.z + (pos.isFront ? -_3d.explode : +_3d.explode);
+      dummy.position.set(pos.x, y, z);
+      dummy.rotation.set(0,0,0);
+      dummy.updateMatrix();
+      _3d.instApt.setMatrixAt(idx, dummy.matrix);
+      idx++;
+    }
+  });
+  _3d.instApt.instanceMatrix.needsUpdate = true;
+}
+
+function update3DVisibility(){
+  const dummy = new THREE.Object3D();
+
+  if (_3d.instApt){
+    let idx=0;
+    const floorsOnly = _3d.floorsParsed.filter(f=> f.type==='andar');
+    floorsOnly.forEach((f,fi)=>{
+      const vis = (fi < _3d.visibleFloors);
+      const uniqCount = new Map();
+      for (const ap of (f.apartments||[])) if (!uniqCount.has(ap.id)) uniqCount.set(ap.id, ap);
+      uniqCount.forEach(()=>{
+        _3d.instApt.getMatrixAt(idx, dummy.matrix);
+        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+        dummy.position.y = vis ? (fi * (_3d.aptHeight + _3d.floorGap) + _3d.aptHeight/2) : -1000;
+        dummy.updateMatrix();
+        _3d.instApt.setMatrixAt(idx, dummy.matrix);
+        idx++;
+      });
+    });
+    _3d.instApt.instanceMatrix.needsUpdate = true;
+  }
+
+  if (_3d.instSlab){
+    for (let i=0;i<_3d.floorsParsed.length;i++){
+      const vis = (i < _3d.visibleFloors);
+      _3d.instSlab.getMatrixAt(i, dummy.matrix);
+      dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+      dummy.position.y = vis ? (i * (_3d.aptHeight + _3d.floorGap) + 0.2) : -1000;
+      dummy.updateMatrix();
+      _3d.instSlab.setMatrixAt(i, dummy.matrix);
+    }
+    _3d.instSlab.instanceMatrix.needsUpdate = true;
+  }
+}
+
+function update3DXray(){
+  [_3d.instApt, _3d.instSlab].forEach(mesh=>{
+    if (!mesh) return;
+    mesh.material.transparent = _3d.xray;
+    mesh.material.opacity = _3d.xray ? 0.4 : 1.0;
+    mesh.material.depthWrite = !_3d.xray;
+    mesh.material.needsUpdate = true;
+  });
+}
+
+function set3DMode(mode){
+  if (!_3d.instApt || !_3d.instSlab) return;
+  const aptVisible = (mode === 'apartamento');
+  _3d.instApt.visible = aptVisible;
+  _3d.instSlab.visible = !aptVisible;
+  _3d.modeSel.value = mode;
+}
+
+function sync3DModeFromFVS(){
+  if (!currentFvs) return;
+  const m = modeByFvs[currentFvs] === 'pav' ? 'andar' : 'apartamento';
+  set3DMode(m);
+}
+
+function recolor3D(){
+  // recolorir apartamentos
+  if (_3d.instApt){
+    const color = new THREE.Color();
+    for (let i=0;i<_3d.instApt.count;i++){
+      const meta = _3d.metaApt.get(i);
+      const info = meta ? currentByApt[aptKey(meta.id)] : null;
+      _3d.instApt.setColorAt(i, color.set(colorForUnit(info)));
+    }
+    if (_3d.instApt.instanceColor) _3d.instApt.instanceColor.needsUpdate = true;
+  }
+
+  // recolorir lajes por pavimento usando representativo
+  if (_3d.instSlab){
+    const color = new THREE.Color();
+    for (let i=0;i<_3d.instSlab.count;i++){
+      const meta = _3d.metaSlab.get(i);
+      let fill = '#374151';
+      if (meta){
+        // achar pavKey pelo primeiro apto da linha
+        const row = cache.estruturaJson.grid[meta.rowIndex] || [];
+        const ids = [];
+        for (let c=1;c<=4;c++){
+          const raw = normalizeCellLabel(row[c]);
+          if (raw && raw.toLowerCase()!=='vazio' && /^\d+$/.test(raw)) ids.push(raw);
+        }
+        let pavKey = null;
+        for (const ap of ids){
+          const info = currentByApt[aptKey(ap)];
+          if (info?.pavimento_origem){ pavKey = info.pavimento_origem; break; }
+        }
+        const infoPav = pavKey ? currentByPav[pavKey] : null;
+        fill = colorForUnit(infoPav);
+      }
+      _3d.instSlab.setColorAt(i, color.set(fill));
+    }
+    if (_3d.instSlab.instanceColor) _3d.instSlab.instanceColor.needsUpdate = true;
+  }
+}
+
+function on3DPointerDown(e){
+  const rect = _3d.renderer.domElement.getBoundingClientRect();
+  _3d.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  _3d.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  _3d.raycaster.setFromCamera(_3d.mouse, _3d.camera);
+
+  const mode = _3d.modeSel.value;
+  const obj = (mode === 'apartamento') ? _3d.instApt : _3d.instSlab;
+  const hits = _3d.raycaster.intersectObject(obj, true);
+  if (!hits.length) return;
+
+  const id = hits[0].instanceId;
+  if (mode === 'apartamento'){
+    const m = _3d.metaApt.get(id);
+    if (m) abrirModalDetalhes(m.id, currentFvs, '#8b949e');
+  } else {
+    const m = _3d.metaSlab.get(id);
+    if (!m) return;
+
+    // reunir aptos da linha pra passar ao modal
+    const row = cache.estruturaJson.grid[m.rowIndex] || [];
+    const ids = [];
+    for (let c=1;c<=4;c++){
+      const raw = normalizeCellLabel(row[c]);
+      if (raw && raw.toLowerCase()!=='vazio' && /^\d+$/.test(raw)) ids.push(raw);
+    }
+
+    // pavKey (se houver)
+    let pavKey = null;
+    for (const ap of ids){
+      const info = currentByApt[aptKey(ap)];
+      if (info?.pavimento_origem){ pavKey = info.pavimento_origem; break; }
+    }
+
+    abrirModalDetalhesPavimento(pavKey, m.label, '#8b949e', ids);
+  }
+}
+/* =================== FIM 3D =================== */
