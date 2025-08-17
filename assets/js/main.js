@@ -1,5 +1,17 @@
 'use strict';
 
+(function(){
+  const btn = document.getElementById('btn-toggle-3d');
+  if (!btn) return;
+  btn.addEventListener('click', ()=>{
+    if (typeof window.THREE === 'undefined') {
+      alert('Three.js não foi carregado. Confira a ORDEM dos <script> no index.html.');
+      console.error('THREE undefined: verifique three.min.js e OrbitControls ANTES do main.js.');
+    }
+  }, { once: true });
+})();
+
+
 /* ===== Config ===== */
 const DATA_BASE = './data';
 const FVS_LIST_URL = `${DATA_BASE}/fvs-list.json`;
