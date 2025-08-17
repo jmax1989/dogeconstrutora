@@ -62,9 +62,9 @@
     <button id="xrayBtn-3d" type="button">Modo raio-X: off</button>
   </div>
 
-  <!-- Three.js (globais) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js" defer></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js" defer></script>
+  <!-- Three.js (globais) – sem defer, antes do seu main.js -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
 
   <!-- Seu JS principal -->
   <script type="module" src="assets/js/main.js" defer></script>
