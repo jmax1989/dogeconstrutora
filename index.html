@@ -17,21 +17,21 @@
       </select>
       <button id="btn-nc" class="btn-nc" type="button">NC</button>
 
-      <!-- NOVO: botão para alternar entre visualização 2D e 3D -->
+      <!-- Botão para alternar entre 2D e 3D -->
       <button id="btn-toggle-3d" class="btn-toggle-3d" type="button" aria-pressed="false" title="Alternar 2D/3D">
         3D
       </button>
     </div>
   </div>
 
-  <!-- Visualização 2D existente -->
+  <!-- Visualização 2D -->
   <div id="svg-container">
     <svg id="svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
 
   <div id="loading"><div class="spinner"></div></div>
 
-  <!-- Modal existente -->
+  <!-- Modal -->
   <div id="modal-backdrop">
     <div id="modal">
       <button class="close-btn">✕</button>
@@ -40,10 +40,10 @@
     </div>
   </div>
 
-  <!-- NOVO: Contêiner de visualização 3D (fica oculto até ativar) -->
+  <!-- Contêiner 3D -->
   <div id="app3d" aria-hidden="true" style="display:none;"></div>
 
-  <!-- NOVO: Painel de UI para o 3D (flutuante) -->
+  <!-- UI 3D -->
   <div id="ui-3d" aria-hidden="true" style="display:none;">
     <div class="ui3d-header"><strong>Prédio 3D</strong></div>
 
@@ -62,11 +62,11 @@
     <button id="xrayBtn-3d" type="button">Modo raio-X: off</button>
   </div>
 
-  <!-- Three.js (carregar ANTES do main.js) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Three r159 (globais) – devem vir ANTES do seu main.js e sem defer -->
+  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.159.0/examples/js/controls/OrbitControls.js"></script>
 
-  <!-- Seu JS principal -->
+  <!-- Seu JS principal (sem type="module") -->
   <script src="assets/js/main.js" defer></script>
 </body>
 </html>
