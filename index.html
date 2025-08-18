@@ -7,39 +7,23 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/css/style.css" as="style">
   <link rel="stylesheet" href="assets/css/style.css">
-
-  <!-- Three r159 (globais) – carregam ANTES do seu main.js -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"
-          onerror="this.onerror=null;this.src='https://unpkg.com/three@0.159.0/build/three.min.js'"></script>
-
-  <!-- OrbitControls r159 (modo examples/js -> anexa em THREE.OrbitControls) -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/examples/js/controls/OrbitControls.js"
-          onerror="this.onerror=null;this.src='https://unpkg.com/three@0.159.0/examples/js/controls/OrbitControls.js'"></script>
 </head>
 <body>
-  <!-- Barra superior com dropdown FVS e NC -->
   <div id="dropdown-container">
     <div class="controls">
       <select id="dropdown">
         <option value="">Carregando FVS...</option>
       </select>
       <button id="btn-nc" class="btn-nc" type="button">NC</button>
-
-      <!-- Botão para alternar entre 2D e 3D -->
-      <button id="btn-toggle-3d" class="btn-toggle-3d" type="button" aria-pressed="false" title="Alternar 2D/3D">
-        3D
-      </button>
     </div>
   </div>
 
-  <!-- Visualização 2D -->
   <div id="svg-container">
     <svg id="svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
 
   <div id="loading"><div class="spinner"></div></div>
 
-  <!-- Modal -->
   <div id="modal-backdrop">
     <div id="modal">
       <button class="close-btn">✕</button>
@@ -48,29 +32,8 @@
     </div>
   </div>
 
-  <!-- Contêiner 3D -->
-  <div id="app3d" aria-hidden="true" style="display:none;"></div>
-
-  <!-- UI 3D -->
-  <div id="ui-3d" aria-hidden="true" style="display:none;">
-    <div class="ui3d-header"><strong>Prédio 3D</strong></div>
-
-    <label for="mode-3d">Modo de FVS</label>
-    <select id="mode-3d">
-      <option value="apartamento">Por apartamento</option>
-      <option value="andar">Por pavimento (laje)</option>
-    </select>
-
-    <label for="floorRange-3d">Andares visíveis: <span id="floorCountLabel-3d"></span></label>
-    <input id="floorRange-3d" type="range" min="1" max="10" step="1" value="5"/>
-
-    <label for="explodeRange-3d">Explode fachada</label>
-    <input id="explodeRange-3d" type="range" min="0" max="2" step="0.01" value="0"/>
-
-    <button id="xrayBtn-3d" type="button">Modo raio-X: off</button>
-  </div>
-
-  <!-- Seu JS principal (sem type="module") -->
-  <script src="assets/js/main.js?v=ocfix1" defer></script>
+  <script type="module" src="assets/js/main.js" defer></script>
 </body>
 </html>
+
+
