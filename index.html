@@ -63,10 +63,12 @@
   </div>
 
   <!-- Three r159 (globais) – devem vir ANTES do seu main.js e sem defer -->
-  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.159.0/examples/js/controls/OrbitControls.js"></script>
+<!-- Trava em r159, última versão com OrbitControls global -->
+<script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.159.0/examples/js/controls/OrbitControls.js"></script>
 
-  <!-- Seu JS principal (sem type="module") -->
-  <script src="assets/js/main.js" defer></script>
+<!-- Seu JS principal (carrega depois) -->
+<script type="module" src="assets/js/main.js" defer></script>
+
 </body>
 </html>
