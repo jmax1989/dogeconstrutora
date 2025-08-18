@@ -1081,84 +1081,57 @@ function colorForUnit(info){
   return ultimaOK ? '#238636' : '#d29922';
 }
 
-async function init3D(){
-  if (_3d.inited) return;
-  if (!cache.estruturaJson) cache.estruturaJson = await loadJSON(ESTRUTURA_URL);
-  if (!cache.apartamentos) cache.apartamentos = await loadJSON(APARTAMENTOS_URL);
+function init3D() {
+  try {
+    const container = document.getElementById("app3d");
+    container.innerHTML = ""; // limpa caso reinicie
 
-  compute3DLayoutFromEstrutura();
-  _3d.floorsParsed = parseEstrutura3D(cache.estruturaJson);
+    // cena
+    _3d = {};
+    _3d.scene = new THREE.Scene();
+    _3d.scene.background = new THREE.Color(0x0d1117);
 
-  // Cena
-  _3d.scene = new THREE.Scene();
-  _3d.scene.background = new THREE.Color('#0d1117');
+    // câmera
+    const aspect = container.clientWidth / container.clientHeight;
+    _3d.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+    _3d.camera.position.set(5, 5, 10);
 
-  const aspect = window.innerWidth / window.innerHeight;
-  _3d.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 2000);
-  _3d.camera.position.set(14, 16, 22);
+    // renderizador
+    _3d.renderer = new THREE.WebGLRenderer({ antialias: true });
+    _3d.renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(_3d.renderer.domElement);
 
-  _3d.renderer = new THREE.WebGLRenderer({ antialias:true });
-  _3d.renderer.setSize(window.innerWidth, window.innerHeight);
-  _3d.renderer.setPixelRatio(window.devicePixelRatio);
-  _3d.renderer.shadowMap.enabled = true;
-  _3d.appEl.innerHTML = '';
-  _3d.appEl.appendChild(_3d.renderer.domElement);
+    // controles
+    _3d.controls = new OrbitControls(_3d.camera, _3d.renderer.domElement);
+    _3d.controls.enableDamping = true;
+    _3d.controls.dampingFactor = 0.05;
+    _3d.controls.maxPolarAngle = Math.PI / 2; // trava pra não virar de cabeça pra baixo
 
-  _3d.controls = new OrbitControls(_3d.camera, _3d.renderer.domElement);
-  _3d.controls.target.set(0, 10, 0);
-  _3d.controls.update();
+    // luzes
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+    hemiLight.position.set(0, 20, 0);
+    _3d.scene.add(hemiLight);
 
-  const hemi = new THREE.HemisphereLight('#c9d1d9', '#0a0c10', 0.6);
-  _3d.scene.add(hemi);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(5, 10, 7.5);
+    _3d.scene.add(dirLight);
 
-  const dir = new THREE.DirectionalLight('#ffffff', 0.9);
-  dir.position.set(10, 20, 10);
-  dir.castShadow = true;
-  _3d.scene.add(dir);
+    // chão (opcional, só referência visual)
+    const grid = new THREE.GridHelper(20, 20, 0x888888, 0x444444);
+    _3d.scene.add(grid);
 
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(40, 0.5, 40),
-    new THREE.MeshStandardMaterial({ color:'#11161c', roughness:0.9 })
-  );
-  base.position.y = -0.3;
-  base.receiveShadow = true;
-  _3d.scene.add(base);
+    // loop de renderização
+    function animate() {
+      requestAnimationFrame(animate);
+      _3d.controls.update();
+      _3d.renderer.render(_3d.scene, _3d.camera);
+    }
+    animate();
 
-  _3d.raycaster = new THREE.Raycaster();
-  _3d.mouse = new THREE.Vector2();
-  _3d.renderer.domElement.addEventListener('pointerdown', on3DPointerDown);
-
-  window.addEventListener('resize', ()=>{
-    _3d.camera.aspect = window.innerWidth / window.innerHeight;
-    _3d.camera.updateProjectionMatrix();
-    _3d.renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  // UI handlers
-  _3d.floorRange.max = String(_3d.floorsParsed.length);
-  _3d.floorRange.value = String(Math.min(5, _3d.floorsParsed.length));
-  _3d.visibleFloors = parseInt(_3d.floorRange.value, 10);
-  _3d.floorCountLabel.textContent = `${_3d.visibleFloors}/${_3d.floorsParsed.length}`;
-
-  _3d.floorRange.addEventListener('input', ()=>{
-    _3d.visibleFloors = parseInt(_3d.floorRange.value, 10);
-    _3d.floorCountLabel.textContent = `${_3d.visibleFloors}/${_3d.floorsParsed.length}`;
-    update3DVisibility();
-  });
-  _3d.explodeRange.addEventListener('input', ()=>{
-    _3d.explode = parseFloat(_3d.explodeRange.value);
-    update3DTransforms();
-  });
-  _3d.xrayBtn.addEventListener('click', ()=>{
-    _3d.xray = !_3d.xray;
-    _3d.xrayBtn.textContent = `Modo raio-X: ${_3d.xray ? 'on' : 'off'}`;
-    update3DXray();
-  });
-  _3d.modeSel.addEventListener('change', ()=>{
-    set3DMode(_3d.modeSel.value);
-  });
-
-  _3d.inited = true;
+    console.log("init3D concluído");
+  } catch (err) {
+    console.error("Erro init3D:", err);
+  }
 }
 
 function start3DLoop(){
