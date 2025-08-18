@@ -7,12 +7,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/css/style.css" as="style">
   <link rel="stylesheet" href="assets/css/style.css">
-
-  <!-- Three.js (globais) – SEM defer, com fallback de CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"
-          onerror="this.onerror=null;this.src='https://unpkg.com/three@0.160.0/build/three.min.js'"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.min.js"
-          onerror="this.onerror=null;this.src='https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js'"></script>
 </head>
 <body>
   <!-- Barra superior com dropdown FVS e NC -->
@@ -22,18 +16,22 @@
         <option value="">Carregando FVS...</option>
       </select>
       <button id="btn-nc" class="btn-nc" type="button">NC</button>
-      <button id="btn-toggle-3d" class="btn-toggle-3d" type="button" aria-pressed="false" title="Alternar 2D/3D">3D</button>
+
+      <!-- NOVO: botão para alternar entre visualização 2D e 3D -->
+      <button id="btn-toggle-3d" class="btn-toggle-3d" type="button" aria-pressed="false" title="Alternar 2D/3D">
+        3D
+      </button>
     </div>
   </div>
 
-  <!-- Visualização 2D -->
+  <!-- Visualização 2D existente -->
   <div id="svg-container">
     <svg id="svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
 
   <div id="loading"><div class="spinner"></div></div>
 
-  <!-- Modal -->
+  <!-- Modal existente -->
   <div id="modal-backdrop">
     <div id="modal">
       <button class="close-btn">✕</button>
@@ -42,10 +40,10 @@
     </div>
   </div>
 
-  <!-- 3D -->
+  <!-- NOVO: Contêiner de visualização 3D (fica oculto até ativar) -->
   <div id="app3d" aria-hidden="true" style="display:none;"></div>
 
-  <!-- UI 3D -->
+  <!-- NOVO: Painel de UI para o 3D (flutuante) -->
   <div id="ui-3d" aria-hidden="true" style="display:none;">
     <div class="ui3d-header"><strong>Prédio 3D</strong></div>
 
@@ -64,7 +62,11 @@
     <button id="xrayBtn-3d" type="button">Modo raio-X: off</button>
   </div>
 
-  <!-- Seu JS principal – SEM type="module"; com cache-busting -->
-  <script src="assets/js/main.js?v=3dfix1" defer></script>
+  <!-- Three.js (carregar ANTES do main.js) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Seu JS principal -->
+  <script src="assets/js/main.js" defer></script>
 </body>
 </html>
