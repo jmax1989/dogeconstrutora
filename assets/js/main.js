@@ -1081,57 +1081,73 @@ function colorForUnit(info){
   return ultimaOK ? '#238636' : '#d29922';
 }
 
-function init3D() {
-  try {
-    const container = document.getElementById("app3d");
-    container.innerHTML = ""; // limpa caso reinicie
+function init3D(){
+  return new Promise((resolve, reject) => {
+    try{
+      if (window._3d?.inited) return resolve(); // já iniciado
 
-    // cena
-    _3d = {};
-    _3d.scene = new THREE.Scene();
-    _3d.scene.background = new THREE.Color(0x0d1117);
+      // sanity checks (ajuda a diagnosticar)
+      if (typeof THREE === 'undefined') {
+        throw new Error('THREE não carregado (cheque as <script> no index.html).');
+      }
+      // compat: se o arquivo anexou no THREE (algumas builds antigas)
+      if (typeof window.OrbitControls === 'undefined' && typeof THREE.OrbitControls === 'function') {
+        window.OrbitControls = THREE.OrbitControls;
+      }
+      if (typeof window.OrbitControls === 'undefined') {
+        throw new Error('OrbitControls não carregado (confira a URL e a versão no index.html).');
+      }
 
-    // câmera
-    const aspect = container.clientWidth / container.clientHeight;
-    _3d.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
-    _3d.camera.position.set(5, 5, 10);
+      const container = document.getElementById('app3d');
+      container.innerHTML = '';
+      container.style.display = 'block';
+      container.setAttribute('aria-hidden','false');
 
-    // renderizador
-    _3d.renderer = new THREE.WebGLRenderer({ antialias: true });
-    _3d.renderer.setSize(container.clientWidth, container.clientHeight);
-    container.appendChild(_3d.renderer.domElement);
+      window._3d = window._3d || {};
+      const w = container.clientWidth || window.innerWidth;
+      const h = container.clientHeight || window.innerHeight;
 
-    // controles
-    _3d.controls = new OrbitControls(_3d.camera, _3d.renderer.domElement);
-    _3d.controls.enableDamping = true;
-    _3d.controls.dampingFactor = 0.05;
-    _3d.controls.maxPolarAngle = Math.PI / 2; // trava pra não virar de cabeça pra baixo
+      // cena
+      _3d.scene = new THREE.Scene();
+      _3d.scene.background = new THREE.Color('#0d1117');
 
-    // luzes
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
-    hemiLight.position.set(0, 20, 0);
-    _3d.scene.add(hemiLight);
+      // câmera
+      _3d.camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 2000);
+      _3d.camera.position.set(6, 6, 10);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(5, 10, 7.5);
-    _3d.scene.add(dirLight);
+      // renderer
+      _3d.renderer = new THREE.WebGLRenderer({ antialias:true });
+      _3d.renderer.setPixelRatio(window.devicePixelRatio);
+      _3d.renderer.setSize(w, h);
+      container.appendChild(_3d.renderer.domElement);
 
-    // chão (opcional, só referência visual)
-    const grid = new THREE.GridHelper(20, 20, 0x888888, 0x444444);
-    _3d.scene.add(grid);
+      // controles (usa global OrbitControls)
+      _3d.controls = new OrbitControls(_3d.camera, _3d.renderer.domElement);
+      _3d.controls.enableDamping = true;
+      _3d.controls.dampingFactor = 0.06;
+      _3d.controls.maxPolarAngle = Math.PI/2;
 
-    // loop de renderização
-    function animate() {
-      requestAnimationFrame(animate);
-      _3d.controls.update();
-      _3d.renderer.render(_3d.scene, _3d.camera);
+      // luzes básicas
+      _3d.scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+      dir.position.set(5,10,6);
+      _3d.scene.add(dir);
+
+      // resize
+      window.addEventListener('resize', ()=>{
+        const W = container.clientWidth || window.innerWidth;
+        const H = container.clientHeight || window.innerHeight;
+        _3d.camera.aspect = W/H;
+        _3d.camera.updateProjectionMatrix();
+        _3d.renderer.setSize(W, H);
+      });
+
+      _3d.inited = true;
+      resolve();
+    }catch(err){
+      reject(err);
     }
-    animate();
-
-    console.log("init3D concluído");
-  } catch (err) {
-    console.error("Erro init3D:", err);
-  }
+  });
 }
 
 function start3DLoop(){
