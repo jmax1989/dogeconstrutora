@@ -215,3 +215,10 @@ rect.cell:hover + .apt-text + .duracao-text{ opacity:0 }
   background-color: var(--blue);
   border-color: #1e3a8a;
 }
+
+#svg-container { position: relative; }
+#viewer3d{
+  background-color:#161b22;
+  border-radius:12px;
+  border:1px solid var(--border);
+}
