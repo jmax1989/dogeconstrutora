@@ -189,19 +189,10 @@ async function loadJSON(url){
 }
 
 /* ===== Row labels (NOMES DOS PAVIMENTOS via apartamentos.json) ===== */
-/**
- * Para cada linha do grid, procuramos os apartamentos daquela linha,
- * cruzamos com apartamentos.json e pegamos o melhor rótulo de pavimento.
- * Preferência de campos (se existirem no JSON):
- *   pavimento_nome > pavimento_label > pavimento > nome_pavimento > pavimento_origem
- * Se nada vier com nome, cai para o número de pavimento_origem (string).
- */
 function buildRowLabelsFromApartamentos(ejson, apartamentos){
   const grid = Array.isArray(ejson.grid) ? ejson.grid : [];
   const n = grid.length;
 
-  // Índice por apartamento (normalizado) -> item "melhor"
-  // Criterio "melhor": o que tiver um nome explícito de pavimento.
   const aptBest = new Map();
   const hasName = (it) => {
     const cands = [
@@ -230,14 +221,12 @@ function buildRowLabelsFromApartamentos(ejson, apartamentos){
   for (let r = 0; r < n; r++){
     if (r === 0) { labels[r] = ''; continue; } // linha 1 é cabeçalho
 
-    // 1) pega nome declarado na primeira coluna (se houver e não for "vazio")
     const firstCol = (grid[r] && grid[r][0]) ? String(grid[r][0]).trim() : '';
     if (firstCol && firstCol.toLowerCase() !== 'vazio') {
       labels[r] = firstCol;
       continue;
     }
 
-    // 2) varre a linha procurando um apê que exista no index
     let label = '';
     for (let c = 1; c < (grid[r]?.length || 0); c++){
       const raw = normalizeCellLabel(grid[r][c]);
@@ -249,7 +238,6 @@ function buildRowLabelsFromApartamentos(ejson, apartamentos){
       }
     }
 
-    // 3) fallback: se não achou nada, deduz do primeiro não-vazio (3201 -> "32"; TER/GAR/LAZ ficam)
     if (!label) {
       for (let c = 1; c < (grid[r]?.length || 0); c++){
         const raw = normalizeCellLabel(grid[r][c]);
@@ -267,7 +255,6 @@ function buildRowLabelsFromApartamentos(ejson, apartamentos){
 }
 
 /* ===== Agrupamento por pavimento ===== */
-/** Um grupo por linha (andar), do primeiro ao último bloco ocupado, com rótulo real via rowLabels[r]. */
 function buildFloorGroupsFromGrid(grid){
   const groups = [];
   for(let r=0; r<grid.length; r++){
@@ -400,9 +387,8 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       svg.appendChild(g);
     } else {
       // ===== PAVIMENTO =====
-      const displayLabel = group.value; // nome real do pavimento (via apartamentos.json)
+      const displayLabel = group.value;
 
-      // Apartamentos dessa faixa do andar
       const grid = cache.estruturaJson?.grid || [];
       const r = group.floorIndex;
       const aptosDoAndar = new Set();
@@ -413,7 +399,6 @@ function draw(groupsApt, duracoesMap, fvsSelecionada, colWidths, rowHeights){
       }
       const aptList = Array.from(aptosDoAndar);
 
-      // Chave técnica do pavimento (pavimento_origem) — pegamos do primeiro apê com dado
       let pavKey = null;
       for (const apt of aptList){
         const info = currentByApt[aptKey(apt)];
@@ -606,10 +591,6 @@ function fecharModal(){
 }
 
 /* ===== Modal (PAVIMENTO) ===== */
-/**
- * pavKey: chave técnica (pavimento_origem) para buscar em currentByPav
- * displayLabel: rótulo real (ex.: "TER", "GAR", "LAZ", "32")
- */
 function abrirModalDetalhesPavimento(pavKey, displayLabel, fillColor, aptosDoAndar){
   applyModalTint(fillColor);
 
@@ -640,7 +621,6 @@ function abrirModalDetalhesPavimento(pavKey, displayLabel, fillColor, aptosDoAnd
       pendUlt = aux.qtd_pend_ultima_inspecao;
     }
 
-    // NC (igual ao apto)
     let ncUlt = info.qtd_nao_conformidades_ultima_inspecao;
     if (ncUlt == null && Array.isArray(info.reaberturas) && info.reaberturas.length) {
       const lastReab = info.reaberturas[info.reaberturas.length - 1];
@@ -765,6 +745,9 @@ function renderFvsDropdown(preserveValue=true){
 document.addEventListener('DOMContentLoaded', ()=>{
   resizeSvgArea();
   carregarFvs();
+
+  // mapa inicial vazio para o 3D
+  window.__FVS_COLOR_MAP__ = { mode: null, colors: {}, default: '#6e7681' };
 
   document.getElementById('dropdown').addEventListener('change', e=>{
     carregarDuracoesEFazerDraw(e.target.value);
@@ -917,15 +900,76 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
 
     // 5) desenha
     draw(groups, duracoesMap, currentFvs, colWidths, rowHeights);
+
+    // 6) atualiza o mapa de cores para o viewer 3D
+    update3DColorMap();
+
   }catch(e){
     document.getElementById('svg').innerHTML = `<text x="10" y="20" fill="#c9d1d9">Erro: ${e.message}</text>`;
   }finally{
     hideLoading();
   }
-} 
+}
 
 /* ===== 3D: exporta mapa de cores da FVS selecionada ===== */
-(function(){
-  // ... (bloco que te passei)
-})();
+function update3DColorMap() {
+  const DEF_GRAY = '#6e7681';
+  const mode = currentFvs ? (modeByFvs[currentFvs] || 'apt') : null;
 
+  // mesma lógica de cores usada no 2D
+  function colorFromApt(it) {
+    const nc  = Number(it.qtd_nao_conformidades_ultima_inspecao || 0);
+    const pct = Number(it.percentual_ultima_inspecao);
+    const pend = Number(it.qtd_pend_ultima_inspecao || 0);
+    const terminouInicial = !!it.data_termino_inicial;
+
+    if (ncMode) {
+      return (nc > 0) ? '#f85149' : null; // null => fica no cinza
+    }
+    if (!terminouInicial) return '#1f6feb';
+    const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+    return ultimaOK ? '#238636' : '#d29922';
+  }
+
+  function colorFromPav(pavData) {
+    const nc  = Number(pavData.qtd_nao_conformidades_ultima_inspecao ?? pavData.qtd_nc_ultima_inspecao ?? 0);
+    const pct = Number(pavData.percentual_ultima_inspecao);
+    const pend = Number(pavData.qtd_pend_ultima_inspecao || 0);
+    const terminouInicial = !!pavData.data_termino_inicial;
+
+    if (ncMode) {
+      return (nc > 0) ? '#f85149' : null;
+    }
+    if (!terminouInicial) return '#1f6feb';
+    const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+    return ultimaOK ? '#238636' : '#d29922';
+  }
+
+  const colors = {};
+
+  if (currentFvs && Array.isArray(currentFvsItems)) {
+    if (mode === 'apt') {
+      // cor por apartamento
+      for (const it of currentFvsItems) {
+        const c = colorFromApt(it);
+        if (c) colors[aptKey(it.apartamento)] = c;
+      }
+    } else if (mode === 'pav') {
+      // cor por pavimento: pinta todos os aptos do pavimento com a mesma cor
+      for (const pavId of Object.keys(currentByPav)) {
+        const pavData = currentByPav[pavId];
+        const c = colorFromPav(pavData);
+        if (!c) continue; // deixa cinza
+        for (const it of currentFvsItems) {
+          if (it.pavimento_origem === pavId) {
+            colors[aptKey(it.apartamento)] = c;
+          }
+        }
+      }
+    }
+  }
+
+  // expõe o mapa global e notifica quem precisa enviar pro iframe
+  window.__FVS_COLOR_MAP__ = { mode, colors, default: DEF_GRAY };
+  window.dispatchEvent(new CustomEvent('fvsColorMapChanged', { detail: window.__FVS_COLOR_MAP__ }));
+}
