@@ -115,7 +115,6 @@
     <button id="dupElem">⎘ Duplicar sel.</button>
     <button id="mergeSel">🧩 Mesclar sel.</button>
     <button id="delElem" class="danger">Remover sel.</button>
-
     <label style="margin-left:16px;">Pavimentos
       <input id="buildingFloors" type="number" min="1" max="200" value="12">
     </label>
@@ -756,22 +755,71 @@ const e = {
 
 /* atalhos */
 document.addEventListener('keydown', (e)=>{
-  if (e.key==='Escape'){ isolatedFloor=null; selectedIds.clear(); selId=null; drawAll(); updateButtonsState(); return; }
-  if (e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA' || e.target.isContentEditable)) {
-    if (e.code==='Space') isSpaceDown=true;
+  // ESC limpa isolamento e seleção
+  if (e.key === 'Escape'){
+    isolatedFloor = null;
+    selectedIds.clear();
+    selId = null;
+    drawAll();
+    updateButtonsState();
     return;
   }
-  if (e.code==='Space') { isSpaceDown=true; }
+
+  // Não interferir quando estiver digitando
+  const isEditable = e.target && (
+    e.target.tagName === 'INPUT' ||
+    e.target.tagName === 'TEXTAREA' ||
+    e.target.isContentEditable
+  );
+  if (isEditable){
+    if (e.code === 'Space') isSpaceDown = true;
+    return;
+  }
+
+  // Space p/ pan nos canvases 2D
+  if (e.code === 'Space') {
+    isSpaceDown = true;
+  }
+
+  // --- NOVO: tecla Delete apaga seleção ---
+  if (e.key === 'Delete'){
+    e.preventDefault();
+    deleteSelected();
+    return;
+  }
+
+  // Atalhos com Ctrl/Cmd
   const mod = e.ctrlKey || e.metaKey;
   if (!mod) return;
+
   const k = e.key.toLowerCase();
-  if (k==='z'){ e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
-  else if (k==='y'){ e.preventDefault(); redo(); }
-  else if (k==='c'){ e.preventDefault(); copySelection(); }
-  else if (k==='v'){ e.preventDefault(); pasteClipboard(); }
+  if (k === 'z'){ e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+  else if (k === 'y'){ e.preventDefault(); redo(); }
+  else if (k === 'c'){ e.preventDefault(); copySelection(); }
+  else if (k === 'v'){ e.preventDefault(); pasteClipboard(); }
 });
 document.addEventListener('keyup', (e)=>{ if (e.code==='Space') isSpaceDown=false; });
 
+function deleteSelected(){
+  if (selectedIds.size===0) return;
+  // snapshot p/ undo
+  pushUndo(snapshotState());
+
+  // remove os elementos selecionados
+  elements = elements.filter(e=> !selectedIds.has(e.id));
+
+  // define nova seleção (se existir alguém remanescente)
+  selId = elements[0]?.id ?? null;
+  selectedIds = selId ? new Set([selId]) : new Set();
+
+  // renumera, redesenha e atualiza UI
+  renumberIds();
+  drawAll();
+  updateButtonsState();
+
+  statusEl.textContent = 'Elemento(s) removido(s).';
+}
+    
 /* ==================== 3D — Surface meshing global (sem faces internas) ==================== */
 const glcanvas = document.getElementById('view3d');
 let scene=null, camera=null, renderer=null, group3D=null;
@@ -893,14 +941,28 @@ function voxelsOf(e, max=200000){
 
   if (yByX.size===0 || zByX.size===0) return out;
 
+  const floorCount = floors.length;
+  const clampY = (gy)=> (gy>=0 && gy<floorCount);
+
   for (const [lx, yset] of yByX.entries()){
     const zset = zByX.get(lx);
     if (!zset) continue;
 
     for (const ly of yset){
+      const gy = e.y + ly;
+
+      // --- FATIAMENTO POR PAVIMENTO ISOLADO ---
+      if (isolatedFloor != null && gy !== isolatedFloor) continue;
+
+      // fora do prédio? (segurança)
+      if (!clampY(gy)) continue;
+
       for (const lz of zset){
         if (yzAllowed && !yzAllowed.has(`${lz},${ly}`)) continue; // interseção com Lateral
-        const gx = e.x + lx, gy = e.y + ly, gz = e.z + lz;
+
+        const gx = e.x + lx;
+        const gz = e.z + lz;
+
         out.add(`${gx},${gy},${gz}`);
         if (out.size > max) return out;
       }
@@ -1714,13 +1776,7 @@ function mergeSelected(){
 document.getElementById('mergeSel').addEventListener('click', mergeSelected);
 
 document.getElementById('delElem').addEventListener('click', ()=>{
-  if (selectedIds.size===0) return;
-  pushUndo(snapshotState());
-  elements = elements.filter(e=>!selectedIds.has(e.id));
-  selId = elements[0]?.id ?? null;
-  selectedIds = selId? new Set([selId]) : new Set();
-  renumberIds();
-  drawAll(); updateButtonsState();
+  deleteSelected();
 });
 document.getElementById('resetAll').addEventListener('click', ()=>{
   pushUndo(snapshotState());
