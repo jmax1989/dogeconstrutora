@@ -220,20 +220,40 @@ function setFaceOpacity(op){
     // ===== Explodir =====
 let explodeXY = 0.0;
 let explodeY  = 0.0;
+let explodeXY = 0.0;
+let explodeY  = 0.0;
+
 function applyExplode(){
+  if (torre.children.length === 0) return;
+
+  // 1) Centroide das posições base (já centralizadas/“coladas”)
+  let sumX = 0, sumZ = 0, n = 0;
   for (const g of torre.children){
-    const base = g.userData.basePos;     // <- agora é a posição "colada" após centralizar
-    const pos = base.clone();
+    const b = g.userData.basePos;
+    sumX += b.x; sumZ += b.z; n++;
+  }
+  const cx = sumX / n, cz = sumZ / n;
+
+  // 2) Aplica explode radial em torno do centroide
+  const step = Math.max(stepX, stepZ); // escala de “passo” horizontal
+  for (const g of torre.children){
+    const base = g.userData.basePos;         // posição “colada”
+    const pos  = base.clone();
+
     if (explodeXY > 0){
-      const dir = new THREE.Vector3(base.x, 0, base.z);
+      const dir = new THREE.Vector3(base.x - cx, 0, base.z - cz);
       const len = dir.length();
       if (len > 1e-6){
-        dir.multiplyScalar(1/len);
-        const step = Math.max(stepX, stepZ);
+        dir.multiplyScalar(1/len);           // só direção (mesma distância para todos)
         pos.addScaledVector(dir, explodeXY * step);
+        // Se preferir proporcional à distância, troque a linha acima por:
+        // pos.addScaledVector(dir, explodeXY * step * len/Math.max(1, step));
       }
     }
+
+    // explode vertical por pavimento (levelIndex)
     pos.y += g.userData.levelIndex * explodeY;
+
     g.position.copy(pos);
   }
 }
@@ -559,6 +579,7 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
 
 
