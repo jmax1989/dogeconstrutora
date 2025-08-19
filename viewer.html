@@ -64,7 +64,7 @@
     const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
     renderer.setSize(innerWidth, innerHeight);
     root.appendChild(renderer.domElement);
 
@@ -99,12 +99,9 @@
     }
     updateCamera();
 
-    // Controles de mouse:
-    // - esquerdo = orbitar (gira pivot + inclina phi)
-    // - direito  = pan (move o alvo/orbitTarget)
+    // Controles de mouse (esq=orbitar, dir=pan)
     let dragging=false,lastX=0,lastY=0, dragMode='orbit';
     function onDownMouse(e){
-      // 0: esquerdo, 2: direito
       dragMode = (e.button === 2) ? 'pan' : 'orbit';
       dragging = true; lastX = e.clientX; lastY = e.clientY;
     }
@@ -115,6 +112,7 @@
 
       if (dragMode === 'orbit') {
         pivot.rotation.y += dx * 0.005;
+        theta = pivot.rotation.y;
         phi -= dy * 0.005; phi = clamp(phi, minPhi, maxPhi);
         updateCamera();
       } else {
@@ -132,7 +130,6 @@
     renderer.domElement.addEventListener('mousedown', onDownMouse);
     window.addEventListener('mousemove', onMoveMouse);
     window.addEventListener('mouseup', onUpMouse);
-    // bloqueia menu do botão direito (para pan)
     renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
     // Touch (1 dedo = orbitar)
@@ -156,60 +153,60 @@
       updateCamera();
     },{passive:false});
 
-    // ====== Materiais (base NEUTRA cinza) ======
+    // ====== Materiais com polygonOffset (linhas limpas, sem z-fighting) ======
     let faceOpacity = 0.30;
-    const NEUTRAL_HEX = 0x6e7681; // cinza base
-    const makeFace = (color)=> new THREE.MeshStandardMaterial({
-      color, metalness:0.0, roughness:0.9, transparent:true, opacity:faceOpacity, depthWrite:false
-    });
-    const makeLine = (color,width=1)=> new THREE.LineBasicMaterial({ color, linewidth:width });
+    const NEUTRAL_HEX = 0x6e7681;
+    const MAT = {
+      face: ()=> new THREE.MeshStandardMaterial({
+        color: NEUTRAL_HEX,
+        metalness: 0.05,
+        roughness: 0.9,
+        transparent: true,
+        opacity: faceOpacity,
+        depthWrite: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1
+      }),
+      line: new THREE.LineBasicMaterial({
+        color: 0xcad7ff,
+        linewidth: 1,
+        depthTest: true,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95
+      }),
+      selLine: new THREE.LineBasicMaterial({
+        color: 0xffc107,
+        linewidth: 2
+      })
+    };
 
-const MAT = {
-  face: ()=> new THREE.MeshStandardMaterial({
-    color: NEUTRAL_HEX,
-    metalness: 0.05,
-    roughness: 0.9,
-    transparent: true,
-    opacity: faceOpacity,
-    depthWrite: true,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1
-  }),
-  line: new THREE.LineBasicMaterial({
-    color: 0xcad7ff,
-    linewidth: 1,
-    depthTest: true,
-    depthWrite: false,
-    transparent: true,
-    opacity: 0.95
-  }),
-  selLine: new THREE.LineBasicMaterial({
-    color: 0xffc107,
-    linewidth: 2
-  })
-};
-    const stepX = (layout.meta?.cellW ?? 1.2) + (layout.meta?.gap ?? 0.15);
-    const stepZ = (layout.meta?.cellD ?? 1.2) + (layout.meta?.gap ?? 0.15);
-    const aptoHeight = 0.5;
-    const stepY = aptoHeight + (layout.meta?.gap ?? 0.15);
-
-    function rectCenterX(x, w){ return x*stepX + (w*(layout.meta?.cellW??1.2) + (w-1)*(layout.meta?.gap??0.15))/2; }
-    function rectCenterZ(z, d){ return z*stepZ + (d*(layout.meta?.cellD??1.2) + (d-1)*(layout.meta?.gap??0.15))/2; }
-
-    function computeLevels(placements){
-      const set = new Set(placements.map(p=>p.andar));
-      const nums = [...set].filter(v => typeof v === 'number').sort((a,b)=>a-b);
-      const hasAT = [...set].some(v => v === 'AT');
-      if (hasAT) nums.push('AT');
-      const idx = new Map(nums.map((v,i)=>[v,i]));
-      return { order: nums, indexOf: (v)=>idx.get(v) };
+    function setFacesVisible(visible){
+      for (const g of torre.children) g.userData.mesh.visible = visible;
+    }
+    function setFaceOpacity(op){
+      faceOpacity = op;
+      for (const g of torre.children){
+        g.userData.mesh.material.opacity = faceOpacity;
+        g.userData.mesh.material.needsUpdate = true;
+      }
     }
 
-    function setFacesVisible(visible){ for (const g of torre.children) g.userData.mesh.visible = visible; }
-    function setFaceOpacity(op){ faceOpacity = op; for (const g of torre.children) g.userData.mesh.material.opacity = faceOpacity; }
+    // ===== Dimensão básica em "mundo" =====
+    const cellW = (layout.meta?.cellW ?? 1.2);
+    const cellD = (layout.meta?.cellD ?? 1.2);
+    const gap   = (layout.meta?.gap   ?? 0.15);
 
-    // ====== Explodir ======
+    const aptoHeight = 0.5;          // altura "unitária" por nível
+    const stepX = cellW + gap;
+    const stepZ = cellD + gap;
+    const stepY = aptoHeight + gap;
+
+    function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
+    function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
+
+    // ===== Explodir =====
     let explodeXY = 0.0;
     let explodeY  = 0.0;
     function applyExplode(){
@@ -230,174 +227,136 @@ const MAT = {
       }
     }
 
-// ===== Dimensão básica em "mundo" =====
-const cellW = (layout.meta?.cellW ?? 1.2);
-const cellD = (layout.meta?.cellD ?? 1.2);
-const gap   = (layout.meta?.gap   ?? 0.15);
-
-// No viewer, a altura de um "andar" é uniforme:
-//const aptoHeight = 0.5;
-//const stepX = cellW + gap;
-//const stepZ = cellD + gap;
-//const stepY = aptoHeight + gap;
-
-// Centro de um retângulo W×D começando em (x,z) em coordenadas de grade:
-function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
-function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
-
-// ===== Voxelização por APTO =====
-// Gera, para cada apartamento, um Set com strings "gx,gy,gz"
-// Aqui gy é o "nível" (andar), com altura uniforme stepY
-function voxelizeByApto(l){
-  const byApto = new Map();
-  for (const p of l.placements){
-    const apt = String(p.apto);
-    if (!byApto.has(apt)) byApto.set(apt, new Set());
-    const set = byApto.get(apt);
-    const baseY = (typeof p.andar === 'number') ? p.andar : 0; // 'AT' vira 0 aqui
-    for (let gx = p.x; gx < p.x + p.w; gx++){
-      for (let gz = p.z; gz < p.z + p.d; gz++){
-        for (let gy = baseY; gy < baseY + p.h; gy++){
-          set.add(`${gx},${gy},${gz}`);
+    // ===== Voxelização por APTO =====
+    function voxelizeByApto(l){
+      const byApto = new Map();
+      for (const p of l.placements){
+        const apt = String(p.apto);
+        if (!byApto.has(apt)) byApto.set(apt, new Set());
+        const set = byApto.get(apt);
+        const baseY = (typeof p.andar === 'number') ? p.andar : 0; // 'AT' => 0
+        for (let gx = p.x; gx < p.x + p.w; gx++){
+          for (let gz = p.z; gz < p.z + p.d; gz++){
+            for (let gy = baseY; gy < baseY + p.h; gy++){
+              set.add(`${gx},${gy},${gz}`);
+            }
+          }
         }
       }
+      return byApto;
     }
-  }
-  return byApto;
-}
 
-// ===== Meshing de fronteira (sem faces internas) =====
-function buildSurfaceGeometryFromOcc(occSet){
-  if (!occSet || occSet.size===0) return null;
-  const has = (x,y,z)=> occSet.has(`${x},${y},${z}`);
+    // ===== Meshing de fronteira (sem faces internas) =====
+    function buildSurfaceGeometryFromOcc(occSet){
+      if (!occSet || occSet.size===0) return null;
+      const has = (x,y,z)=> occSet.has(`${x},${y},${z}`);
 
-  const pos = [];
-  const idx = [];
-  let vbase = 0;
+      const pos = [];
+      const idx = [];
+      let vbase = 0;
 
-  const pushQuad = (a,b,c,d)=>{
-    pos.push( ...a, ...b, ...c, ...d );
-    idx.push(vbase, vbase+1, vbase+2,  vbase, vbase+2, vbase+3);
-    vbase += 4;
-  };
+      const pushQuad = (a,b,c,d)=>{
+        pos.push( ...a, ...b, ...c, ...d );
+        idx.push(vbase, vbase+1, vbase+2,  vbase, vbase+2, vbase+3);
+        vbase += 4;
+      };
 
-  // Converte um voxel [gx,gy,gz] em coords de mundo da caixa daquele voxel
-  function voxelBounds(gx,gy,gz){
-    const x0 = gx * stepX, x1 = x0 + cellW;
-    const z0 = gz * stepZ, z1 = z0 + cellD;
-    const y0 = gy * stepY, y1 = y0 + aptoHeight;
-    return {x0,x1,y0,y1,z0,z1};
-  }
+      function voxelBounds(gx,gy,gz){
+        const x0 = gx * stepX, x1 = x0 + cellW;
+        const z0 = gz * stepZ, z1 = z0 + cellD;
+        const y0 = gy * stepY, y1 = y0 + aptoHeight;
+        return {x0,x1,y0,y1,z0,z1};
+      }
 
-  // Itera por voxels; para cada uma das 6 faces, se não há vizinho → emite um quad
-  for (const key of occSet){
-    const [gx,gy,gz] = key.split(',').map(Number);
-    const {x0,x1,y0,y1,z0,z1} = voxelBounds(gx,gy,gz);
+      for (const key of occSet){
+        const [gx,gy,gz] = key.split(',').map(Number);
+        const {x0,x1,y0,y1,z0,z1} = voxelBounds(gx,gy,gz);
 
-    // -X
-    if (!has(gx-1,gy,gz)) pushQuad([x0,y0,z1],[x0,y0,z0],[x0,y1,z0],[x0,y1,z1]);
-    // +X
-    if (!has(gx+1,gy,gz)) pushQuad([x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0]);
-    // -Z
-    if (!has(gx,gy,gz-1)) pushQuad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);
-    // +Z
-    if (!has(gx,gy,gz+1)) pushQuad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);
-    // -Y (piso)
-    if (!has(gx,gy-1,gz)) pushQuad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]);
-    // +Y (teto)
-    if (!has(gx,gy+1,gz)) pushQuad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]);
-  }
+        if (!has(gx-1,gy,gz)) pushQuad([x0,y0,z1],[x0,y0,z0],[x0,y1,z0],[x0,y1,z1]); // -X
+        if (!has(gx+1,gy,gz)) pushQuad([x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0]); // +X
+        if (!has(gx,gy,gz-1)) pushQuad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]); // -Z
+        if (!has(gx,gy,gz+1)) pushQuad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]); // +Z
+        if (!has(gx,gy-1,gz)) pushQuad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]); // -Y
+        if (!has(gx,gy+1,gz)) pushQuad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]); // +Y
+      }
 
-  if (pos.length===0) return null;
+      if (pos.length===0) return null;
 
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(pos), 3));
-  geom.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(idx), 1));
-  geom.computeVertexNormals();
-  geom.computeBoundingBox(); geom.computeBoundingSphere();
-  return geom;
-}
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(pos), 3));
+      geom.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(idx), 1));
+      geom.computeVertexNormals();
+      geom.computeBoundingBox(); geom.computeBoundingSphere();
+      return geom;
+    }
 
-// ===== Inflar para desenhar edges limpas =====
-function inflateGeometry(geom, offset=0.04){
-  const g = geom.clone();
-  g.computeVertexNormals();
-  const pos = g.getAttribute('position');
-  const nor = g.getAttribute('normal');
-  for (let i=0;i<pos.count;i++){
-    pos.setX(i, pos.getX(i) + nor.getX(i)*offset);
-    pos.setY(i, pos.getY(i) + nor.getY(i)*offset);
-    pos.setZ(i, pos.getZ(i) + nor.getZ(i)*offset);
-  }
-  pos.needsUpdate = true;
-  return g;
-}    
-       
+    // ===== Inflar para desenhar edges limpas =====
+    function inflateGeometry(geom, offset=0.04){
+      const g = geom.clone();
+      g.computeVertexNormals();
+      const pos = g.getAttribute('position');
+      const nor = g.getAttribute('normal');
+      for (let i=0;i<pos.count;i++){
+        pos.setX(i, pos.getX(i) + nor.getX(i)*offset);
+        pos.setY(i, pos.getY(i) + nor.getY(i)*offset);
+        pos.setZ(i, pos.getZ(i) + nor.getZ(i)*offset);
+      }
+      pos.needsUpdate = true;
+      return g;
+    }
+
     // ====== Construção ======
-    
-function buildFromLayout(l){
-  while (torre.children.length) torre.remove(torre.children[0]);
+    function buildFromLayout(l){
+      while (torre.children.length) torre.remove(torre.children[0]);
 
-  // 1) voxeliza por apartamento
-  const occByApto = voxelizeByApto(l);
+      const occByApto = voxelizeByApto(l);
 
-  // 2) para cada apto, gera uma superfície única e um grupo (mesh + edges)
-  for (const [apto, occ] of occByApto.entries()){
-    const surface = buildSurfaceGeometryFromOcc(occ);
-    if (!surface) continue;
+      for (const [apto, occ] of occByApto.entries()){
+        const surface = buildSurfaceGeometryFromOcc(occ);
+        if (!surface) continue;
 
-    // corpo translúcido
-    const mesh = new THREE.Mesh(surface, MAT.face());
-    mesh.renderOrder = 1;
+        const mesh = new THREE.Mesh(surface, MAT.face());
+        mesh.renderOrder = 1;
 
-    // contorno (arestas) a partir de malha inflada
-    const inflated = inflateGeometry(surface, 0.04);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
-    edges.renderOrder = 2;
+        const inflated = inflateGeometry(surface, 0.04);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
+        edges.renderOrder = 2;
 
-    // calcula nível mínimo do apto (para explodeY)
-    let minLevel = Infinity, cx=0, cy=0, cz=0;
-    // centro aproximado pelo bbox da malha
-    surface.computeBoundingBox();
-    const bb = surface.boundingBox;
-    const center = new THREE.Vector3();
-    bb.getCenter(center);
-    cx = center.x; cy = center.y; cz = center.z;
+        // centro aproximado (para explode XY) e nível mínimo (explode Y)
+        surface.computeBoundingBox();
+        const bb = surface.boundingBox;
+        const center = new THREE.Vector3(); bb.getCenter(center);
 
-    // estimar minLevel varrendo occ
-    for (const key of occ){
-      const gy = parseInt(key.split(',')[1],10);
-      if (gy < minLevel) minLevel = gy;
+        let minLevel = Infinity;
+        for (const key of occ){
+          const gy = parseInt(key.split(',')[1],10);
+          if (gy < minLevel) minLevel = gy;
+        }
+        if (!Number.isFinite(minLevel)) minLevel = 0;
+
+        const group = new THREE.Group();
+        group.add(mesh); group.add(edges);
+        group.userData = {
+          apto,
+          mesh, edges,
+          levelIndex: minLevel,
+          basePos: center.clone()
+        };
+        torre.add(group);
+      }
+
+      // Centraliza conjunto
+      const bbox = new THREE.Box3().setFromObject(torre);
+      const center = new THREE.Vector3(); bbox.getCenter(center);
+      for (const g of torre.children){
+        g.position.copy( g.userData.basePos.clone().sub(center) );
+        g.userData.basePos.copy(g.position);
+      }
+
+      applyExplode();
+      recenterOrbitTarget();
+      updateCamera();
     }
-    if (!isFinite(minLevel)) minLevel = 0;
-
-    const group = new THREE.Group();
-    group.add(mesh); group.add(edges);
-    group.position.set(0,0,0);
-
-    // Dados para UI/cores/Explode
-    group.userData = {
-      apto,
-      mesh, edges,
-      levelIndex: minLevel,
-      basePos: new THREE.Vector3(cx, cy, cz)
-    };
-
-    torre.add(group);
-  }
-
-  // 3) Centraliza conjunto
-  const bbox = new THREE.Box3().setFromObject(torre);
-  const center = new THREE.Vector3(); bbox.getCenter(center);
-  for (const g of torre.children){
-    g.position.sub(center);
-    g.userData.basePos.sub(center);
-  }
-
-  applyExplode();
-  recenterOrbitTarget();
-  updateCamera();
-}
 
     function recenterOrbitTarget(){
       const bbox2 = new THREE.Box3().setFromObject(torre);
@@ -416,16 +375,16 @@ function buildFromLayout(l){
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-      // 1) tentar nas FACES (mais preciso para seleção por área)
+      // 1) faces
       const faceObjects = torre.children.map(g => g.userData.mesh);
       raycaster.setFromCamera(mouse, camera);
       let inter = raycaster.intersectObjects(faceObjects, false);
 
-      // 2) fallback: tentar nas ARESTAS com threshold pequeno em unidade de mundo
+      // 2) fallback em arestas
       if (!inter.length) {
         const edgeObjects = torre.children.map(g => g.userData.edges);
         raycaster.params.Line = raycaster.params.Line || {};
-        raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06; // ~6% do passo
+        raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06;
         inter = raycaster.intersectObjects(edgeObjects, false);
       }
 
@@ -438,23 +397,23 @@ function buildFromLayout(l){
         window.__SEL_GROUP__ = null;
       }
 
-if (inter.length) {
-  const hitObj = inter[0].object;
-  const selGroup = hitObj.parent;
-  if (selGroup && selGroup.userData) {
-    selGroup.__lineBackup = selGroup.userData.edges.material;
-    selGroup.__faceBackup = selGroup.userData.mesh.material;
+      if (inter.length) {
+        const hitObj = inter[0].object;
+        const selGroup = hitObj.parent;
+        if (selGroup && selGroup.userData) {
+          selGroup.__lineBackup = selGroup.userData.edges.material;
+          selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
 
-    selGroup.userData.edges.material = MAT.selLine;
-    // clona a face para não afetar outros grupos
-    const faceClone = selGroup.userData.mesh.material.clone();
-    faceClone.opacity = Math.min(1, faceOpacity + 0.2);
-    selGroup.userData.mesh.material = faceClone;
+          selGroup.userData.edges.material = MAT.selLine;
 
-    window.__SEL_GROUP__ = selGroup;
-    console.log('Selecionado:', selGroup.userData.apto);
-  }
-}
+          const faceClone = selGroup.userData.mesh.material.clone();
+          faceClone.opacity = Math.min(1, faceOpacity + 0.2);
+          selGroup.userData.mesh.material = faceClone;
+
+          window.__SEL_GROUP__ = selGroup;
+          console.log('Selecionado:', selGroup.userData.apto);
+        }
+      }
     });
 
     // ====== UI ======
@@ -486,7 +445,7 @@ if (inter.length) {
       explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
       applyExplode();
     });
-    document.getElementById('resetRot').addEventListener('click', () => { pivot.rotation.set(0,0,0); });
+    document.getElementById('resetRot').addEventListener('click', () => { pivot.rotation.set(0,0,0); theta = 0; });
     document.getElementById('recenter').addEventListener('click', () => {
       recenterOrbitTarget(); radius = INITIAL_RADIUS; phi = INITIAL_PHI; updateCamera();
     });
@@ -522,7 +481,6 @@ if (inter.length) {
         aplicarCoresFVS(data.payload);
       }
     });
-    // handshake opcional: pede o mapa ao abrir via iframe
     try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
 
     // ====== Resize & Loop ======
@@ -538,5 +496,3 @@ if (inter.length) {
   </script>
 </body>
 </html>
-
-
