@@ -185,13 +185,24 @@
     function setFacesVisible(visible){
       for (const g of torre.children) g.userData.mesh.visible = visible;
     }
-    function setFaceOpacity(op){
-      faceOpacity = op;
-      for (const g of torre.children){
-        g.userData.mesh.material.opacity = faceOpacity;
-        g.userData.mesh.material.needsUpdate = true;
-      }
+    
+function setFaceOpacity(op){
+  faceOpacity = op;
+  for (const g of torre.children){
+    const m = g.userData.mesh.material;
+    m.opacity = faceOpacity;
+
+    if (faceOpacity >= 0.999) {
+      m.transparent = false;
+      m.depthWrite = true;
+      m.opacity = 1.0; // garante sólido
+    } else {
+      m.transparent = true;
+      m.depthWrite = false;
     }
+    m.needsUpdate = true;
+  }
+}
 
     // ===== Dimensão básica em "mundo" =====
     const cellW = (layout.meta?.cellW ?? 1.2);
@@ -513,4 +524,5 @@ function buildFromLayout(l){
   </script>
 </body>
 </html>
+
 
