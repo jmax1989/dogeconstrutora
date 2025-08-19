@@ -317,34 +317,35 @@ function applyExplode(){
 
     // ====== Construção ======
 function buildFromLayout(l){
-  // limpa torre
   while (torre.children.length) torre.remove(torre.children[0]);
 
-  // 1) voxeliza por apartamento
   const occByApto = voxelizeByApto(l);
 
-  // 2) para cada apto, gera superfície única e um grupo (mesh + edges)
   for (const [apto, occ] of occByApto.entries()){
     const surface = buildSurfaceGeometryFromOcc(occ);
     if (!surface) continue;
 
-    // corpo translúcido
-    const mesh = new THREE.Mesh(surface, MAT.face());
+    // material neutro na criação (sem usar p.color do JSON)
+    const faceMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(0x6e7681),   // cinza neutro
+      metalness: 0.05,
+      roughness: 0.9,
+      transparent: faceOpacity < 0.999,
+      opacity: Math.min(1, faceOpacity),
+      depthWrite: faceOpacity >= 0.999,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1
+    });
+
+    const mesh = new THREE.Mesh(surface, faceMat);
     mesh.renderOrder = 1;
 
-    // contorno (arestas) a partir de malha inflada
     const inflated = inflateGeometry(surface, 0.04);
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
     edges.renderOrder = 2;
 
-    // IMPORTANTE: o surface já está em coordenadas de mundo.
-    // Portanto, o grupo NÃO deve ser transladado para o "centro" do próprio apto.
-    const group = new THREE.Group();
-    group.add(mesh);
-    group.add(edges);
-    group.position.set(0, 0, 0);
-
-    // levelIndex = menor nível Y presente no apto (para explodeY)
+    // menor nível Y do apto (explodeY)
     let minLevel = Infinity;
     for (const key of occ){
       const gy = parseInt(key.split(',')[1],10);
@@ -352,37 +353,37 @@ function buildFromLayout(l){
     }
     if (!Number.isFinite(minLevel)) minLevel = 0;
 
-    // basePos será definido DEPOIS da centralização global
+    const group = new THREE.Group();
+    group.add(mesh); group.add(edges);
+    group.position.set(0,0,0);
     group.userData = {
-      apto,
+      apto: String(apto),
       mesh, edges,
-      levelIndex: minLevel,
+      levelIndex: minLevel,     // pavimento para fallback de cor
       basePos: new THREE.Vector3(0,0,0)
     };
 
     torre.add(group);
   }
 
-  // 3) Centraliza o conjunto INTEIRO (torre) no (0,0,0)
+  // centraliza inteiro e fixa basePos "colado"
   const bbox = new THREE.Box3().setFromObject(torre);
   const center = new THREE.Vector3(); bbox.getCenter(center);
   const size = new THREE.Vector3();  bbox.getSize(size);
 
-  // move todos os grupos igualmente para recentrar
   for (const g of torre.children){
     g.position.sub(center);
-    g.userData.basePos.copy(g.position); // <-- agora basePos é a posição "colada"
+    g.userData.basePos.copy(g.position);
   }
 
-  // 4) Ajuste de câmera/zoom inicial conforme tamanho do prédio
+  // ajuste de câmera/zoom inicial
   const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
-  const ideal = Math.max(8, diag * 0.75);        // fator confortável
-  radius = clamp(ideal, minRadius, maxRadius);   // aplica limites
-  // coloca o alvo na altura do centro (para enquadrar verticalmente)
-  const cY = (size.y > 1e-6) ? ( -center.y + size.y/2 ) : 0;
+  const ideal = Math.max(8, diag * 0.75);
+  radius = clamp(ideal, 4, 200);
+  const cY = (size.y > 1e-6) ? (-center.y + size.y/2) : 0;
   orbitTarget.set(0, cY, 0);
 
-  applyExplode();   // explodeXY/Y = 0 no início → fica "colado"
+  applyExplode();
   updateCamera();
 }
 
@@ -491,18 +492,52 @@ function buildFromLayout(l){
       t = t.replace(/[\s\-\._\/]/g, '');
       return t;
     }
-    function aplicarCoresFVS(payload){
-      if (!payload) return;
-      const defHex = (payload.default || '#6e7681').trim();
-      const map = payload.colors || {};
-      for (const g of torre.children){
-        const id = g.userData.apto;
-        const hex = map[id] || map[normApto(id)] || null;
-        const color = new THREE.Color(hex || defHex);
-        g.userData.mesh.material.color.copy(color);
-        g.userData.mesh.material.needsUpdate = true;
-      }
+function aplicarCoresFVS(payload){
+  if (!payload) return;
+
+  // payload esperado:
+  // {
+  //   default: "#RRGGBB",           // opcional
+  //   colors: { "301":"#...", ... },// por apartamento (normalizado ou não)
+  //   byFloor: { "0":"#...", "1":"#...", ... } // opcional: por pavimento (levelIndex)
+  // }
+  const defHex = (payload.default || '#6e7681').trim();
+  const mapApto = payload.colors || {};
+  const mapFloor = payload.byFloor || {};
+
+  const pickColor = (aptoId, floorIdx) => {
+    // 1) por apartamento (aceita normalizado ou original)
+    const hexA = mapApto[aptoId] || mapApto[normApto(aptoId)];
+    if (hexA && /^#?[0-9a-f]{6}$/i.test(hexA)) return hexA.startsWith('#') ? hexA : '#'+hexA;
+
+    // 2) por pavimento (levelIndex)
+    const hexF = mapFloor[String(floorIdx)];
+    if (hexF && /^#?[0-9a-f]{6}$/i.test(hexF)) return hexF.startsWith('#') ? hexF : '#'+hexF;
+
+    // 3) default
+    return defHex.startsWith('#') ? defHex : '#'+defHex;
+  };
+
+  for (const g of torre.children){
+    const apt = g.userData.apto || '';
+    const floor = g.userData.levelIndex ?? 0;
+    const hex = pickColor(apt, floor);
+
+    const mat = g.userData.mesh.material;
+    mat.color = new THREE.Color(hex);
+    // garante estado sólido/translúcido coerente com a opacidade atual
+    if (faceOpacity >= 0.999){
+      mat.transparent = false;
+      mat.depthWrite = true;
+      mat.opacity = 1.0;
+    } else {
+      mat.transparent = true;
+      mat.depthWrite = false;
+      mat.opacity = faceOpacity;
     }
+    mat.needsUpdate = true;
+  }
+}
     window.addEventListener('message', (e)=>{
       const data = e.data || {};
       if (data.type === 'fvsColorMap') {
@@ -524,5 +559,6 @@ function buildFromLayout(l){
   </script>
 </body>
 </html>
+
 
 
