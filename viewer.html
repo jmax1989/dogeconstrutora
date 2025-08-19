@@ -164,12 +164,31 @@
     });
     const makeLine = (color,width=1)=> new THREE.LineBasicMaterial({ color, linewidth:width });
 
-    const MAT = {
-      face: ()=>makeFace(NEUTRAL_HEX),
-      line: makeLine(0x9aa3ab),
-      selLine: makeLine(0xffc107, 2)
-    };
-
+const MAT = {
+  face: ()=> new THREE.MeshStandardMaterial({
+    color: NEUTRAL_HEX,
+    metalness: 0.05,
+    roughness: 0.9,
+    transparent: true,
+    opacity: faceOpacity,
+    depthWrite: true,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1
+  }),
+  line: new THREE.LineBasicMaterial({
+    color: 0xcad7ff,
+    linewidth: 1,
+    depthTest: true,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.95
+  }),
+  selLine: new THREE.LineBasicMaterial({
+    color: 0xffc107,
+    linewidth: 2
+  })
+};
     const stepX = (layout.meta?.cellW ?? 1.2) + (layout.meta?.gap ?? 0.15);
     const stepZ = (layout.meta?.cellD ?? 1.2) + (layout.meta?.gap ?? 0.15);
     const aptoHeight = 0.5;
@@ -211,47 +230,174 @@
       }
     }
 
-    // ====== Construção ======
-    function buildFromLayout(l){
-      while (torre.children.length) torre.remove(torre.children[0]);
+// ===== Dimensão básica em "mundo" =====
+const cellW = (layout.meta?.cellW ?? 1.2);
+const cellD = (layout.meta?.cellD ?? 1.2);
+const gap   = (layout.meta?.gap   ?? 0.15);
 
-      const levels = computeLevels(l.placements);
+// No viewer, a altura de um "andar" é uniforme:
+const aptoHeight = 0.5;
+const stepX = cellW + gap;
+const stepZ = cellD + gap;
+const stepY = aptoHeight + gap;
 
-      for (const p of l.placements){
-        const width  = p.w*(layout.meta?.cellW??1.2) + (p.w-1)*(layout.meta?.gap??0.15);
-        const depth  = p.d*(layout.meta?.cellD??1.2) + (p.d-1)*(layout.meta?.gap??0.15);
-        const height = p.h*aptoHeight + (p.h-1)*(layout.meta?.gap??0.15);
+// Centro de um retângulo W×D começando em (x,z) em coordenadas de grade:
+function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
+function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
-        const geom = new THREE.BoxGeometry(width, height, depth);
-        const mesh = new THREE.Mesh(geom, MAT.face());
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom, 1), MAT.line);
-
-        const cx = rectCenterX(p.x, p.w);
-        const cz = rectCenterZ(p.z, p.d);
-        const ly = levels.indexOf(p.andar);
-        const cy = ly*stepY + (height/2);
-
-        const group = new THREE.Group();
-        group.position.set(cx, cy, cz);
-        mesh.position.set(0, 0, 0);
-        edges.position.set(0, 0, 0);
-        group.add(mesh); group.add(edges);
-
-        group.userData = { ...p, mesh, edges, levelIndex: ly, basePos: new THREE.Vector3() };
-        torre.add(group);
+// ===== Voxelização por APTO =====
+// Gera, para cada apartamento, um Set com strings "gx,gy,gz"
+// Aqui gy é o "nível" (andar), com altura uniforme stepY
+function voxelizeByApto(l){
+  const byApto = new Map();
+  for (const p of l.placements){
+    const apt = String(p.apto);
+    if (!byApto.has(apt)) byApto.set(apt, new Set());
+    const set = byApto.get(apt);
+    const baseY = (typeof p.andar === 'number') ? p.andar : 0; // 'AT' vira 0 aqui
+    for (let gx = p.x; gx < p.x + p.w; gx++){
+      for (let gz = p.z; gz < p.z + p.d; gz++){
+        for (let gy = baseY; gy < baseY + p.h; gy++){
+          set.add(`${gx},${gy},${gz}`);
+        }
       }
-
-      // Centraliza
-      const bbox = new THREE.Box3().setFromObject(torre);
-      const center = new THREE.Vector3(); bbox.getCenter(center);
-      for (const g of torre.children) {
-        g.position.sub(center);
-        g.userData.basePos.copy(g.position);
-      }
-      applyExplode();
-      recenterOrbitTarget();
-      updateCamera();
     }
+  }
+  return byApto;
+}
+
+// ===== Meshing de fronteira (sem faces internas) =====
+function buildSurfaceGeometryFromOcc(occSet){
+  if (!occSet || occSet.size===0) return null;
+  const has = (x,y,z)=> occSet.has(`${x},${y},${z}`);
+
+  const pos = [];
+  const idx = [];
+  let vbase = 0;
+
+  const pushQuad = (a,b,c,d)=>{
+    pos.push( ...a, ...b, ...c, ...d );
+    idx.push(vbase, vbase+1, vbase+2,  vbase, vbase+2, vbase+3);
+    vbase += 4;
+  };
+
+  // Converte um voxel [gx,gy,gz] em coords de mundo da caixa daquele voxel
+  function voxelBounds(gx,gy,gz){
+    const x0 = gx * stepX, x1 = x0 + cellW;
+    const z0 = gz * stepZ, z1 = z0 + cellD;
+    const y0 = gy * stepY, y1 = y0 + aptoHeight;
+    return {x0,x1,y0,y1,z0,z1};
+  }
+
+  // Itera por voxels; para cada uma das 6 faces, se não há vizinho → emite um quad
+  for (const key of occSet){
+    const [gx,gy,gz] = key.split(',').map(Number);
+    const {x0,x1,y0,y1,z0,z1} = voxelBounds(gx,gy,gz);
+
+    // -X
+    if (!has(gx-1,gy,gz)) pushQuad([x0,y0,z1],[x0,y0,z0],[x0,y1,z0],[x0,y1,z1]);
+    // +X
+    if (!has(gx+1,gy,gz)) pushQuad([x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0]);
+    // -Z
+    if (!has(gx,gy,gz-1)) pushQuad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);
+    // +Z
+    if (!has(gx,gy,gz+1)) pushQuad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);
+    // -Y (piso)
+    if (!has(gx,gy-1,gz)) pushQuad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]);
+    // +Y (teto)
+    if (!has(gx,gy+1,gz)) pushQuad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]);
+  }
+
+  if (pos.length===0) return null;
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(pos), 3));
+  geom.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(idx), 1));
+  geom.computeVertexNormals();
+  geom.computeBoundingBox(); geom.computeBoundingSphere();
+  return geom;
+}
+
+// ===== Inflar para desenhar edges limpas =====
+function inflateGeometry(geom, offset=0.04){
+  const g = geom.clone();
+  g.computeVertexNormals();
+  const pos = g.getAttribute('position');
+  const nor = g.getAttribute('normal');
+  for (let i=0;i<pos.count;i++){
+    pos.setX(i, pos.getX(i) + nor.getX(i)*offset);
+    pos.setY(i, pos.getY(i) + nor.getY(i)*offset);
+    pos.setZ(i, pos.getZ(i) + nor.getZ(i)*offset);
+  }
+  pos.needsUpdate = true;
+  return g;
+}    
+       
+    // ====== Construção ======
+    
+function buildFromLayout(l){
+  while (torre.children.length) torre.remove(torre.children[0]);
+
+  // 1) voxeliza por apartamento
+  const occByApto = voxelizeByApto(l);
+
+  // 2) para cada apto, gera uma superfície única e um grupo (mesh + edges)
+  for (const [apto, occ] of occByApto.entries()){
+    const surface = buildSurfaceGeometryFromOcc(occ);
+    if (!surface) continue;
+
+    // corpo translúcido
+    const mesh = new THREE.Mesh(surface, MAT.face());
+    mesh.renderOrder = 1;
+
+    // contorno (arestas) a partir de malha inflada
+    const inflated = inflateGeometry(surface, 0.04);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
+    edges.renderOrder = 2;
+
+    // calcula nível mínimo do apto (para explodeY)
+    let minLevel = Infinity, cx=0, cy=0, cz=0;
+    // centro aproximado pelo bbox da malha
+    surface.computeBoundingBox();
+    const bb = surface.boundingBox;
+    const center = new THREE.Vector3();
+    bb.getCenter(center);
+    cx = center.x; cy = center.y; cz = center.z;
+
+    // estimar minLevel varrendo occ
+    for (const key of occ){
+      const gy = parseInt(key.split(',')[1],10);
+      if (gy < minLevel) minLevel = gy;
+    }
+    if (!isFinite(minLevel)) minLevel = 0;
+
+    const group = new THREE.Group();
+    group.add(mesh); group.add(edges);
+    group.position.set(0,0,0);
+
+    // Dados para UI/cores/Explode
+    group.userData = {
+      apto,
+      mesh, edges,
+      levelIndex: minLevel,
+      basePos: new THREE.Vector3(cx, cy, cz)
+    };
+
+    torre.add(group);
+  }
+
+  // 3) Centraliza conjunto
+  const bbox = new THREE.Box3().setFromObject(torre);
+  const center = new THREE.Vector3(); bbox.getCenter(center);
+  for (const g of torre.children){
+    g.position.sub(center);
+    g.userData.basePos.sub(center);
+  }
+
+  applyExplode();
+  recenterOrbitTarget();
+  updateCamera();
+}
 
     function recenterOrbitTarget(){
       const bbox2 = new THREE.Box3().setFromObject(torre);
@@ -292,19 +438,23 @@
         window.__SEL_GROUP__ = null;
       }
 
-      if (inter.length) {
-        const hitObj = inter[0].object;
-        const selGroup = hitObj.parent; // mesh/edges estão diretamente no group
-        if (selGroup && selGroup.userData) {
-          selGroup.__lineBackup = selGroup.userData.edges.material;
-          selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
-          selGroup.userData.edges.material = MAT.selLine;
-          selGroup.userData.mesh.material = selGroup.userData.mesh.material.clone();
-          selGroup.userData.mesh.material.opacity = Math.min(1, faceOpacity + 0.2);
-          window.__SEL_GROUP__ = selGroup;
-          console.log('Selecionado:', selGroup.userData);
-        }
-      }
+if (inter.length) {
+  const hitObj = inter[0].object;
+  const selGroup = hitObj.parent;
+  if (selGroup && selGroup.userData) {
+    selGroup.__lineBackup = selGroup.userData.edges.material;
+    selGroup.__faceBackup = selGroup.userData.mesh.material;
+
+    selGroup.userData.edges.material = MAT.selLine;
+    // clona a face para não afetar outros grupos
+    const faceClone = selGroup.userData.mesh.material.clone();
+    faceClone.opacity = Math.min(1, faceOpacity + 0.2);
+    selGroup.userData.mesh.material = faceClone;
+
+    window.__SEL_GROUP__ = selGroup;
+    console.log('Selecionado:', selGroup.userData.apto);
+  }
+}
     });
 
     // ====== UI ======
