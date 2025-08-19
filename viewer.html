@@ -157,33 +157,6 @@ canvas { touch-action: none; }
     }
     updateCamera();
 
-    // Controles de mouse (esq=orbitar, dir=pan)
-    let dragging=false,lastX=0,lastY=0, dragMode='orbit';
-    function onDownMouse(e){
-      dragMode = (e.button === 2) ? 'pan' : 'orbit';
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
-    }
-    function onMoveMouse(e){
-      if(!dragging) return;
-      const dx=e.clientX-lastX, dy=e.clientY-lastY;
-      lastX=e.clientX; lastY=e.clientY;
-
-      if (dragMode === 'orbit') {
-        pivot.rotation.y += dx * 0.005;
-        theta = pivot.rotation.y;
-        phi -= dy * 0.005; phi = clamp(phi, minPhi, maxPhi);
-        updateCamera();
-      } else {
-        const panScale = radius * 0.0025;
-        const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
-        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-        const up = new THREE.Vector3().copy(camera.up).normalize();
-        orbitTarget.addScaledVector(right, -dx * panScale);
-        orbitTarget.addScaledVector(up,    dy * panScale);
-        updateCamera();
-      }
-    }
-    function onUpMouse(){ dragging=false; }
 
 // ===== Órbita + Pan (Pointer Events unificados) =====
 let dragging = false, dragMode = 'orbit', lastX = 0, lastY = 0, activePointerId = null;
@@ -210,6 +183,7 @@ function pointerMove3D(e){
 
   if (dragMode === 'orbit') {
     pivot.rotation.y += dx * 0.005;
+    theta = pivot.rotation.y;
     phi -= dy * 0.005; phi = clamp(phi, minPhi, maxPhi);
     updateCamera();
   } else {
@@ -846,5 +820,6 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
 
