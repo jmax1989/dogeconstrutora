@@ -599,49 +599,6 @@ const faceMat = new THREE.MeshStandardMaterial({
 
     // ====== UI ======
     document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
-// === HUD: Explode ===
-// ===== HUD: recolher/expandir e gesto de deslizar =====
-const hud       = document.getElementById('hud');
-const hudToggle = document.getElementById('hudToggle');
-const hudHandle = document.getElementById('hudHandle');
-
-// botão de toggle
-hudToggle.addEventListener('click', () => {
-  const collapsed = hud.classList.toggle('collapsed');
-  hudToggle.textContent = collapsed ? '▴' : '▾';
-  hudToggle.setAttribute('aria-expanded', String(!collapsed));
-});
-
-// gesto simples no mobile: deslizar a alça pra baixo/para cima
-let touchStartY = null;
-hudHandle.addEventListener('touchstart', (e) => {
-  touchStartY = e.touches[0].clientY;
-}, {passive:true});
-
-hudHandle.addEventListener('touchend', (e) => {
-  if (touchStartY == null) return;
-  const endY = (e.changedTouches[0] || e.touches[0]).clientY;
-  const dy = endY - touchStartY;
-  // limiares simples: >30px desce (recolhe), < -30px sobe (expande)
-  if (dy > 30) {
-    hud.classList.add('collapsed');
-    hudToggle.textContent = '▴';
-    hudToggle.setAttribute('aria-expanded', 'false');
-  } else if (dy < -30) {
-    hud.classList.remove('collapsed');
-    hudToggle.textContent = '▾';
-    hudToggle.setAttribute('aria-expanded', 'true');
-  }
-  touchStartY = null;
-}, {passive:true});
-
-// opcional: clique na alça também alterna (bom em desktop)
-hudHandle.addEventListener('click', (e) => {
-  // evita conflito com o botão
-  if (e.target === hudToggle) return;
-  hudToggle.click();
-});
-
 // ===== HUD: recolher/expandir + gesto na alça (Pointer Events) =====
 const hud       = document.getElementById('hud');
 const hudToggle = document.getElementById('hudToggle');
@@ -820,6 +777,7 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
 
 
