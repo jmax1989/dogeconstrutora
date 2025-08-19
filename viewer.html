@@ -64,6 +64,13 @@
   @media (prefers-reduced-motion: reduce) {
     #hud { transition: none; }
   }
+
+/* O canvas deve receber todos os gestos (sem scroll/browser gestures) */
+canvas { touch-action: none; }
+
+/* O HUD pode rolar verticalmente, mas a alça não */
+#hud { touch-action: pan-y; }
+#hudHandle { touch-action: none; } /* nossa alça (grip) */
 </style>
 </head>
 <body>
@@ -178,9 +185,68 @@
     }
     function onUpMouse(){ dragging=false; }
 
-    renderer.domElement.addEventListener('mousedown', onDownMouse);
-    window.addEventListener('mousemove', onMoveMouse);
-    window.addEventListener('mouseup', onUpMouse);
+// ===== Órbita + Pan (Pointer Events unificados) =====
+let dragging = false, dragMode = 'orbit', lastX = 0, lastY = 0, activePointerId = null;
+
+function pointerDown3D(e){
+  // Botão direito = pan, senão orbit. Em toque, default = orbit.
+  const isRight = (e.button === 2);
+  dragMode = isRight ? 'pan' : 'orbit';
+
+  activePointerId = e.pointerId;
+  dragging = true;
+  lastX = e.clientX; lastY = e.clientY;
+
+  // Captura e bloqueia gesto do navegador (scroll/zoom)
+  renderer.domElement.setPointerCapture(activePointerId);
+  e.preventDefault();
+}
+
+function pointerMove3D(e){
+  if (!dragging || e.pointerId !== activePointerId) return;
+  const dx = e.clientX - lastX;
+  const dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+
+  if (dragMode === 'orbit') {
+    pivot.rotation.y += dx * 0.005;
+    phi -= dy * 0.005; phi = clamp(phi, minPhi, maxPhi);
+    updateCamera();
+  } else {
+    const panScale = radius * 0.0025;
+    const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+    const right   = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+    const upv     = new THREE.Vector3().copy(camera.up).normalize();
+    orbitTarget.addScaledVector(right, -dx * panScale);
+    orbitTarget.addScaledVector(upv,    dy * panScale);
+    updateCamera();
+  }
+  e.preventDefault();
+}
+
+function pointerUp3D(e){
+  if (e.pointerId !== activePointerId) return;
+  dragging = false;
+  try { renderer.domElement.releasePointerCapture(activePointerId); } catch(_){}
+  activePointerId = null;
+  e.preventDefault();
+}
+
+renderer.domElement.addEventListener('pointerdown', pointerDown3D, {passive:false});
+renderer.domElement.addEventListener('pointermove', pointerMove3D,   {passive:false});
+renderer.domElement.addEventListener('pointerup',   pointerUp3D,     {passive:false});
+renderer.domElement.addEventListener('pointercancel', pointerUp3D,   {passive:false});
+
+// bloqueia menu do botão direito (para pan no desktop)
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+// Zoom: mantém wheel como estava
+renderer.domElement.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const f = 1 + (e.deltaY>0 ? 0.1 : -0.1);
+  radius = clamp(radius*f, minRadius, maxRadius);
+  updateCamera();
+}, {passive:false});
     renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
     // Touch (1 dedo = orbitar)
@@ -601,7 +667,58 @@ hudHandle.addEventListener('click', (e) => {
   if (e.target === hudToggle) return;
   hudToggle.click();
 });
-    
+
+// ===== HUD: recolher/expandir + gesto na alça (Pointer Events) =====
+const hud       = document.getElementById('hud');
+const hudToggle = document.getElementById('hudToggle');
+const hudHandle = document.getElementById('hudHandle');
+
+hudToggle.addEventListener('click', () => {
+  const collapsed = hud.classList.toggle('collapsed');
+  hudToggle.textContent = collapsed ? '▴' : '▾';
+  hudToggle.setAttribute('aria-expanded', String(!collapsed));
+});
+
+// Gesto vertical simples: arrastar a alça para recolher/expandir
+let hudDragId = null, hudStartY = 0, hudDy = 0;
+function hudPointerDown(e){
+  hudDragId = e.pointerId;
+  hudStartY = e.clientY; hudDy = 0;
+  hudHandle.setPointerCapture(hudDragId);
+  e.preventDefault(); e.stopPropagation();
+}
+function hudPointerMove(e){
+  if (e.pointerId !== hudDragId) return;
+  hudDy = e.clientY - hudStartY;
+  // feedback opcional: poderia aplicar transform parcial aqui
+  e.preventDefault(); e.stopPropagation();
+}
+function hudPointerUp(e){
+  if (e.pointerId !== hudDragId) return;
+  // limiares: >30px desce (recolhe), < -30px sobe (expande)
+  if (hudDy > 30) {
+    hud.classList.add('collapsed');
+    hudToggle.textContent = '▴';
+    hudToggle.setAttribute('aria-expanded', 'false');
+  } else if (hudDy < -30) {
+    hud.classList.remove('collapsed');
+    hudToggle.textContent = '▾';
+    hudToggle.setAttribute('aria-expanded', 'true');
+  }
+  try { hudHandle.releasePointerCapture(hudDragId); } catch(_){}
+  hudDragId = null; hudDy = 0;
+  e.preventDefault(); e.stopPropagation();
+}
+hudHandle.addEventListener('pointerdown', hudPointerDown, {passive:false});
+hudHandle.addEventListener('pointermove', hudPointerMove, {passive:false});
+hudHandle.addEventListener('pointerup',   hudPointerUp,   {passive:false});
+hudHandle.addEventListener('pointercancel', hudPointerUp, {passive:false});
+
+// Clique na alça alterna (bom no desktop)
+hudHandle.addEventListener('click', (e) => {
+  if (e.target === hudToggle) return;
+  hudToggle.click();
+});
 const wireOnly = document.getElementById('wireOnly');
 wireOnly.addEventListener('change', (e) => setFacesVisible(!e.target.checked));
 
@@ -729,4 +846,5 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
