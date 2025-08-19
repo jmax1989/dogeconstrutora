@@ -42,7 +42,7 @@
   },
   "placements": [
     {
-      "apto": "1",
+      "apto": "TER",
       "color": "#58a6ff",
       "andar": 0,
       "x": -0.5,
@@ -52,7 +52,7 @@
       "h": 1
     },
     {
-      "apto": "101",
+      "apto": "LAZ",
       "color": "#50e3c2",
       "andar": 1,
       "x": -0.5,
@@ -62,7 +62,7 @@
       "h": 1
     },
     {
-      "apto": "201",
+      "apto": "GAR",
       "color": "#b388ff",
       "andar": 2,
       "x": -0.5,
