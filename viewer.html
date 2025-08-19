@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Prédio 3D — pivot + explodir</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
+    #app { position: fixed; inset: 0; }
+    #hud {
+      position: fixed; left: 12px; top: 12px; padding: 10px 12px;
+      background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
+      border: 1px solid #30363d; border-radius: 10px; font-size: 14px; z-index: 10;
+      display: grid; gap: 8px; width: max-content;
+    }
+    #hud .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .val { width: 3.6rem; text-align: right; display: inline-block; }
+    button, label { user-select: none; }
+    canvas { display:block; }
+    #toast {
+      position: fixed; right: 12px; bottom: 12px; z-index: 20;
+      background: rgba(0,0,0,.55); border:1px solid #30363d; border-radius:8px;
+      padding:8px 10px; font-size:12px; display:none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="hud">
+    <div class="row" id="dragHint"><b>Arraste</b> para <span id="modeText">orbitar</span> • <b>Scroll</b> para zoom</div>
+    <div class="row">
+      <button id="modeBtn" title="Alternar entre Orbitar e Mover">🖐️ Mover</button>
+      <label><input id="wireOnly" type="checkbox" /> Só arame</label>
+      <button id="resetRot">🔄 Resetar giro</button>
+      <button id="recenter">🎯 Centralizar câmera</button>
+    </div>
+    <div class="row">
+      Opacidade: <input id="opacity" type="range" min="5" max="100" value="30" />
+      <span id="opacityVal" class="val">0.30</span>
+    </div>
+    <div class="row">
+      Explodir XY: <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
+      <span id="explodeXYVal" class="val">0.00</span>
+    </div>
+    <div class="row">
+      Explodir Y (piso): <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
+      <span id="explodeYVal" class="val">0.00</span>
+      <button id="resetExplode">Reset</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- THREE (sem OrbitControls) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+  <script>
+  (function(){
+    // ====== Setup ======
+    const root = document.getElementById('app');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d1117);
+
+    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setSize(innerWidth, innerHeight);
+    root.appendChild(renderer.domElement);
+
+    // Luzes
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x222233, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(5, 10, 7);
+    scene.add(dir);
+
+    // ====== Pivot (haste central) e Torre ======
+    const pivot = new THREE.Group();
+    scene.add(pivot);
+    const torre = new THREE.Group();
+    pivot.add(torre);
+
+    // ====== Órbita + Pan custom ======
+    const INITIAL_RADIUS = 28;
+    const INITIAL_PHI = Math.PI * 0.35;
+
+    const orbitTarget = new THREE.Vector3(0, 8, 0);
+    let radius = INITIAL_RADIUS, theta = Math.PI * 0.25, phi = INITIAL_PHI; // theta estático
+
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const minRadius = 4, maxRadius = 200, minPhi = 0.05, maxPhi = Math.PI * 0.49;
+
+    function updateCamera(){
+      const x = orbitTarget.x + radius * Math.sin(phi) * Math.cos(theta);
+      const y = orbitTarget.y + radius * Math.cos(phi);
+      const z = orbitTarget.z + radius * Math.sin(phi) * Math.sin(theta);
+      camera.position.set(x, y, z);
+      camera.lookAt(orbitTarget);
+    }
+    updateCamera();
+
+    // Modo arraste: 'orbit' ou 'pan'
+    let dragMode = 'orbit';
+    const modeBtn = document.getElementById('modeBtn');
+    const modeText = document.getElementById('modeText');
+    function toggleMode(){
+      dragMode = (dragMode === 'orbit') ? 'pan' : 'orbit';
+      modeBtn.textContent = (dragMode === 'orbit') ? '🖐️ Mover' : '🎯 Orbitar';
+      modeText.textContent = (dragMode === 'orbit') ? 'orbitar' : 'mover';
+    }
+    modeBtn.addEventListener('click', toggleMode);
+
+    let dragging=false,lastX=0,lastY=0;
+    const onDown=(x,y)=>{dragging=true;lastX=x;lastY=y;};
+    const onMove=(x,y)=>{
+      if(!dragging) return;
+      const dx=x-lastX, dy=y-lastY;
+      lastX=x; lastY=y;
+
+      if (dragMode === 'orbit') {
+        pivot.rotation.y += dx * 0.005;
+        phi -= dy * 0.005;
+        phi = clamp(phi, minPhi, maxPhi);
+        updateCamera();
+      } else {
+        const panScale = radius * 0.0025;
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+        const up = new THREE.Vector3().copy(camera.up).normalize();
+        orbitTarget.addScaledVector(right, -dx * panScale);
+        orbitTarget.addScaledVector(up,    dy * panScale);
+        updateCamera();
+      }
+    };
+    const onUp=()=>{dragging=false;};
+    renderer.domElement.addEventListener('mousedown',e=>onDown(e.clientX,e.clientY));
+    window.addEventListener('mousemove',e=>onMove(e.clientX,e.clientY));
+    window.addEventListener('mouseup',onUp);
+
+    // Touch
+    renderer.domElement.addEventListener('touchstart',e=>{
+      if(e.touches.length===1) onDown(e.touches[0].clientX,e.touches[0].clientY);
+    },{passive:true});
+    renderer.domElement.addEventListener('touchmove',e=>{
+      if(e.touches.length===1) onMove(e.touches[0].clientX,e.touches[0].clientY);
+    },{passive:true});
+    window.addEventListener('touchend',onUp);
+
+    // Zoom
+    renderer.domElement.addEventListener('wheel',e=>{
+      e.preventDefault();
+      const f=1+(e.deltaY>0?0.1:-0.1);
+      radius=clamp(radius*f,minRadius,maxRadius);
+      updateCamera();
+    },{passive:false});
+
+    // ====== Materiais / helpers ======
+    let faceOpacity = 0.30;
+    const makeFace = (color)=> new THREE.MeshStandardMaterial({
+      color, metalness:0.0, roughness:0.9, transparent:true, opacity:faceOpacity, depthWrite:false
+    });
+    const makeLine = (color,width=1)=> new THREE.LineBasicMaterial({ color, linewidth:width });
+
+    const MAT = {
+      frenteFace: ()=>makeFace(0x4a90e2),
+      fundoFace:  ()=>makeFace(0x50e3c2),
+      placaFace:  ()=>makeFace(0x9aa3ab),
+      mergeFace:  ()=>makeFace(0xb388ff),
+      atFace:     ()=>makeFace(0xffe082),
+      frenteLine: makeLine(0x8aa4ff),
+      fundoLine:  makeLine(0x7ddac9),
+      placaLine:  makeLine(0xc2cbd3),
+      mergeLine:  makeLine(0xc6a5ff),
+      atLine:     makeLine(0xffc107, 2),
+      selLine:    makeLine(0xffc107, 2)
+    };
+
+    // Dimensões (atualizadas pelo meta do JSON)
+    let CELL_W = 1.2;
+    let CELL_D = 1.2;
+    let GAP    = 0.15;
+    let aptoHeight = 0.5; // altura de 1 unidade de h
+    let stepX, stepZ, stepY;
+    function recomputeSteps(){
+      stepX = CELL_W + GAP;
+      stepZ = CELL_D + GAP;
+      stepY = aptoHeight + GAP;
+    }
+    recomputeSteps();
+
+    function rectCenterX(x, w){ return x*stepX + (w*CELL_W + (w-1)*GAP)/2; }
+    function rectCenterZ(z, d){ return z*stepZ + (d*CELL_D + (d-1)*GAP)/2; }
+
+    function computeLevels(placements){
+      const raw = placements.map(p=>p.andar);
+      const set = new Set(raw.map(v=>{
+        if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))) return Number(v);
+        return v;
+      }));
+      const nums = [...set].filter(v => typeof v === 'number').sort((a,b)=>a-b);
+      const others = [...set].filter(v => typeof v !== 'number');
+      const order = [...nums, ...others];
+      const idx = new Map(order.map((v,i)=>[v,i]));
+      return { order, indexOf: (v)=> idx.get((typeof v==='string' && !isNaN(Number(v))) ? Number(v) : v) };
+    }
+
+    // Ignoramos "color" do JSON: materiais por heurística
+    function faceMaterialFor(p){
+      if (p.apto==='AT') return MAT.atFace();
+      if (p.apto==='LAZ' || p.apto==='GAR' || p.apto==='TER') return MAT.placaFace();
+      if (p.d===4) return MAT.mergeFace();
+      return (p.z <= 1 ? MAT.frenteFace() : MAT.fundoFace());
+    }
+    function lineMaterialFor(p){
+      if (p.apto==='AT') return MAT.atLine;
+      if (p.apto==='LAZ' || p.apto==='GAR' || p.apto==='TER') return MAT.placaLine;
+      if (p.d===4) return MAT.mergeLine;
+      return (p.z <= 1 ? MAT.frenteLine : MAT.fundoLine);
+    }
+
+    function setFacesVisible(visible){ for (const g of torre.children) g.userData.mesh.visible = visible; }
+    function setFaceOpacity(op){ faceOpacity = op; for (const g of torre.children) g.userData.mesh.material.opacity = faceOpacity; }
+
+    // ====== Explodir ======
+    let explodeXY = 0.0;
+    let explodeY  = 0.0;
+    function applyExplode(){
+      for (const g of torre.children){
+        const base = g.userData.basePos;
+        const pos = base.clone();
+
+        if (explodeXY > 0){
+          const dir = new THREE.Vector3(base.x, 0, base.z);
+          const len = dir.length();
+          if (len > 1e-6){
+            dir.multiplyScalar(1/len);
+            const step = Math.max(stepX, stepZ);
+            pos.addScaledVector(dir, explodeXY * step);
+          }
+        }
+
+        pos.y += g.userData.levelIndex * explodeY;
+        g.position.copy(pos);
+      }
+    }
+
+    // ====== Construção ======
+    function buildFromLayout(l){
+      while (torre.children.length) torre.remove(torre.children[0]);
+
+      if (l && l.meta){
+        CELL_W = Number.isFinite(+l.meta.cellW) ? +l.meta.cellW : CELL_W;
+        CELL_D = Number.isFinite(+l.meta.cellD) ? +l.meta.cellD : CELL_D;
+        GAP    = Number.isFinite(+l.meta.gap)   ? +l.meta.gap   : GAP;
+        recomputeSteps();
+      }
+
+      const levels = computeLevels(l.placements||[]);
+
+      for (const p0 of (l.placements||[])){
+        const p = {
+          apto: (p0.apto ?? '').toString(),
+          andar: (typeof p0.andar === 'string' && !isNaN(Number(p0.andar))) ? Number(p0.andar) : p0.andar,
+          x:+p0.x, z:+p0.z, w:+p0.w, d:+p0.d, h:+p0.h
+        };
+
+        const width  = p.w*CELL_W + (p.w-1)*GAP;
+        const depth  = p.d*CELL_D + (p.d-1)*GAP;
+        const height = p.h*aptoHeight + (p.h-1)*GAP;
+
+        const geom = new THREE.BoxGeometry(width, height, depth);
+        const mesh = new THREE.Mesh(geom, faceMaterialFor(p));
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom, 1), lineMaterialFor(p));
+
+        const cx = rectCenterX(p.x, p.w);
+        const cz = rectCenterZ(p.z, p.d);
+        const ly = levels.indexOf(p.andar);
+        const cy = ly*stepY + (height/2);
+
+        const group = new THREE.Group();
+        group.position.set(cx, cy, cz);
+        mesh.position.set(0, 0, 0);
+        edges.position.set(0, 0, 0);
+        group.add(mesh); group.add(edges);
+
+        group.userData = { ...p, mesh, edges, levelIndex: ly };
+        torre.add(group);
+      }
+
+      if (torre.children.length){
+        const bbox = new THREE.Box3().setFromObject(torre);
+        const center = new THREE.Vector3(); bbox.getCenter(center);
+        for (const g of torre.children) {
+          g.position.sub(center);
+          g.userData.basePos = g.position.clone();
+        }
+      }
+      recenterOrbitTarget();
+      updateCamera();
+      applyExplode();
+    }
+
+    function recenterOrbitTarget(){
+      const bbox2 = new THREE.Box3().setFromObject(torre);
+      const c2 = new THREE.Vector3(); bbox2.getCenter(c2);
+      orbitTarget.set(0, c2.y, 0);
+    }
+
+    // ====== Loader do JSON externo ======
+    const toast = document.getElementById('toast');
+    function showToast(msg, ms=3000){
+      toast.textContent = msg; toast.style.display='block';
+      clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display='none', ms);
+    }
+
+    async function tryLoadInitialLayout() {
+      const params = new URLSearchParams(location.search);
+      // padrão: data/layout-3d.json (relativo ao viewer.html)
+      const src = params.get('src') || 'data/layout-3d.json';
+      try {
+        const res = await fetch(src, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const obj = await res.json();
+        if (!obj || !Array.isArray(obj.placements)) throw new Error('JSON sem "placements".');
+
+        const layout = {
+          meta: {
+            cellW: Number.isFinite(+obj.meta?.cellW) ? +obj.meta.cellW : CELL_W,
+            cellD: Number.isFinite(+obj.meta?.cellD) ? +obj.meta.cellD : CELL_D,
+            gap:   Number.isFinite(+obj.meta?.gap)   ? +obj.meta.gap   : GAP,
+            floors: Array.isArray(obj.meta?.floors) ? obj.meta.floors.slice() : []
+          },
+          placements: obj.placements.map(p => ({
+            apto: (p.apto ?? '').toString(),
+            andar: (typeof p.andar === 'string' && !isNaN(Number(p.andar))) ? Number(p.andar) : p.andar,
+            x:+p.x, z:+p.z, w:+p.w, d:+p.d, h:+p.h
+          }))
+        };
+
+        buildFromLayout(layout);
+        showToast(`Layout carregado de ${src}`);
+      } catch (err) {
+        console.error('Falha ao carregar layout externo:', err);
+        showToast('Falha ao carregar /data/layout-3d.json', 5000);
+      }
+    }
+
+    // ====== Seleção ======
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selGroup = null, selLineBackup = null, selFaceBackup = null;
+    renderer.domElement.addEventListener('click', (e) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      const edgeObjects = torre.children.map(g => g.userData.edges);
+      raycaster.setFromCamera(mouse, camera);
+      let inter = raycaster.intersectObjects(edgeObjects, false);
+      if (!inter.length) {
+        const faceObjects = torre.children.map(g => g.userData.mesh);
+        inter = raycaster.intersectObjects(faceObjects, false);
+      }
+
+      if (selGroup) {
+        selGroup.userData.edges.material = selLineBackup;
+        selGroup.userData.mesh.material = selFaceBackup;
+        selGroup = null;
+      }
+
+      if (inter.length) {
+        const hitObj = inter[0].object;
+        selGroup = torre.children.find(g => g.userData.edges === hitObj || g.userData.mesh === hitObj);
+        if (selGroup) {
+          selLineBackup = selGroup.userData.edges.material;
+          selFaceBackup = selGroup.userData.mesh.material.clone();
+          selGroup.userData.edges.material = MAT.selLine;
+          selGroup.userData.mesh.material = selGroup.userData.mesh.material.clone();
+          selGroup.userData.mesh.material.opacity = Math.min(1, faceOpacity + 0.2);
+          console.log('Selecionado:', selGroup.userData);
+        }
+      }
+    });
+
+    // ====== UI ======
+    const opacity = document.getElementById('opacity');
+    const opacityVal = document.getElementById('opacityVal');
+    opacity.addEventListener('input', () => {
+      const v = parseInt(opacity.value, 10)/100;
+      opacityVal.textContent = v.toFixed(2);
+      setFaceOpacity(v);
+    });
+
+    const wireOnly = document.getElementById('wireOnly');
+    wireOnly.addEventListener('change', () => setFacesVisible(!wireOnly.checked));
+
+    const explodeXYRange = document.getElementById('explodeXY');
+    const explodeXYVal = document.getElementById('explodeXYVal');
+    explodeXYRange.addEventListener('input', () => {
+      explodeXY = parseFloat(explodeXYRange.value);
+      explodeXYVal.textContent = explodeXY.toFixed(2);
+      applyExplode();
+    });
+
+    const explodeYRange = document.getElementById('explodeY');
+    const explodeYVal = document.getElementById('explodeYVal');
+    explodeYRange.addEventListener('input', () => {
+      explodeY = parseFloat(explodeYRange.value);
+      explodeYVal.textContent = explodeY.toFixed(2);
+      applyExplode();
+    });
+
+    document.getElementById('resetExplode').addEventListener('click', () => {
+      explodeXY = 0; explodeY = 0;
+      explodeXYRange.value = '0'; explodeYRange.value = '0';
+      explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
+      applyExplode();
+    });
+
+    document.getElementById('resetRot').addEventListener('click', () => {
+      pivot.rotation.set(0,0,0);
+    });
+
+    document.getElementById('recenter').addEventListener('click', () => {
+      recenterOrbitTarget();
+      radius = INITIAL_RADIUS;
+      phi = INITIAL_PHI;
+      updateCamera();
+    });
+
+    // ====== Receber layout via postMessage (opcional) ======
+    window.addEventListener('message', (e) => {
+      // se quiser restringir: if (e.origin !== window.location.origin) return;
+      const { type, payload } = e.data || {};
+      if (type === 'load-layout' && payload) {
+        try {
+          buildFromLayout(payload);
+          showToast('Layout recebido do 2D');
+        } catch (err) {
+          console.error('Falha ao aplicar layout recebido:', err);
+          showToast('Falha ao aplicar layout recebido', 4000);
+        }
+      }
+    });
+
+    // ====== Resize & Loop ======
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      updateCamera();
+    });
+
+    (function animate(){ requestAnimationFrame(animate); renderer.render(scene, camera); })();
+
+    // carrega direto do /data
+    tryLoadInitialLayout();
+  })();
+  </script>
+</body>
+</html>
