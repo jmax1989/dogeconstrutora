@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Prédio — 2D (Frontal/Superior) + 3D + Import/Export JSON</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#0d1117; --panel:#0b1220; --line:#1c2433; --text:#e6edf3; --muted:#9fb0c3;
+    --leftW: 56vw;         /* arrastável (divisor vertical) */
+    --topH: 40%;           /* arrastável (divisor horizontal) */
+    --splitW: 6px;
+  }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif; }
+
+  #toolbar{
+    display:flex; gap:10px; align-items:center; padding:10px 12px; margin:12px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    position:sticky; top:6px; z-index:20; flex-wrap:wrap;
+  }
+  button{cursor:pointer; border-radius:8px; border:1px solid #2a3446; background:#0b1220; color:#dfe7f3; padding:8px 10px; font-size:14px}
+  button.primary{background:#1e4ed8;border-color:#1e3a8a}
+  button.danger{background:#2a0f13;border-color:#5b1a22}
+  button[disabled]{opacity:.5; cursor:not-allowed}
+  label{font-size:12px;color:#9fb0c3}
+  input[type="number"], input[type="text"]{ border-radius:8px; border:1px solid #2a3446; background:#0b1220; color:#e6edf3; padding:6px 8px; }
+
+  .pane{
+    background:#0b1220; border:1px solid var(--line); border-radius:12px; padding:10px;
+    display:flex; flex-direction:column; gap:8px; min-height:80px;
+    overflow:visible; box-sizing:border-box;
+  }
+  h2{font-size:14px; font-weight:600; margin:0; color:#c9d1d9}
+
+  canvas.view2d, #view3d{
+    width:100%; height:100%; display:block;
+    background:#0b0f18;
+    border-radius:8px; border:1px solid #16233a;
+    box-sizing:border-box;
+  }
+
+  #status{padding:8px 12px; margin:12px; border:1px solid var(--line); border-radius:10px; color:#9fb0c3; font-size:12px;}
+
+  #wrap{
+    position:relative; margin:12px;
+    height: calc(100vh - 120px);
+    display:grid; grid-template-columns: var(--leftW) var(--splitW) 1fr; grid-template-rows: 100%; gap:0;
+  }
+
+  #leftCol{
+    grid-column:1; grid-row:1;
+    display:flex; flex-direction:column;
+    min-width:320px;
+    overflow:visible;
+    height:100%;
+    min-height:0;
+  }
+  #frontPane{ display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+  #front{ flex:1 1 0%; min-height:0; }
+
+  #rightCol{
+    grid-column:3; grid-row:1;
+    display:grid; grid-template-rows: var(--topH) var(--splitW) 1fr;
+    min-width:320px; overflow:visible; height:100%;
+    min-height:0;
+  }
+  #topPane{ grid-row:1; display:flex; flex-direction:column; min-height:160px; }
+  #top{ flex:1; min-height:0; }
+  #bottomPane{ grid-row:3; display:flex; flex-direction:column; min-height:320px; }
+  #view3d{ flex:1; min-height:0; }
+
+  .splitter-v{
+    grid-column:2; grid-row:1; cursor:col-resize; width:var(--splitW);
+    background:linear-gradient(180deg,#0f1420,#0b1119);
+    border-left:1px solid #121a28; border-right:1px solid #121a28;
+  }
+  .splitter-h{
+    grid-row:2; cursor:row-resize; height:var(--splitW);
+    background:linear-gradient(90deg,#0f1420,#0b1119);
+    border-top:1px solid #121a28; border-bottom:1px solid #121a28;
+  }
+
+  .overlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
+    align-items:center; justify-content:center; z-index:50; }
+  .modal{
+    width:min(96vw, 1040px);
+    max-height:92vh;
+    background:#0b1220; border:1px solid var(--line); border-radius:14px; padding:14px;
+    box-shadow:0 24px 60px rgba(0,0,0,.45);
+    display:grid; gap:10px; grid-template-rows: auto auto minmax(0,1fr) auto;
+    overflow:auto;
+  }
+  .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .row label{ display:flex; align-items:center; gap:6px; background:#0b111b; border:1px solid #16233a; padding:6px 8px; border-radius:8px; color:#9fb0c3; font-size:12px }
+  .grids{ display:grid; gap:12px; grid-template-columns: 1fr 1fr; min-height:0; }
+  .shapePane{ background:#0b111b; border:1px solid #16233a; border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:8px; min-height:200px; }
+  .shapePane h4{ margin:0; font-size:13px; color:#c9d1d9 }
+  #shapeTopCanvas, #shapeFrontCanvas{
+    width:100%; flex:1; display:block; background:#0a0f19; border-radius:10px; border:1px solid #1c2433;
+    min-height:180px; height:34vh; max-height:420px;
+    box-sizing:border-box;
+  }
+  #gridModal{ width:min(92vw, 720px); }
+  #floorsList{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+  #floorsList .floorRow{ display:flex; gap:8px; align-items:center; background:#0b111b; border:1px solid #16233a; padding:8px; border-radius:10px; }
+  .kbd{font-size:12px;color:#a7b6c9}
+  #fileInput{ display:none; }
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <button id="newElem" class="primary">+ Novo elemento</button>
+    <button id="editElem">✏️ Editar sel.</button>
+    <button id="dupElem">⎘ Duplicar sel.</button>
+    <button id="mergeSel">🧩 Mesclar sel.</button>
+    <button id="delElem" class="danger">Remover sel.</button>
+
+    <label style="margin-left:16px;">Pavimentos
+      <input id="buildingFloors" type="number" min="1" max="200" value="12">
+    </label>
+    <button id="floorsMinus">−</button>
+    <button id="floorsPlus">+</button>
+    <button id="editGrid">Alturas…</button>
+
+    <button id="importJSON" style="margin-left:auto">⬆️ Importar JSON</button>
+    <input id="fileInput" type="file" accept="application/json">
+    <button id="exportJSON">⬇️ Exportar JSON</button>
+    <button id="copyJSON">📋 Copiar JSON</button>
+    <button id="resetAll">↺ Reset</button>
+
+    <span style="color:#9fb0c3; font-size:12px; width:100%;">Zoom 2D (scroll) • Pan (botão direito ou SPACE+arrastar) • Ctrl+Z/Y • Ctrl+C/V • Clique no número do pavimento para isolar (ESC limpa) • Arrasto em grupo • 3D: esquerdo=orbitar, direito=pan, scroll=zoom</span>
+  </div>
+
+  <div id="wrap">
+    <div id="leftCol">
+      <div id="frontPane" class="pane">
+        <h2>Frontal — clique no número para isolar pavimento</h2>
+        <canvas id="front" class="view2d"></canvas>
+      </div>
+    </div>
+
+    <div id="splitLR" class="splitter-v" title="Arraste para redimensionar a largura"></div>
+
+    <div id="rightCol">
+      <div id="topPane" class="pane">
+        <h2>Superior — total / pavimento isolado</h2>
+        <canvas id="top" class="view2d"></canvas>
+      </div>
+
+      <div id="splitRT" class="splitter-h" title="Arraste para redimensionar a altura"></div>
+
+      <div id="bottomPane" class="pane">
+        <h2>3D — total / pavimento isolado</h2>
+        <canvas id="view3d"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div id="status">Pronto.</div>
+
+  <!-- Modal: Criador/Editor -->
+  <div id="creatorOverlay" class="overlay">
+    <div id="creatorModal" class="modal">
+      <div class="row" style="justify-content:space-between;">
+        <h3 id="creatorTitle" style="margin:0;font-size:15px;color:#c9d1d9">Novo elemento</h3>
+        <button id="creatorClose">✖</button>
+      </div>
+      <div class="row">
+        <label>Código (ex.: 301) <input id="cID" type="text" placeholder="vazio = automático"></label>
+        <label>W (X) <input id="cW" type="number" min="1" max="64" value="6"></label>
+        <label>H (Y pavimentos) <input id="cH" type="number" min="1" max="200" value="6"></label>
+        <label>D (Z) <input id="cD" type="number" min="1" max="64" value="4"></label>
+        <button id="clearTopMask">Limpar Superior</button>
+        <button id="clearFrontMask">Limpar Frontal</button>
+        <span class="kbd">Pintar: clique/arraste • Shift = borracha</span>
+      </div>
+      <div class="grids">
+        <div class="shapePane">
+          <h4>Superior (W × D)</h4>
+          <canvas id="shapeTopCanvas"></canvas>
+        </div>
+        <div class="shapePane">
+          <h4>Frontal (W × H)</h4>
+          <canvas id="shapeFrontCanvas"></canvas>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end; position:sticky; bottom:0; background:transparent;">
+        <button id="creatorCancel">Cancelar</button>
+        <button id="creatorSave" class="primary">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Editor da Grelha de Pavimentos -->
+  <div id="gridOverlay" class="overlay">
+    <div id="gridModal" class="modal">
+      <div class="row" style="justify-content:space-between;">
+        <h3 style="margin:0;font-size:15px;color:#c9d1d9">Alturas por pavimento (em “blocos”)</h3>
+        <button id="gridClose">✖</button>
+      </div>
+      <div class="row">
+        <span class="kbd">Ex.: 1º=3, 2º=5 → o 2º pavimento fica mais alto. Cada voxel vertical ocupa 1 pavimento.</span>
+      </div>
+      <div id="floorsList"></div>
+      <div class="row" style="justify-content:flex-end;">
+        <button id="gridCancel">Cancelar</button>
+        <button id="gridSave" class="primary">Salvar grelha</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+/* ==================== Constantes / Estado ==================== */
+const UNIT_XZ = 22;           // tamanho de 1 célula no plano XZ (px)
+const UNIT_Y  = 28;           // altura de 1 "bloco" (de 1 pavimento de altura)
+const GRID_PAD = 18;
+const MIN_CELL_XZ = 16;
+const COLORS = ['#58a6ff','#50e3c2','#b388ff','#ffa657','#7ee787','#e05d44','#f2cc60','#8ab4f8'];
+const FACE_OPACITY = 0.45;
+
+const rndId = ()=>'e'+Math.random().toString(36).slice(2,9);
+let elements = [];                    // elementos (cada um com topMask/frontMask)
+let selId = null;
+let selectedIds = new Set();
+let floors = Array(12).fill(3);       // altura (em “blocos”) por pavimento
+
+// caches p/ hit-test 2D
+let cacheFront = new Map();
+let cacheTop   = new Map();
+
+// Zoom/Pan 2D
+let frontZoom=1, frontPanX=0, frontPanY=0;
+let topZoom=1,   topPanX=0,   topPanY=0;
+let isSpaceDown=false;
+let panDrag=null;
+
+// Undo/Redo/Clipboard
+let undoStack=[], redoStack=[];
+let pendingSnapshot=null;
+let clipboard=null; let pasteBump=0;
+
+// Isolamento de pavimento
+let isolatedFloor = null;
+let floorHits = [];
+
+/* ==================== DOM & CTX ==================== */
+const frontCanvas = document.getElementById('front');
+const ctxF = frontCanvas.getContext('2d');
+const topCanvas = document.getElementById('top');
+const ctxT = topCanvas.getContext('2d');
+const statusEl = document.getElementById('status');
+
+/* ==================== Helpers comuns ==================== */
+function fitCanvas(c){
+  const dpr = Math.max(1, window.devicePixelRatio||1);
+  const r = c.getBoundingClientRect();
+  c.width = Math.round(r.width*dpr);
+  c.height= Math.round(r.height*dpr);
+  c.getContext('2d').setTransform(dpr,0,0,dpr,0,0);
+}
+function hexToRgba(hex, a=1){
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'#ffffff');
+  if(!m) return `rgba(255,255,255,${a})`;
+  const r=parseInt(m[1],16), g=parseInt(m[2],16), b=parseInt(m[3],16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function dimsFromSet(set){
+  if (!set || set.size===0) return {minX:0,maxX:-1,minY:0,maxY:-1,width:0,height:0};
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for (const key of set){
+    const [x,y] = key.split(',').map(Number);
+    minX=Math.min(minX,x); maxX=Math.max(maxX,x);
+    minY=Math.min(minY,y); maxY=Math.max(maxY,y);
+  }
+  return {minX,maxX,minY,maxY, width:(maxX-minX+1), height:(maxY-minY+1)};
+}
+function buildCumHeights(){ const cum=[0]; for (let i=0;i<floors.length;i++) cum.push(cum[i] + floors[i]*UNIT_Y); return cum; }
+
+/* ==================== 2D: Frontal ==================== */
+function drawFrontal(){
+  const c = frontCanvas, w=c.clientWidth, h=c.clientHeight;
+  const cum = buildCumHeights();
+  ctxF.clearRect(0,0,w,h);
+  ctxF.fillStyle='#0b111b'; ctxF.fillRect(0,0,w,h);
+
+  ctxF.save(); ctxF.translate(frontPanX, frontPanY); ctxF.scale(frontZoom, frontZoom);
+
+  const baseY = h - GRID_PAD;
+  const cx = w/2;
+  const LABEL_W = 76;
+
+  // faixa de régua ampla para clique
+  ctxF.fillStyle='rgba(18,26,40,.85)';
+  ctxF.fillRect(0, 0, GRID_PAD + LABEL_W, h);
+
+  floorHits = [];
+  ctxF.strokeStyle='#16233a';
+  ctxF.lineWidth=1/Math.max(0.001, frontZoom);
+  ctxF.textAlign='right'; ctxF.textBaseline='middle';
+  ctxF.font = `${12/Math.max(0.001, frontZoom)}px system-ui, sans-serif`;
+
+  for(let i=0;i<=floors.length;i++){
+    const y = baseY - (cum[i]||0);
+    ctxF.strokeStyle='#2b3b55';
+    ctxF.beginPath(); ctxF.moveTo(GRID_PAD, y); ctxF.lineTo(w-GRID_PAD, y); ctxF.stroke();
+
+    const x1 = 0, x2 = GRID_PAD + LABEL_W, y1 = y-14, y2 = y+14;
+    floorHits.push({floor:i, x1, y1, x2, y2});
+
+    ctxF.fillStyle = (isolatedFloor===i? '#ffc107' : '#9fb0c3');
+    ctxF.fillText(String(i), GRID_PAD + LABEL_W - 14, y);
+    ctxF.fillStyle='#16233a';
+  }
+
+  // eixo vertical central (alinhamento)
+  ctxF.strokeStyle='#2b3b55'; ctxF.lineWidth=2/Math.max(0.001, frontZoom);
+  ctxF.beginPath(); ctxF.moveTo(cx, GRID_PAD); ctxF.lineTo(cx, h-GRID_PAD); ctxF.stroke();
+
+  cacheFront.clear();
+
+  ctxF.lineWidth = 2/Math.max(0.001, frontZoom);
+  for (const e of elements){
+    const dimF = dimsFromSet(e.frontMask);
+    const dimT = dimsFromSet(e.topMask);
+    const hasWidth = (dimT.width>0);
+    const minCol = hasWidth ? dimT.minX : 0;
+    const maxCol = hasWidth ? dimT.maxX : -1;
+    const wCols  = Math.max(0, maxCol-minCol+1);
+    const hRows  = (dimF.maxY>=0 ? dimF.maxY+1 : 0);
+
+    let rx, ry, rw, rh;
+    if (wCols>0 && hRows>0){
+      rx = cx + (e.x + minCol)*UNIT_Y;
+      const yTopPx    = baseY - ( (e.y + hRows) <= floors.length ? cum[e.y + hRows] : cum.at(-1) );
+      const yBottomPx = baseY - ( (e.y) <= floors.length ? cum[e.y] : cum.at(-1) );
+      ry = yTopPx; rw = wCols*UNIT_Y; rh = Math.max(1, yBottomPx - yTopPx);
+    } else {
+      rx = cx + e.x*UNIT_Y;
+      const yTopPx    = baseY - ( (e.y + Math.max(1,dimF.height)) <= floors.length ? cum[e.y + Math.max(1,dimF.height)] : cum.at(-1) );
+      const yBottomPx = baseY - ( (e.y) <= floors.length ? cum[e.y] : cum.at(-1) );
+      ry = yTopPx; rw = Math.max(1, dimF.width)*UNIT_Y; rh = Math.max(1, yBottomPx - yTopPx);
+    }
+    cacheFront.set(e.id, {x:rx,y:ry,w:rw,h:rh});
+
+    const segs = segmentsFromMask(e.frontMask);
+    ctxF.strokeStyle = selectedIds.has(e.id)? '#ffc107' : hexToRgba(e.color, 0.95);
+    ctxF.beginPath();
+    for (const s of segs){
+      const y1 = e.y + s.y1, y2 = e.y + s.y2;
+      if (y1>floors.length || y2>floors.length) continue;
+      const px1 = cx + (e.x + s.x1)*UNIT_Y;
+      const px2 = cx + (e.x + s.x2)*UNIT_Y;
+      const py1 = baseY - cum[y1];
+      const py2 = baseY - cum[y2];
+      ctxF.moveTo(px1, py1); ctxF.lineTo(px2, py2);
+    }
+    ctxF.stroke();
+  }
+
+  ctxF.restore();
+}
+
+/* ==================== 2D: Superior ==================== */
+function computeFloorTopMask(e, floorIndex){
+  if (floorIndex==null) return e.topMask;
+  const yLocal = floorIndex - e.y;
+  if (yLocal < 0) return new Set();
+  const xHasY = new Set();
+  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if (y===yLocal) xHasY.add(x); });
+  if (xHasY.size===0) return new Set();
+  const out = new Set();
+  e.topMask.forEach(k=>{ const [x,z]=k.split(',').map(Number); if (xHasY.has(x)) out.add(k); });
+  return out;
+}
+function drawSuperior(){
+  const c=topCanvas, w=c.clientWidth, h=c.clientHeight;
+  ctxT.clearRect(0,0,w,h);
+  ctxT.fillStyle='#0b111b'; ctxT.fillRect(0,0,w,h);
+
+  ctxT.save(); ctxT.translate(topPanX, topPanY); ctxT.scale(topZoom, topZoom);
+
+  const cell = Math.max(MIN_CELL_XZ, Math.floor(Math.min((w-GRID_PAD*2)/60, (h-GRID_PAD*2)/60)));
+  const ox = Math.floor(w/2), oy = Math.floor(h/2);
+
+  ctxT.strokeStyle='#16233a'; ctxT.lineWidth=1/Math.max(0.001, topZoom);
+  for (let x=ox%cell; x<=w; x+=cell){ ctxT.beginPath(); ctxT.moveTo(x,0); ctxT.lineTo(x,h); ctxT.stroke(); }
+  for (let y=oy%cell; y<=h; y+=cell){ ctxT.beginPath(); ctxT.moveTo(0,y); ctxT.lineTo(w,y); ctxT.stroke(); }
+  ctxT.strokeStyle='#1c2a3f'; ctxT.lineWidth=2/Math.max(0.001, topZoom);
+  ctxT.beginPath(); ctxT.moveTo(0, oy); ctxT.lineTo(w, oy); ctxT.stroke();
+  ctxT.beginPath(); ctxT.moveTo(ox, 0); ctxT.lineTo(ox, h); ctxT.stroke();
+
+  cacheTop.clear();
+
+  ctxT.lineWidth=2/Math.max(0.001, topZoom);
+  for (const e of elements){
+    const topSetForView = computeFloorTopMask(e, isolatedFloor);
+    if (topSetForView.size===0) continue;
+
+    let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
+    topSetForView.forEach(key=>{
+      const [lx,lz]=key.split(',').map(Number);
+      const gx = e.x + lx, gz = e.z + lz;
+      minX=Math.min(minX,gx); maxX=Math.max(maxX,gx);
+      minZ=Math.min(minZ,gz); maxZ=Math.max(maxZ,gz);
+    });
+    const rx = ox + minX*cell, ry = oy + minZ*cell;
+    const rw = (maxX-minX+1)*cell, rh = (maxZ-minZ+1)*cell;
+    cacheTop.set(e.id, {x:rx,y:ry,w:rw,h:rh, cell, ox, oy});
+
+    const segs = segmentsFromMask(topSetForView);
+    ctxT.strokeStyle = selectedIds.has(e.id)? '#ffc107' : hexToRgba(e.color, 0.95);
+    ctxT.beginPath();
+    for (const s of segs){
+      const px1 = ox + (e.x + s.x1)*cell;
+      const px2 = ox + (e.x + s.x2)*cell;
+      const py1 = oy + (e.z + s.y1)*cell;
+      const py2 = oy + (e.z + s.y2)*cell;
+      ctxT.moveTo(px1, py1); ctxT.lineTo(px2, py2);
+    }
+    ctxT.stroke();
+  }
+
+  topCanvas._cell = cell; topCanvas._ox = ox; topCanvas._oy = oy;
+  ctxT.restore();
+}
+
+/* ==================== Segments (contorno de máscaras) ==================== */
+function segmentsFromMask(mask){
+  const edges = new Set();
+  const norm = (x1,y1,x2,y2)=> (x1<x2 || (x1===x2 && y1<y2))
+    ? `${x1},${y1},${x2},${y2}` : `${x2},${y2},${x1},${y1}`;
+  for (const key of mask){
+    const [x,y] = key.split(',').map(Number);
+    const list = [
+      norm(x, y,   x+1, y  ),
+      norm(x, y+1, x+1, y+1),
+      norm(x, y,   x,   y+1),
+      norm(x+1, y, x+1, y+1)
+    ];
+    for (const e of list){ if (edges.has(e)) edges.delete(e); else edges.add(e); }
+  }
+  const segs = [];
+  edges.forEach(k=>{
+    const [x1,y1,x2,y2] = k.split(',').map(Number);
+    segs.push({x1,y1,x2,y2});
+  });
+  return segs;
+}
+
+/* ==================== Seleção/Arrasto em grupo (2D) ==================== */
+let drag = null;
+
+function mouseToWorld(mx,my, view){
+  if (view==='front'){ return { x:(mx - frontPanX)/frontZoom, y:(my - frontPanY)/frontZoom }; }
+  else               { return { x:(mx - topPanX)/topZoom,     y:(my - topPanY)/topZoom     }; }
+}
+function pickIn(cache, mx,my, view){
+  const w = mouseToWorld(mx,my,view);
+  const x=w.x, y=w.y;
+  const arr = Array.from(cache.entries());
+  for (let i=arr.length-1;i>=0;i--){
+    const [id, r] = arr[i];
+    if (x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h) return id;
+  }
+  return null;
+}
+function selectId(id, additive=false){
+  if (!additive){ selectedIds.clear(); }
+  if (id){
+    if (additive){ if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id); }
+    else { selectedIds.add(id); }
+    selId = id;
+  } else { selId = null; }
+  updateButtonsState(); drawAll();
+}
+
+/* Pan 2D */
+[frontCanvas, topCanvas].forEach(cv=>{
+  cv.addEventListener('contextmenu', e=> e.preventDefault());
+  cv.addEventListener('mousedown', (e)=>{
+    if (e.button===2 || (e.button===0 && isSpaceDown) || e.button===1){
+      panDrag = {view:(cv===frontCanvas?'front':'top'), lastX:e.clientX, lastY:e.clientY};
+    }
+  });
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!panDrag) return;
+  const dx = e.clientX - panDrag.lastX;
+  const dy = e.clientY - panDrag.lastY;
+  panDrag.lastX = e.clientX; panDrag.lastY = e.clientY;
+  if (panDrag.view==='front'){ frontPanX += dx; frontPanY += dy; }
+  else { topPanX += dx; topPanY += dy; }
+  drawAll();
+});
+window.addEventListener('mouseup', ()=>{ 
+  if (drag){ commitAction(); renumberIds(); }
+  drag=null; panDrag=null; 
+});
+
+/* Zoom 2D */
+function zoomAt(canvas, view, deltaY, clientX, clientY){
+  const rect = canvas.getBoundingClientRect();
+  const mx = clientX - rect.left, my = clientY - rect.top;
+  const zoom = (view==='front') ? frontZoom : topZoom;
+  const panX = (view==='front') ? frontPanX : topPanX;
+  const panY = (view==='front') ? frontPanY : topPanY;
+
+  const factor = deltaY>0 ? 1/1.1 : 1.1;
+  const newZoom = Math.max(0.3, Math.min(8, zoom*factor));
+
+  const wx = (mx - panX)/zoom;
+  const wy = (my - panY)/zoom;
+
+  const newPanX = mx - wx*newZoom;
+  const newPanY = my - wy*newZoom;
+
+  if (view==='front'){ frontZoom=newZoom; frontPanX=newPanX; frontPanY=newPanY; }
+  else { topZoom=newZoom; topPanX=newPanX; topPanY=newPanY; }
+
+  drawAll();
+}
+frontCanvas.addEventListener('wheel', (e)=>{ e.preventDefault(); zoomAt(frontCanvas,'front', e.deltaY, e.clientX, e.clientY); }, {passive:false});
+topCanvas.addEventListener('wheel',   (e)=>{ e.preventDefault(); zoomAt(topCanvas,  'top',   e.deltaY, e.clientX, e.clientY); }, {passive:false});
+
+/* Clique na régua + mover em grupo (frontal) */
+frontCanvas.addEventListener('mousedown', (e)=>{
+  if (e.button!==0 || isSpaceDown) return;
+  const r=frontCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const wPos = mouseToWorld(mx,my,'front');
+
+  for (const hit of floorHits){
+    if (wPos.x>=hit.x1 && wPos.x<=hit.x2 && wPos.y>=hit.y1 && wPos.y<=hit.y2){
+      if (isolatedFloor===hit.floor) { isolatedFloor = null; selectedIds.clear(); selId=null; }
+      else {
+        isolatedFloor = hit.floor; selectedIds.clear(); selId=null;
+        for (const e of elements){ if (elementTouchesFloor(e, hit.floor)){ selectedIds.add(e.id); selId = selId || e.id; } }
+      }
+      updateButtonsState(); drawAll(); return;
+    }
+  }
+
+  const hitId = pickIn(cacheFront, mx,my,'front');
+  if (!hitId){ selectId(null); return; }
+
+  const additive = e.ctrlKey||e.metaKey;
+  if (!selectedIds.has(hitId) || additive){ selectId(hitId, additive); }
+
+  startAction();
+
+  const elClicked = elements.find(x=>x.id===hitId);
+  const dimF = dimsFromSet(elClicked.frontMask);
+  const bottomLocal = Math.max(0, dimF.minY);
+
+  const cum=buildCumHeights();
+  const baseY = frontCanvas.clientHeight - GRID_PAD;
+  const floorBottomPx = (f)=> baseY - (cum[f]||0);
+  const anchorFloor = elClicked.y + bottomLocal;
+  const offsetWorldY = wPos.y - floorBottomPx(anchorFloor);
+
+  const starts = new Map();
+  selectedIds.forEach(id=>{
+    const e = elements.find(x=>x.id===id);
+    if (e) starts.set(id, {x:e.x, y:e.y, z:e.z});
+  });
+
+  drag = { view:'front', ids: Array.from(selectedIds),
+           start:{ mx,my, wx:wPos.x, wy:wPos.y, xById: starts, anchorFloor }, offsetWorldY };
+});
+frontCanvas.addEventListener('dblclick', (e)=>{
+  const r=frontCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const id = pickIn(cacheFront, mx,my,'front');
+  if (id){ selectId(id,false); openCreator('edit'); }
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!drag || drag.view!=='front') return;
+  const r=frontCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const world = mouseToWorld(mx,my,'front');
+
+  const dxCols = Math.round((world.x - drag.start.wx)/UNIT_Y);
+
+  const target = world.y - drag.offsetWorldY;
+  const cum=buildCumHeights();
+  const baseY = frontCanvas.clientHeight - GRID_PAD;
+  let bestF = 0, bestErr=Infinity;
+  for (let f=0; f<=floors.length; f++){
+    const fb = baseY - (cum[f]||0);
+    const err = Math.abs(fb - target);
+    if (err<bestErr){ bestErr=err; bestF=f; }
+  }
+  const deltaFloors = bestF - drag.start.anchorFloor;
+
+  for (const id of drag.ids){
+    const e0 = drag.start.xById.get(id);
+    const el = elements.find(x=>x.id===id);
+    if (!e0 || !el) continue;
+    el.x = e0.x + dxCols;
+
+    const dimF = dimsFromSet(el.frontMask);
+    const heightLocal = (dimF.maxY>=0 ? dimF.maxY+1 : 1);
+    let newY = e0.y + deltaFloors;
+    newY = Math.max(0, Math.min(newY, Math.max(0, floors.length - heightLocal)));
+    el.y = newY;
+  }
+  drawAll();
+});
+
+/* Superior: mover em grupo X/Z */
+topCanvas.addEventListener('mousedown', (e)=>{
+  if (e.button!==0 || isSpaceDown) return;
+  const r=topCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const hitId = pickIn(cacheTop, mx,my,'top');
+  if (!hitId){ selectId(null); return; }
+
+  const additive = e.ctrlKey||e.metaKey;
+  if (!selectedIds.has(hitId) || additive){ selectId(hitId, additive); }
+
+  startAction();
+
+  const world = mouseToWorld(mx,my,'top');
+  const starts = new Map();
+  selectedIds.forEach(id=>{
+    const e = elements.find(x=>x.id===id);
+    if (e) starts.set(id, {x:e.x, y:e.y, z:e.z});
+  });
+
+  drag = { view:'top', ids: Array.from(selectedIds),
+           start:{ mx,my, wx:world.x, wy:world.y, xById: starts } };
+});
+topCanvas.addEventListener('dblclick', (e)=>{
+  const r=topCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const id = pickIn(cacheTop, mx,my,'top');
+  if (id){ selectId(id,false); openCreator('edit'); }
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!drag || drag.view!=='top') return;
+  const r=topCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const world = mouseToWorld(mx,my,'top');
+  const cell = topCanvas._cell||20;
+
+  const dx = Math.round((world.x - drag.start.wx)/cell);
+  const dz = Math.round((world.y - drag.start.wy)/cell);
+
+  for (const id of drag.ids){
+    const e0 = drag.start.xById.get(id);
+    const el = elements.find(x=>x.id===id);
+    if (!e0 || !el) continue;
+    el.x = e0.x + dx;
+    el.z = e0.z + dz;
+  }
+  drawAll();
+});
+
+function elementTouchesFloor(e, f){
+  const yLocal = f - e.y;
+  if (yLocal < 0) return false;
+  let ok=false;
+  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if (y===yLocal) ok=true; });
+  return ok;
+}
+
+/* ==================== Undo/Redo/Clipboard ==================== */
+function serializeElement(e){
+  return { id:e.id, code:e.code, color:e.color, x:e.x, y:e.y, z:e.z, W:e.W, H:e.H, D:e.D,
+           topMask:[...e.topMask], frontMask:[...e.frontMask] };
+}
+function deserializeElement(o){
+  return { id:o.id, code:o.code, color:o.color, x:o.x, y:o.y, z:o.z, W:o.W, H:o.H, D:o.D,
+           topMask:new Set(o.topMask), frontMask:new Set(o.frontMask) };
+}
+function snapshotState(){ return { elements: elements.map(serializeElement), floors:[...floors], isolatedFloor }; }
+function restoreSnapshot(snap){
+  const obj = typeof snap==='string' ? JSON.parse(snap) : snap;
+  elements = obj.elements.map(deserializeElement);
+  floors = obj.floors.slice();
+  isolatedFloor = (obj.isolatedFloor ?? null);
+  selId=null; selectedIds.clear();
+  drawAll(); updateButtonsState();
+}
+function pushUndo(snap){ undoStack.push(JSON.stringify(snap)); if (undoStack.length>200) undoStack.shift(); redoStack=[]; }
+function startAction(){ if (!pendingSnapshot) pendingSnapshot = snapshotState(); }
+function commitAction(){ if (pendingSnapshot){ pushUndo(pendingSnapshot); pendingSnapshot=null; } }
+function undo(){
+  if (!undoStack.length) return;
+  const curr = snapshotState(); const snap = undoStack.pop();
+  redoStack.push(JSON.stringify(curr)); restoreSnapshot(snap);
+}
+function redo(){
+  if (!redoStack.length) return;
+  const curr = snapshotState(); const snap = redoStack.pop();
+  undoStack.push(JSON.stringify(curr)); restoreSnapshot(snap);
+}
+function copySelection(){
+  if (selectedIds.size===0) return;
+  const sel = elements.filter(e=>selectedIds.has(e.id));
+  let minX=Infinity,minY=Infinity,minZ=Infinity;
+  sel.forEach(e=>{ minX=Math.min(minX,e.x); minY=Math.min(minY,e.y); minZ=Math.min(minZ,e.z); });
+  clipboard = {
+    base:{x:minX,y:minY,z:minZ},
+    items: sel.map(e=>({
+      dx: e.x - minX, dy: e.y - minY, dz: e.z - minZ,
+      W:e.W,H:e.H,D:e.D, color:e.color, code:e.code,
+      topMask:[...e.topMask], frontMask:[...e.frontMask], id:e.id
+    }))
+  };
+  pasteBump = 0;
+  statusEl.textContent = `Copiados ${sel.length} elemento(s). Ctrl+V para colar.`;
+}
+function pasteClipboard(){
+  if (!clipboard) return;
+  startAction();
+  const baseOffset = {x:clipboard.base.x + 1 + pasteBump, y:clipboard.base.y, z:clipboard.base.z};
+  const newIds=[];
+  clipboard.items.forEach(it=>{
+    const e = {
+      id: rndId(),
+      code: it.code,
+      color: it.color,
+      x: baseOffset.x + it.dx,
+      y: baseOffset.y + it.dy,
+      z: baseOffset.z + it.dz,
+      W: it.W, H: it.H, D: it.D,
+      topMask: new Set(it.topMask),
+      frontMask: new Set(it.frontMask)
+    };
+    elements.push(e);
+    newIds.push(e.id);
+  });
+  pasteBump++;
+  selectedIds = new Set(newIds); selId=newIds[0]||null;
+  commitAction();
+  renumberIds();
+  drawAll(); updateButtonsState();
+}
+
+/* atalhos */
+document.addEventListener('keydown', (e)=>{
+  if (e.key==='Escape'){ isolatedFloor=null; selectedIds.clear(); selId=null; drawAll(); updateButtonsState(); return; }
+  if (e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA' || e.target.isContentEditable)) {
+    if (e.code==='Space') isSpaceDown=true;
+    return;
+  }
+  if (e.code==='Space') { isSpaceDown=true; }
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const k = e.key.toLowerCase();
+  if (k==='z'){ e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+  else if (k==='y'){ e.preventDefault(); redo(); }
+  else if (k==='c'){ e.preventDefault(); copySelection(); }
+  else if (k==='v'){ e.preventDefault(); pasteClipboard(); }
+});
+document.addEventListener('keyup', (e)=>{ if (e.code==='Space') isSpaceDown=false; });
+
+/* ==================== 3D — Caixas → merge → weld ==================== */
+const glcanvas = document.getElementById('view3d');
+let scene=null, camera=null, renderer=null, group3D=null;
+let yaw=Math.PI*0.35, pitch=Math.PI*0.28, radius=260;
+let dragging3D=false, mode3D='orbit', lx=0, ly=0;
+let target3D = new THREE.Vector3(0,0,0);
+
+function setup3D(){
+  scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b0f18);
+  camera = new THREE.PerspectiveCamera(60, 1, 0.1, 10000);
+  renderer = new THREE.WebGLRenderer({ canvas: glcanvas, antialias:true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+  group3D = new THREE.Group(); scene.add(group3D);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 0.95);
+  const dir  = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(5,12,8);
+  scene.add(hemi, dir);
+
+  fit3D(); updateCamera3D(); animate3D();
+
+  glcanvas.addEventListener('contextmenu', e=> e.preventDefault());
+  glcanvas.addEventListener('mousedown', e=>{
+    dragging3D=true; lx=e.clientX; ly=e.clientY;
+    mode3D = (e.button===2) ? 'pan' : 'orbit';
+  });
+  window.addEventListener('mouseup', ()=> dragging3D=false);
+  window.addEventListener('mousemove', e=>{
+    if(!dragging3D) return;
+    const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    if (mode3D==='pan'){
+      const panScale = radius * 0.0025;
+      const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+      const right   = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      const upv     = new THREE.Vector3().copy(camera.up).normalize();
+      target3D.addScaledVector(right, -dx*panScale);
+      target3D.addScaledVector(upv,    dy*panScale);
+    } else {
+      yaw+=dx*0.005; pitch-=dy*0.005; pitch = Math.max(0.05, Math.min(Math.PI*0.95, pitch));
+    }
+    updateCamera3D();
+  });
+  glcanvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const f = 1+(e.deltaY>0?0.1:-0.1);
+    radius = Math.max(UNIT_XZ*6, Math.min(8000, radius*f));
+    updateCamera3D();
+  }, {passive:false});
+}
+function fit3D(){
+  if (!renderer || !camera) return;
+  const w = Math.max(200, glcanvas.clientWidth);
+  const h = Math.max(200, glcanvas.clientHeight);
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+function updateCamera3D(){
+  if (!camera) return;
+  const x = target3D.x + radius * Math.sin(pitch) * Math.cos(yaw);
+  const y = target3D.y + radius * Math.cos(pitch);
+  const z = target3D.z + radius * Math.sin(pitch) * Math.sin(yaw);
+  camera.position.set(x,y,z); camera.lookAt(target3D);
+}
+function animate3D(){ if (!renderer || !scene || !camera) return; requestAnimationFrame(animate3D); renderer.render(scene,camera); }
+
+/* helpers merge/weld */
+function mergeBufferGeometries(geoms){
+  if (!geoms.length) return null;
+  let totalVert=0, totalIdx=0;
+  for (const g of geoms){
+    const pos = g.getAttribute('position');
+    totalVert += pos.count;
+    totalIdx  += g.index ? g.index.count : pos.count;
+  }
+  const posArr = new Float32Array(totalVert*3);
+  const idxArr = new Uint32Array(totalIdx);
+  let vOff=0, iOff=0, base=0;
+  for (const g of geoms){
+    const pos = g.getAttribute('position').array;
+    posArr.set(pos, vOff*3);
+    const count = g.getAttribute('position').count;
+    if (g.index){
+      const gi = g.index.array;
+      for (let i=0;i<gi.length;i++) idxArr[iOff++] = base + gi[i];
+    } else {
+      for (let i=0;i<count;i++) idxArr[iOff++] = base + i;
+    }
+    vOff += count; base += count;
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  geom.setIndex(new THREE.BufferAttribute(idxArr, 1));
+  return geom;
+}
+function weldGeometry(geom, tol=1e-4){
+  const pos = geom.getAttribute('position');
+  const index = geom.index ? geom.index.array : null;
+  const map = new Map(); const remap = new Uint32Array(pos.count);
+  const outPos = [];
+  let newCount=0;
+  for (let i=0;i<pos.count;i++){
+    const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+    const k = `${Math.round(x/tol)},${Math.round(y/tol)},${Math.round(z/tol)}`;
+    if (!map.has(k)){ map.set(k, newCount); outPos.push(x,y,z); remap[i]=newCount; newCount++; }
+    else remap[i]=map.get(k);
+  }
+  let newIdx=[];
+  if (index){
+    for (let i=0;i<index.length;i+=3){
+      const a=remap[index[i]], b=remap[index[i+1]], c=remap[index[i+2]];
+      if (a!==b && b!==c && c!==a){ newIdx.push(a,b,c); }
+    }
+  } else {
+    for (let i=0;i<pos.count;i++) newIdx.push(remap[i]);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(outPos), 3));
+  out.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(newIdx), 1));
+  out.computeVertexNormals();
+  out.computeBoundingBox(); out.computeBoundingSphere();
+  return out;
+}
+
+/* rebuild3D com clipping por pavimento e edges “limpos” */
+function rebuild3D(){
+  if (!group3D) return;
+  while (group3D.children.length) group3D.remove(group3D.children[0]);
+
+  if (elements.length===0){ updateCamera3D(); return; }
+
+  const cum = buildCumHeights();
+  const cumAt=(i)=> cum[Math.max(0, Math.min(i, cum.length-1))];
+
+  for (const e of elements){
+    const matFace = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(e.color),
+      metalness: 0.05, roughness: 0.9,
+      transparent: true, opacity: FACE_OPACITY, depthWrite: true,
+      polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+    });
+    const matEdge = new THREE.LineBasicMaterial({ color: 0xcad7ff, transparent:true, opacity:0.95 });
+
+    // agrupa runs verticais por (x,z)
+    const yByX = new Map();
+    e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
+    const zCols = new Map();
+    e.topMask.forEach(k=>{ const [x,z]=k.split(',').map(Number); if(!zCols.has(x)) zCols.set(x,new Set()); zCols.get(x).add(z); });
+
+    const runsByXZ = new Map();
+    for (const [lx, setZ] of zCols.entries()){
+      const ySet = yByX.get(lx) || new Set();
+      if (ySet.size===0) continue;
+      const ys = Array.from(ySet.values()); const yMin=Math.min(...ys), yMax=Math.max(...ys);
+      const hasY = new Set(ys);
+      for (const lz of setZ){
+        let y = yMin;
+        while (y <= yMax){
+          if (!hasY.has(y)){ y++; continue; }
+          let y0=y; while (hasY.has(y)) y++; let y1=y;
+          const key = `${lx},${lz}`; if (!runsByXZ.has(key)) runsByXZ.set(key, []);
+          runsByXZ.get(key).push({y0,y1});
+        }
+      }
+    }
+
+    const visited = new Set();
+    const hasRun=(lx,lz,y0,y1)=>{ const arr=runsByXZ.get(`${lx},${lz}`); return !!arr && arr.some(r=>r.y0===y0&&r.y1===y1); };
+    const markRun=(lx,lz,y0,y1)=> visited.add(`${lx},${lz},${y0},${y1}`);
+    const isVisited=(lx,lz,y0,y1)=> visited.has(`${lx},${lz},${y0},${y1}`);
+
+    const parts = [];
+
+    for (const [key, arr] of runsByXZ.entries()){
+      const [lx0, lz0] = key.split(',').map(Number);
+      for (const run of arr){
+        const {y0,y1} = run;
+        if (isVisited(lx0,lz0,y0,y1)) continue;
+
+        // expande em Z
+        let zMin=lz0, zMax=lz0;
+        while (hasRun(lx0, zMin-1, y0, y1) && !isVisited(lx0, zMin-1, y0, y1)) zMin--;
+        while (hasRun(lx0, zMax+1, y0, y1) && !isVisited(lx0, zMax+1, y0, y1)) zMax++;
+
+        // expande em X
+        let xMin=lx0, xMax=lx0;
+        outerNeg: while (true){
+          const nx=xMin-1;
+          for (let z=zMin; z<=zMax; z++){ if (!hasRun(nx,z,y0,y1) || isVisited(nx,z,y0,y1)) break outerNeg; }
+          xMin=nx;
+        }
+        outerPos: while (true){
+          const nx=xMax+1;
+          for (let z=zMin; z<=zMax; z++){ if (!hasRun(nx,z,y0,y1) || isVisited(nx,z,y0,y1)) break outerPos; }
+          xMax=nx;
+        }
+
+        for (let x=xMin; x<=xMax; x++){ for (let z=zMin; z<=zMax; z++){ markRun(x,z,y0,y1); } }
+
+        // clipe por pavimento isolado (se houver)
+        let gY0 = e.y + y0, gY1 = e.y + y1;
+        if (gY0 >= floors.length) continue;
+        gY1 = Math.min(gY1, floors.length);
+        if (gY1 <= gY0) continue;
+        const clip0 = (isolatedFloor==null)? gY0 : Math.max(gY0, isolatedFloor);
+        const clip1 = (isolatedFloor==null)? gY1 : Math.min(gY1, isolatedFloor+1);
+        if (clip1 <= clip0) continue;
+
+        // dimensões em mundo
+        const spanX = (xMax - xMin + 1);
+        const spanZ = (zMax - zMin + 1);
+        const width  = spanX * UNIT_XZ;
+        const depth  = spanZ * UNIT_XZ;
+        const height = (cumAt(clip1) - cumAt(clip0));
+
+        // caixa centrada
+        const geom = new THREE.BoxGeometry(width, height, depth);
+
+        // posição global (centro)
+        const cx = (e.x + xMin + spanX/2) * UNIT_XZ;
+        const cy = (cumAt(clip0) + cumAt(clip1)) / 2;
+        const cz = (e.z + zMin + spanZ/2) * UNIT_XZ;
+
+        geom.applyMatrix4(new THREE.Matrix4().makeTranslation(cx, cy, cz));
+        parts.push(geom);
+      }
+    }
+
+    if (parts.length===0) continue;
+
+    // merge + solda (elimina costuras e evita “arestas de junção”)
+    let merged = mergeBufferGeometries(parts);
+    merged = weldGeometry(merged, 1e-4);
+
+    const mesh  = new THREE.Mesh(merged, matFace);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(merged, 1), matEdge);
+
+    const container = new THREE.Group();
+    container.add(mesh); container.add(edges);
+    group3D.add(container);
+  }
+
+  if (group3D.children.length>0){
+    const bbox = new THREE.Box3().setFromObject(group3D);
+    const center = new THREE.Vector3(); bbox.getCenter(center);
+    group3D.children.forEach(ch => ch.position.sub(center));
+    const size = new THREE.Vector3(); bbox.getSize(size);
+    const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
+    radius = Math.max(UNIT_XZ*8, diag*0.9);
+    target3D.set(0,0,0);
+  }
+  updateCamera3D();
+}
+
+let rebuildTimer=null;
+function requestRebuild3D(){ if (!group3D) return; if (rebuildTimer) cancelAnimationFrame(rebuildTimer); rebuildTimer = requestAnimationFrame(rebuild3D); }
+
+/* ==================== Criador/Editor (modal) ==================== */
+const creatorOverlay = document.getElementById('creatorOverlay');
+const creatorTitle = document.getElementById('creatorTitle');
+const cID = document.getElementById('cID');
+const cW = document.getElementById('cW');
+const cH = document.getElementById('cH');
+const cD = document.getElementById('cD');
+const shapeTopCanvas = document.getElementById('shapeTopCanvas');
+const topCtx2 = shapeTopCanvas.getContext('2d');
+const shapeFrontCanvas = document.getElementById('shapeFrontCanvas');
+const frontCtx2 = shapeFrontCanvas.getContext('2d');
+
+let tempTop = new Set(), tempFront = new Set();
+let painting = null, editMode=false, editId=null;
+
+function fitCanvasHiDPI(c){ const dpr=Math.max(1, window.devicePixelRatio||1); const r=c.getBoundingClientRect(); c.width=Math.round(r.width*dpr); c.height=Math.round(r.height*dpr); c.getContext('2d').setTransform(dpr,0,0,dpr,0,0); }
+function drawGridGeneric(ctx, c, cols, rows){
+  const w=c.clientWidth, h=c.clientHeight;
+  ctx.clearRect(0,0,w,h); ctx.fillStyle='#0a0f19'; ctx.fillRect(0,0,w,h);
+  const cell = Math.max(16, Math.floor(Math.min((w-GRID_PAD*2)/cols, (h-GRID_PAD*2)/rows)));
+  const offX = Math.floor((w - cell*cols)/2), offY = Math.floor((h - cell*rows)/2);
+  ctx.strokeStyle='#1a2740'; ctx.lineWidth=1;
+  for (let i=0;i<=cols;i++){ ctx.beginPath(); ctx.moveTo(offX + i*cell, offY); ctx.lineTo(offX + i*cell, offY + rows*cell); ctx.stroke(); }
+  for (let j=0;j<=rows;j++){ ctx.beginPath(); ctx.moveTo(offX, offY + j*cell); ctx.lineTo(offX + cols*cell, offY + j*cell); ctx.stroke(); }
+  return {cell, offX, offY};
+}
+function drawCreatorGrids(){
+  const Wv = Math.max(1, parseInt(cW.value,10)||1);
+  const Hv = Math.max(1, parseInt(cH.value,10)||1);
+  const Dv = Math.max(1, parseInt(cD.value,10)||1);
+  fitCanvasHiDPI(shapeTopCanvas); fitCanvasHiDPI(shapeFrontCanvas);
+
+  const gt = drawGridGeneric(topCtx2, shapeTopCanvas, Wv, Dv);
+  tempTop.forEach(key=>{ const [x,z]=key.split(',').map(Number); if (x>=0&&x<Wv&&z>=0&&z<Dv){ topCtx2.fillStyle='rgba(88,166,255,0.25)'; topCtx2.fillRect(gt.offX + x*gt.cell +1, gt.offY + z*gt.cell +1, gt.cell-2, gt.cell-2); } });
+
+  const gf = drawGridGeneric(frontCtx2, shapeFrontCanvas, Wv, Hv);
+  tempFront.forEach(key=>{ const [x,y]=key.split(',').map(Number); if (x>=0&&x<Wv&&y>=0&&y<Hv){ const sy=(Hv-1-y); frontCtx2.fillStyle='rgba(255,198,40,0.25)'; frontCtx2.fillRect(gf.offX + x*gf.cell +1, gf.offY + sy*gf.cell +1, gf.cell-2, gf.cell-2); } });
+
+  // traça apenas contornos das máscaras
+  function strokeMask(ctx, mask, offX, offY, cell, color, invertY=false, rows=0){
+    const segs = segmentsFromMask(mask);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const toY = invertY ? (t)=> offY + (rows - t) * cell : (t)=> offY + t * cell;
+    for (const s of segs){
+      ctx.moveTo(offX + s.x1*cell, toY(s.y1));
+      ctx.lineTo(offX + s.x2*cell, toY(s.y2));
+    }
+    ctx.stroke();
+  }
+  strokeMask(topCtx2,   tempTop,   gt.offX, gt.offY, gt.cell, 'rgba(88,166,255,0.9)', false, Dv);
+  strokeMask(frontCtx2, tempFront, gf.offX, gf.offY, gf.cell, 'rgba(255,198,40,0.9)', true,  Hv);
+
+  shapeTopCanvas._cell=gt.cell; shapeTopCanvas._offX=gt.offX; shapeTopCanvas._offY=gt.offY; shapeTopCanvas._cols=Wv; shapeTopCanvas._rows=Dv;
+  shapeFrontCanvas._cell=gf.cell; shapeFrontCanvas._offX=gf.offX; shapeFrontCanvas._offY=gf.offY; shapeFrontCanvas._cols=Wv; shapeFrontCanvas._rows=Hv;
+}
+function cellAtCreator(c, mx,my){
+  const cell=c._cell||16, offX=c._offX||0, offY=c._offY||0, cols=c._cols||1, rows=c._rows||1;
+  const x = Math.floor((mx - offX)/cell), y = Math.floor((my - offY)/cell);
+  if (x<0||x>=cols||y<0||y>=rows) return null;
+  return {x,y};
+}
+shapeTopCanvas.addEventListener('mousedown', (e)=>{
+  const r=shapeTopCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeTopCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
+  painting = {target:'top', mode: e.shiftKey?'del':'add'};
+  const key = `${p.x},${p.y}`; if (painting.mode==='add') tempTop.add(key); else tempTop.delete(key);
+  drawCreatorGrids();
+});
+shapeFrontCanvas.addEventListener('mousedown', (e)=>{
+  const r=shapeFrontCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeFrontCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
+  painting = {target:'front', mode: e.shiftKey?'del':'add'};
+  const Hv = shapeFrontCanvas._rows||1; const yBase = (Hv-1-p.y);
+  const key = `${p.x},${yBase}`; if (painting.mode==='add') tempFront.add(key); else tempFront.delete(key);
+  drawCreatorGrids();
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!painting) return;
+  if (painting.target==='top'){
+    const r=shapeTopCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeTopCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
+    const key = `${p.x},${p.y}`; if (painting.mode==='add') tempTop.add(key); else tempTop.delete(key);
+    drawCreatorGrids();
+  } else {
+    const r=shapeFrontCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeFrontCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
+    const Hv = shapeFrontCanvas._rows||1; const yBase = (Hv-1-p.y);
+    const theKey = `${p.x},${yBase}`;
+    if (painting.mode==='add') tempFront.add(theKey); else tempFront.delete(theKey);
+    drawCreatorGrids();
+  }
+});
+window.addEventListener('mouseup', ()=> painting=null);
+
+function makeUniqueId(base){
+  let id = (base||'').trim() || rndId();
+  if (!elements.some(e=>e.id===id)) return id;
+  let i=2; while (elements.some(e=>e.id===`${id}-${i}`)) i++;
+  return `${id}-${i}`;
+}
+function minGlobalXZAtFloor(e,f){
+  const yLocal = f - e.y; if (yLocal<0) return null;
+  const xsWithY = new Set();
+  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if (y===yLocal) xsWithY.add(x); });
+  if (xsWithY.size===0) return null;
+  let minGX=Infinity,minGZ=Infinity;
+  e.topMask.forEach(k=>{
+    const [lx,lz]=k.split(',').map(Number);
+    if (xsWithY.has(lx)){ minGX=Math.min(minGX, e.x+lx); minGZ=Math.min(minGZ, e.z+lz); }
+  });
+  if (!isFinite(minGX)) return null;
+  return {gx:minGX, gz:minGZ};
+}
+function autoIndexOnFloor(floor, candidate){
+  const items = elements
+    .filter(el=> elementTouchesFloor(el, floor))
+    .concat(candidate? [candidate] : []);
+  const keyed = items.map(el=>{
+    const pos = minGlobalXZAtFloor(el, floor) || {gx:el.x, gz:el.z};
+    return {id:el.id, gx:pos.gx, gz:pos.gz};
+  });
+  keyed.sort((a,b)=> a.gz-b.gz || a.gx-b.gx );
+  const idx = keyed.findIndex(k=>k.id=== (candidate?candidate.id:selId) );
+  return idx>=0? idx+1 : (keyed.length>0? keyed.length : 1);
+}
+function autoAptCode(floor, candidate){
+  const index = autoIndexOnFloor(floor, candidate);
+  return String(floor*100 + index);
+}
+
+/* Criar/Editar */
+function openCreator(mode='new'){
+  editMode = (mode==='edit'); editId = editMode ? selId : null;
+  if (editMode && editId){
+    const e = elements.find(x=>x.id===editId);
+    cID.value = e.code || '';
+    cW.value = e.W; cH.value = e.H; cD.value = e.D;
+    tempTop = new Set(e.topMask); tempFront = new Set(e.frontMask);
+    creatorTitle.textContent = 'Editar elemento';
+  } else {
+    cID.value = '';
+    cW.value = 6; cH.value = Math.max(6, floors.length); cD.value = 4;
+    tempTop.clear(); tempFront.clear(); creatorTitle.textContent = 'Novo elemento';
+  }
+  document.getElementById('creatorOverlay').style.display='flex';
+  drawCreatorGrids();
+}
+function closeCreator(){ document.getElementById('creatorOverlay').style.display='none'; painting=null; editMode=false; editId=null; }
+document.getElementById('newElem').addEventListener('click', ()=> openCreator('new'));
+document.getElementById('editElem').addEventListener('click', ()=>{ if (selId) openCreator('edit'); });
+document.getElementById('creatorClose').addEventListener('click', closeCreator);
+document.getElementById('creatorCancel').addEventListener('click', closeCreator);
+document.getElementById('clearTopMask').addEventListener('click', ()=>{ tempTop.clear(); drawCreatorGrids(); });
+document.getElementById('clearFrontMask').addEventListener('click', ()=>{ tempFront.clear(); drawCreatorGrids(); });
+document.getElementById('creatorSave').addEventListener('click', ()=>{
+  const Wv = Math.max(1, parseInt(cW.value,10)||1);
+  const Hv = Math.max(1, parseInt(cH.value,10)||1);
+  const Dv = Math.max(1, parseInt(cD.value,10)||1);
+  const normTop = new Set([...tempTop].filter(k=>{ const [x,z]=k.split(',').map(Number); return x>=0&&x<Wv&&z>=0&&z<Dv; }));
+  const normFront = new Set([...tempFront].filter(k=>{ const [x,y]=k.split(',').map(Number); return x>=0&&x<Wv&&y>=0&&y<Hv; }));
+  if (normTop.size===0) normTop.add('0,0');
+  if (normFront.size===0) normFront.add('0,0');
+
+  pushUndo(snapshotState());
+
+  if (editMode && editId){
+    const e = elements.find(x=>x.id===editId);
+    e.code = (cID.value||'').trim() || e.code;
+    e.W=Wv; e.H=Hv; e.D=Dv; e.topMask = normTop; e.frontMask = normFront;
+    selId = e.id;
+  } else {
+    const bornY = (isolatedFloor!=null ? isolatedFloor : 0);
+    const e = { 
+      id: rndId(), 
+      code: (cID.value||'').trim() || autoAptCode(bornY, null),
+      color: COLORS[elements.length % COLORS.length],
+      x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv, topMask: normTop, frontMask: normFront 
+    };
+    elements.push(e); selId = e.id; selectedIds = new Set([e.id]);
+  }
+  closeCreator(); drawAll(); updateButtonsState();
+  renumberIds();
+});
+
+/* ==================== UI básica & grelha de pavimentos ==================== */
+function updateButtonsState(){
+  const hasSel = selectedIds.size>0;
+  document.getElementById('editElem').disabled = !(hasSel && selectedIds.size===1);
+  document.getElementById('dupElem').disabled  = !hasSel;
+  document.getElementById('delElem').disabled  = !hasSel;
+  document.getElementById('mergeSel').disabled = !(selectedIds.size>=2);
+}
+document.getElementById('dupElem').addEventListener('click', ()=>{
+  if (selectedIds.size===0) return;
+  pushUndo(snapshotState());
+  const ids = Array.from(selectedIds); const newIds=[];
+  for (const id of ids){
+    const src = elements.find(e=>e.id===id); if (!src) continue;
+    const dup = { id: rndId(), code: src.code, color: src.color, x: src.x+1, y: src.y, z: src.z,
+      W: src.W, H: src.H, D: src.D, topMask: new Set(src.topMask), frontMask: new Set(src.frontMask) };
+    elements.push(dup); newIds.push(dup.id);
+  }
+  selectedIds = new Set(newIds); selId = newIds[0] ?? null; drawAll(); updateButtonsState();
+  renumberIds();
+});
+
+/* ==================== Mesclar (adjacência 6-neigh) ==================== */
+function voxelsOf(e, max=200000){
+  const set = new Set();
+  const yByX = new Map();
+  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
+  if (yByX.size===0 || e.topMask.size===0) return set;
+  for (const key of e.topMask){
+    const [lx,lz]=key.split(',').map(Number);
+    const yset = yByX.get(lx);
+    if (!yset) continue;
+    for (const ly of yset){
+      const gx = e.x + lx, gy = e.y + ly, gz = e.z + lz;
+      set.add(`${gx},${gy},${gz}`);
+      if (set.size>max) return set;
+    }
+  }
+  return set;
+}
+function bboxXYZ(e){
+  let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
+  const yByX = new Map();
+  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
+  e.topMask.forEach(k=>{
+    const [lx,lz]=k.split(',').map(Number);
+    const yset = yByX.get(lx);
+    if (!yset) return;
+    yset.forEach(ly=>{
+      const gx=e.x+lx, gy=e.y+ly, gz=e.z+lz;
+      minX=Math.min(minX,gx); maxX=Math.max(maxX,gx);
+      minY=Math.min(minY,gy); maxY=Math.max(maxY,gy);
+      minZ=Math.min(minZ,gz); maxZ=Math.max(maxZ,gz);
+    });
+  });
+  if (!isFinite(minX)) return null;
+  return {minX,minY,minZ,maxX,maxY,maxZ};
+}
+function areAdjacent3D(e1,e2){
+  const b1=bboxXYZ(e1), b2=bboxXYZ(e2);
+  if (!b1||!b2) return false;
+  if (b1.minX > b2.maxX+1 || b2.minX > b1.maxX+1) return false;
+  if (b1.minY > b2.maxY+1 || b2.minY > b1.maxY+1) return false;
+  if (b1.minZ > b2.maxZ+1 || b2.minZ > b1.maxZ+1) return false;
+
+  const v1=voxelsOf(e1), v2=voxelsOf(e2);
+  if (v1.size===0 || v2.size===0) return false;
+
+  const dirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  const [A,B] = v1.size<=v2.size ? [v1,v2] : [v2,v1];
+  for (const key of A){
+    const [x,y,z] = key.split(',').map(Number);
+    for (const [dx,dy,dz] of dirs){
+      const s = `${x+dx},${y+dy},${z+dz}`;
+      if (B.has(s)) return true;
+    }
+  }
+  return false;
+}
+function mergeSelected(){
+  if (selectedIds.size<2) return;
+  const ids=[...selectedIds];
+  const els = ids.map(id=>elements.find(e=>e.id===id)).filter(Boolean);
+
+  for (let i=0;i<els.length;i++){
+    for (let j=i+1;j<els.length;j++){
+      if (!areAdjacent3D(els[i], els[j])){
+        alert('Seleção precisa encostar por face em 3D (6-conexo).');
+        return;
+      }
+    }
+  }
+
+  pushUndo(snapshotState());
+
+  const union = new Set();
+  let minX=Infinity,minY=Infinity,minZ=Infinity, color=els[0].color;
+  for (const e of els){
+    const vox=voxelsOf(e);
+    for (const v of vox){
+      union.add(v);
+      const [x,y,z]=v.split(',').map(Number);
+      minX=Math.min(minX,x); minY=Math.min(minY,y); minZ=Math.min(minZ,z);
+    }
+  }
+  if (!isFinite(minX)){ alert('Não foi possível mesclar.'); return; }
+
+  const newTop = new Set();
+  const newFront = new Set();
+  for (const v of union){
+    const [gx,gy,gz]=v.split(',').map(Number);
+    newTop.add(`${gx-minX},${gz-minZ}`);
+    newFront.add(`${gx-minX},${gy-minY}`);
+  }
+  const dT = dimsFromSet(newTop);
+  const dF = dimsFromSet(newFront);
+  const W = Math.max(1, dT.maxX - dT.minX + 1);
+  const D = Math.max(1, dT.maxY - dT.minY + 1);
+  const H = Math.max(1, dF.maxY - dF.minY + 1);
+
+  let minCode = Infinity;
+  for (const e of els){
+    const parsed = parseInt(e.code,10);
+    if (!isNaN(parsed)) minCode = Math.min(minCode, parsed);
+  }
+  const merged = { 
+    id: rndId(),
+    code: isFinite(minCode)? String(minCode) : '',
+    color, x:minX, y:minY, z:minZ, W,H,D, topMask:newTop, frontMask:newFront 
+  };
+
+  elements = elements.filter(e=>!selectedIds.has(e.id));
+  elements.push(merged);
+  selectedIds = new Set([merged.id]); selId=merged.id;
+
+  renumberIds();
+  drawAll(); updateButtonsState();
+}
+document.getElementById('mergeSel').addEventListener('click', mergeSelected);
+
+document.getElementById('delElem').addEventListener('click', ()=>{
+  if (selectedIds.size===0) return;
+  pushUndo(snapshotState());
+  elements = elements.filter(e=>!selectedIds.has(e.id));
+  selId = elements[0]?.id ?? null;
+  selectedIds = selId? new Set([selId]) : new Set();
+  renumberIds();
+  drawAll(); updateButtonsState();
+});
+document.getElementById('resetAll').addEventListener('click', ()=>{
+  pushUndo(snapshotState());
+  elements = []; selId=null; selectedIds.clear(); isolatedFloor=null;
+  drawAll(); updateButtonsState();
+});
+
+/* ==================== Pavimentos ==================== */
+const buildingFloorsInput = document.getElementById('buildingFloors');
+function setFloorsCount(n){
+  n = Math.max(1, Math.min(200, n|0));
+  if (n===floors.length) return;
+  pushUndo(snapshotState());
+  if (n>floors.length){ const last = floors[floors.length-1] || 3; while (floors.length<n) floors.push(last); }
+  else { floors = floors.slice(0, n); }
+  buildingFloorsInput.value = floors.length;
+  drawAll();
+  renumberIds();
+}
+buildingFloorsInput.addEventListener('change', ()=> setFloorsCount(parseInt(buildingFloorsInput.value||floors.length,10)));
+document.getElementById('floorsMinus').addEventListener('click', ()=> setFloorsCount(floors.length-1));
+document.getElementById('floorsPlus').addEventListener('click',  ()=> setFloorsCount(floors.length+1));
+
+const gridOverlay = document.getElementById('gridOverlay');
+const floorsList  = document.getElementById('floorsList');
+function openGridEditor(){
+  floorsList.innerHTML = '';
+  for (let i=0;i<floors.length;i++){
+    const div = document.createElement('div');
+    div.className='floorRow';
+    div.innerHTML = `<strong style="min-width:80px;">Pav. ${i+1}</strong>
+      <label>Altura (blocos) <input data-i="${i}" type="number" min="1" max="999" value="${floors[i]}"></label>`;
+    floorsList.appendChild(div);
+  }
+  gridOverlay.style.display='flex';
+}
+function closeGridEditor(){ gridOverlay.style.display='none'; }
+document.getElementById('editGrid').addEventListener('click', openGridEditor);
+document.getElementById('gridClose').addEventListener('click', closeGridEditor);
+document.getElementById('gridCancel').addEventListener('click', closeGridEditor);
+document.getElementById('gridSave').addEventListener('click', ()=>{
+  const inputs = floorsList.querySelectorAll('input[type="number"]');
+  const newFloors = []; inputs.forEach(inp=> newFloors.push(Math.max(1, parseInt(inp.value||1,10))) );
+  pushUndo(snapshotState()); floors = newFloors; buildingFloorsInput.value = floors.length;
+  closeGridEditor(); drawAll(); renumberIds();
+});
+
+/* ==================== Splitters (redimensionáveis) ==================== */
+(function initSplitters(){
+  const root=document.documentElement;
+  const wrap=document.getElementById('wrap');
+  const splitLR=document.getElementById('splitLR');
+  const splitRT=document.getElementById('splitRT');
+  let dragging=null;
+  splitLR.addEventListener('mousedown', e=>{ dragging={type:'v'}; e.preventDefault(); });
+  splitRT.addEventListener('mousedown', e=>{ dragging={type:'h'}; e.preventDefault(); });
+  window.addEventListener('mousemove', (e)=>{
+    if (!dragging) return;
+    if (dragging.type==='v'){
+      const rect=wrap.getBoundingClientRect();
+      let newLeft = e.clientX - rect.left;
+      newLeft = Math.max(320, Math.min(rect.width - 320 - 24, newLeft));
+      root.style.setProperty('--leftW', `${newLeft}px`);
+      fitAll();
+    } else {
+      const rightCol=document.getElementById('rightCol');
+      const r=rightCol.getBoundingClientRect();
+      let y = e.clientY - r.top;
+      y = Math.max(160, Math.min(r.height - 160, y));
+      const frac = y / r.height;
+      root.style.setProperty('--topH', `${(frac*100).toFixed(1)}%`);
+      fitAll();
+    }
+  });
+  window.addEventListener('mouseup', ()=> dragging=null);
+})();
+
+/* ==================== Render / Boot ==================== */
+function drawAll(){
+  fitCanvas(frontCanvas); fitCanvas(topCanvas);
+  drawFrontal(); drawSuperior();
+  requestRebuild3D(); updateStatus(); fit3D();
+}
+function updateStatus(){
+  const iso = (isolatedFloor==null) ? '—' : isolatedFloor;
+  statusEl.textContent = `Elementos: ${elements.length} • Sel.: ${selectedIds.size} • Pavimentos: ${floors.length} • Isolado: ${iso} • Zoom F:${(frontZoom*100).toFixed(0)}% T:${(topZoom*100).toFixed(0)}%`;
+}
+function fitAll(){ fitCanvas(frontCanvas); fitCanvas(topCanvas); fit3D(); }
+
+function boot(){
+  document.getElementById('buildingFloors').value = floors.length;
+  updateButtonsState();
+  fitCanvas(frontCanvas); fitCanvas(topCanvas);
+  setup3D();
+  drawAll();
+  pushUndo(snapshotState());
+}
+window.addEventListener('resize', ()=>{ drawAll(); });
+boot();
+
+/* ==================== Renumeração automática ==================== */
+function baseFloorOf(e){ return Math.max(0, Math.min(floors.length-1, e.y)); }
+function renumberIds(){
+  const groups = new Map();
+  for (const e of elements){
+    const f = baseFloorOf(e);
+    const pos = minGlobalXZAtFloor(e, f) || {gx:e.x, gz:e.z};
+    if (!pos) continue;
+    if (!groups.has(f)) groups.set(f, []);
+    groups.get(f).push({el:e, gx:pos.gx, gz:pos.gz});
+  }
+  for (const [f, arr] of groups.entries()){
+    arr.sort((a,b)=> a.gz-b.gz || a.gx-b.gx);
+    for (let i=0;i<arr.length;i++){
+      arr[i].el.code = String(f*100 + (i+1));
+    }
+  }
+  drawAll();
+}
+
+/* ==================== EXPORT / IMPORT JSON ==================== */
+function computePlacements(){
+  const placements = [];
+  const cum = buildCumHeights();
+  const cumAt=(i)=> cum[Math.max(0, Math.min(i, cum.length-1))];
+
+  for (const e of elements){
+    const yByX = new Map();
+    e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
+    const zCols = new Map();
+    e.topMask.forEach(k=>{ const [x,z]=k.split(',').map(Number); if(!zCols.has(x)) zCols.set(x,new Set()); zCols.get(x).add(z); });
+
+    const runsByXZ = new Map();
+    for (const [lx, setZ] of zCols.entries()){
+      const ySet = yByX.get(lx) || new Set();
+      if (ySet.size===0) continue;
+      const ys = Array.from(ySet.values()); const yMin=Math.min(...ys), yMax=Math.max(...ys);
+      const hasY = new Set(ys);
+      for (const lz of setZ){
+        let y = yMin;
+        while (y <= yMax){
+          if (!hasY.has(y)){ y++; continue; }
+          let y0=y; while (hasY.has(y)) y++; let y1=y;
+          const key = `${lx},${lz}`; if (!runsByXZ.has(key)) runsByXZ.set(key, []);
+          runsByXZ.get(key).push({y0,y1});
+        }
+      }
+    }
+
+    const visited = new Set();
+    const hasRun=(lx,lz,y0,y1)=>{ const arr=runsByXZ.get(`${lx},${lz}`); return !!arr && arr.some(r=>r.y0===y0&&r.y1===y1); };
+    const markRun=(lx,lz,y0,y1)=> visited.add(`${lx},${lz},${y0},${y1}`);
+    const isVisited=(lx,lz,y0,y1)=> visited.has(`${lx},${lz},${y0},${y1}`);
+
+    for (const [key, arr] of runsByXZ.entries()){
+      const [lx0, lz0] = key.split(',').map(Number);
+      for (const run of arr){
+        const {y0,y1} = run;
+        if (isVisited(lx0,lz0,y0,y1)) continue;
+
+        let zMin=lz0, zMax=lz0;
+        while (hasRun(lx0, zMin-1, y0, y1) && !isVisited(lx0, zMin-1, y0, y1)) zMin--;
+        while (hasRun(lx0, zMax+1, y0, y1) && !isVisited(lx0, zMax+1, y0, y1)) zMax++;
+
+        let xMin=lx0, xMax=lx0;
+        outerNeg: while (true){
+          const nx=xMin-1;
+          for (let z=zMin; z<=zMax; z++){ if (!hasRun(nx,z,y0,y1) || isVisited(nx,z,y0,y1)) break outerNeg; }
+          xMin=nx;
+        }
+        outerPos: while (true){
+          const nx=xMax+1;
+          for (let z=zMin; z<=zMax; z++){ if (!hasRun(nx,z,y0,y1) || isVisited(nx,z,y0,y1)) break outerPos; }
+          xMax=nx;
+        }
+
+        for (let x=xMin; x<=xMax; x++){ for (let z=zMin; z<=zMax; z++){ markRun(x,z,y0,y1); } }
+
+        let gY0 = e.y + y0, gY1 = e.y + y1;
+        if (gY0 >= floors.length) continue;
+        gY1 = Math.min(gY1, floors.length);
+        if (gY1 <= gY0) continue;
+
+        placements.push({
+          apto: e.code,
+          color: e.color,
+          andar: gY0,
+          x: e.x + xMin,
+          z: e.z + zMin,
+          w: (xMax - xMin + 1),
+          d: (zMax - zMin + 1),
+          h: gY1 - gY0
+        });
+      }
+    }
+  }
+
+  placements.sort((a,b)=> a.andar-b.andar || a.z-b.z || a.x-b.x || String(a.apto).localeCompare(String(b.apto)));
+  return placements;
+}
+function exportModel(){
+  return {
+    meta: { cellW:1, cellD:1, gap:0, floors: floors.slice() },
+    placements: computePlacements()
+  };
+}
+function downloadText(text, filename='predio_layout.json'){
+  const blob = new Blob([text], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+document.getElementById('exportJSON').addEventListener('click', ()=>{
+  const obj = exportModel();
+  const str = JSON.stringify(obj, null, 2);
+  downloadText(str, 'predio_layout.json');
+  statusEl.textContent = 'JSON exportado.';
+});
+document.getElementById('copyJSON').addEventListener('click', async ()=>{
+  const obj = exportModel();
+  const str = JSON.stringify(obj, null, 2);
+  try{
+    await navigator.clipboard.writeText(str);
+    statusEl.textContent = 'JSON copiado para a área de transferência.';
+  }catch{
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = str; ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      statusEl.textContent = ok ? 'JSON copiado (fallback).' : 'Não foi possível copiar. Use "Exportar JSON".';
+    } catch {
+      statusEl.textContent = 'Não foi possível copiar. Use "Exportar JSON".';
+    }
+  }
+});
+
+/* Import JSON */
+document.getElementById('importJSON').addEventListener('click', ()=> document.getElementById('fileInput').click());
+document.getElementById('fileInput').addEventListener('change', async (e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const text = await f.text();
+    const obj = JSON.parse(text);
+    if (!obj || !Array.isArray(obj.placements)) throw new Error('Arquivo inválido.');
+    pushUndo(snapshotState());
+    if (obj.meta && Array.isArray(obj.meta.floors)) floors = obj.meta.floors.slice();
+    const byApto = new Map();
+    for (const p of obj.placements){
+      const key = String(p.apto);
+      if (!byApto.has(key)) byApto.set(key, []);
+      byApto.get(key).push(p);
+    }
+    elements = [];
+    for (const [apto, list] of byApto.entries()){
+      let minGX=Infinity,minGY=Infinity,minGZ=Infinity, color=list[0]?.color||COLORS[elements.length%COLORS.length];
+      list.forEach(pl=>{
+        minGX=Math.min(minGX, pl.x);
+        minGZ=Math.min(minGZ, pl.z);
+        minGY=Math.min(minGY, pl.andar);
+      });
+      const topMask = new Set();
+      const frontMask = new Set();
+      list.forEach(pl=>{
+        for (let lx=0; lx<pl.w; lx++){
+          for (let lz=0; lz<pl.d; lz++){
+            topMask.add(`${(pl.x - minGX)+lx},${(pl.z - minGZ)+lz}`);
+          }
+        }
+        for (let lx=0; lx<pl.w; lx++){
+          for (let ly=0; ly<pl.h; ly++){
+            frontMask.add(`${(pl.x - minGX)+lx},${(pl.andar - minGY)+ly}`);
+          }
+        }
+      });
+      const W = Math.max(1, dimsFromSet(topMask).maxX+1);
+      const D = Math.max(1, dimsFromSet(topMask).maxY+1);
+      const H = Math.max(1, dimsFromSet(frontMask).maxY+1);
+      elements.push({
+        id:rndId(),
+        code:String(apto),
+        color,
+        x:minGX, y:minGY, z:minGZ,
+        W,H,D,
+        topMask, frontMask
+      });
+    }
+    selId=null; selectedIds.clear(); isolatedFloor=null;
+    renumberIds();
+    drawAll(); updateButtonsState();
+    statusEl.textContent = 'JSON importado com sucesso.';
+  }catch(err){
+    alert('Falha ao importar: '+ (err?.message||err));
+  } finally {
+    e.target.value='';
+  }
+});
+
+/* util duplicado para status em algumas versões de navegador */
+function updateStatus(){ const iso = (isolatedFloor==null) ? '—' : isolatedFloor;
+  statusEl.textContent = `Elementos: ${elements.length} • Sel.: ${selectedIds.size} • Pavimentos: ${floors.length} • Isolado: ${iso} • Zoom F:${(frontZoom*100).toFixed(0)}% T:${(topZoom*100).toFixed(0)}%`; }
+function fitAll(){ fitCanvas(frontCanvas); fitCanvas(topCanvas); fit3D(); }
+</script>
+</body>
+</html>
