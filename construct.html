@@ -121,6 +121,9 @@
     <button id="floorsMinus">−</button>
     <button id="floorsPlus">+</button>
     <button id="editGrid">Alturas…</button>
+    <label style="margin-left:8px;">Blocos/pav.
+    <input id="blocksPerFloor" type="number" min="1" max="50" value="1" style="width:64px">
+    </label>
 
     <button id="importJSON" style="margin-left:auto">⬆️ Importar JSON</button>
     <input id="fileInput" type="file" accept="application/json">
@@ -224,6 +227,7 @@ const GRID_PAD = 18;
 const MIN_CELL_XZ = 16;
 const COLORS = ['#58a6ff','#50e3c2','#b388ff','#ffa657','#7ee787','#e05d44','#f2cc60','#8ab4f8'];
 const FACE_OPACITY = 0.45;
+let BLOCKS_PER_FLOOR = 1; // <<<< novo: quantos "blocos" cabem em 1 pavimento
 
 const rndId = ()=>'e'+Math.random().toString(36).slice(2,9);
 let elements = [];                    // elementos (cada um com topMask/frontMask)
@@ -282,7 +286,74 @@ function dimsFromSet(set){
   return {minX,maxX,minY,maxY, width:(maxX-minX+1), height:(maxY-minY+1)};
 }
 function buildCumHeights(){ const cum=[0]; for (let i=0;i<floors.length;i++) cum.push(cum[i] + floors[i]*UNIT_Y); return cum; }
+// ==== Blocos por pavimento (BPP) — helpers de conversão Y ====
+if (typeof BLOCKS_PER_FLOOR === 'undefined') {
+  // fallback caso ainda não tenha sido declarado no topo
+  //var BLOCKS_PER_FLOOR = 1;
+}
 
+// Cada elemento tem base e.y em "pavimentos". As máscaras front/side usam Y em "blocos".
+function ySubOfLocal(e, yLocalBlock){
+  // índice global de bloco = (pavimento base * BPP) + offset interno + deslocamento local
+  const yb = (e.yb|0); // compat: se não existir vira 0
+  return e.y * BLOCKS_PER_FLOOR + yb + yLocalBlock;
+}
+function floorOfYSub(ySub){
+  return Math.floor(ySub / BLOCKS_PER_FLOOR);
+}
+function fracInFloorOfYSub(ySub){
+  // fração [0,1) dentro do pavimento daquele bloco
+  const f = floorOfYSub(ySub);
+  return (ySub - f*BLOCKS_PER_FLOOR) / BLOCKS_PER_FLOOR;
+}
+  
+function yWorldOfYSub(ySub){
+  // Converte 1 "bloco global" em altura contínua no mundo.
+  // Usa floors[f] (altura em “unidades UNIT_Y”) e reparte por BPP.
+  const cum = buildCumHeights(); // já retorna acumulado em UNIT_Y
+  const f = floorOfYSub(ySub);
+  const base = cum[Math.max(0, Math.min(f, cum.length-1))] || 0;
+  const frac = fracInFloorOfYSub(ySub);
+  const hFloor = (floors[f] || floors.at(-1) || 1) * UNIT_Y;
+  return base + frac * hFloor;
+}
+  
+// Converte coordenada Y em pixels (no canvas frontal, já no "mundo" da view) para índice global de bloco (ySub)
+function ySubFromPixelY(py){
+  const baseY = frontCanvas.clientHeight - GRID_PAD;
+  const cum = buildCumHeights(); // [0, h1, h1+h2, ...] (em UNIT_Y)
+
+  // Percorre cada pavimento f (entre cum[f] e cum[f+1]) e tenta localizar py dentro do intervalo
+  for (let f = 0; f < cum.length - 1; f++){
+    const yBottomPx = baseY - cum[f];       // limite inferior (mais próximo do chão)
+    const yTopPx    = baseY - cum[f+1];     // limite superior (mais alto)
+    const span = yBottomPx - yTopPx;        // altura em px daquele pavimento
+
+    if (py <= yBottomPx && py >= yTopPx && span > 0){
+      const frac = (yBottomPx - py) / span;                  // [0..1]
+      const subFloat = f * BLOCKS_PER_FLOOR + frac * BLOCKS_PER_FLOOR;
+      return Math.round(subFloat);                           // snap no bloco mais próximo
+    }
+  }
+
+  // Fora da faixa do prédio: clampa para mais próximo (topo/base)
+  // Decide qual pavimento é o mais perto pela distância vertical
+  let bestF = 0, bestErr = Infinity;
+  for (let f = 0; f < cum.length; f++){
+    const line = baseY - cum[f];
+    const err = Math.abs(py - line);
+    if (err < bestErr){ bestErr = err; bestF = f; }
+  }
+
+  // Para o limite, usa frac baseado no intervalo adjacente
+  const f = Math.min(Math.max(bestF, 0), cum.length - 2);
+  const yBottomPx = baseY - cum[f];
+  const yTopPx    = baseY - cum[f+1];
+  const span = Math.max(1, yBottomPx - yTopPx);
+  const frac = Math.max(0, Math.min(1, (yBottomPx - py) / span));
+  const subFloat = f * BLOCKS_PER_FLOOR + frac * BLOCKS_PER_FLOOR;
+  return Math.round(subFloat);
+}
 /* ==================== 2D: Frontal ==================== */
 function drawFrontal(){
   const c = frontCanvas, w=c.clientWidth, h=c.clientHeight;
@@ -296,7 +367,7 @@ function drawFrontal(){
   const cx = w/2;
   const LABEL_W = 76;
 
-  // faixa de régua ampla para clique
+  // régua lateral para clique nos pavimentos
   ctxF.fillStyle='rgba(18,26,40,.85)';
   ctxF.fillRect(0, 0, GRID_PAD + LABEL_W, h);
 
@@ -319,47 +390,47 @@ function drawFrontal(){
     ctxF.fillStyle='#16233a';
   }
 
-  // eixo vertical central (alinhamento)
+  // eixo vertical central
   ctxF.strokeStyle='#2b3b55'; ctxF.lineWidth=2/Math.max(0.001, frontZoom);
   ctxF.beginPath(); ctxF.moveTo(cx, GRID_PAD); ctxF.lineTo(cx, h-GRID_PAD); ctxF.stroke();
 
   cacheFront.clear();
-
   ctxF.lineWidth = 2/Math.max(0.001, frontZoom);
+
   for (const e of elements){
     const dimF = dimsFromSet(e.frontMask);
     const dimT = dimsFromSet(e.topMask);
     const hasWidth = (dimT.width>0);
     const minCol = hasWidth ? dimT.minX : 0;
-    const maxCol = hasWidth ? dimT.maxX : -1;
-    const wCols  = Math.max(0, maxCol-minCol+1);
-    const hRows  = (dimF.maxY>=0 ? dimF.maxY+1 : 0);
+    const wCols  = hasWidth ? Math.max(0, dimT.maxX-minCol+1) : Math.max(1, dimF.width);
 
-    let rx, ry, rw, rh;
-    if (wCols>0 && hRows>0){
-      rx = cx + (e.x + minCol)*UNIT_Y;
-      const yTopPx    = baseY - ( (e.y + hRows) <= floors.length ? cum[e.y + hRows] : cum.at(-1) );
-      const yBottomPx = baseY - ( (e.y) <= floors.length ? cum[e.y] : cum.at(-1) );
-      ry = yTopPx; rw = wCols*UNIT_Y; rh = Math.max(1, yBottomPx - yTopPx);
-    } else {
-      rx = cx + e.x*UNIT_Y;
-      const yTopPx    = baseY - ( (e.y + Math.max(1,dimF.height)) <= floors.length ? cum[e.y + Math.max(1,dimF.height)] : cum.at(-1) );
-      const yBottomPx = baseY - ( (e.y) <= floors.length ? cum[e.y] : cum.at(-1) );
-      ry = yTopPx; rw = Math.max(1, dimF.width)*UNIT_Y; rh = Math.max(1, yBottomPx - yTopPx);
-    }
+    // retângulo de pick (bound) calculado por blocos globais
+    const ySubBottom = ySubOfLocal(e, Math.max(0, dimF.minY));
+    const ySubTop    = ySubOfLocal(e, Math.max(0, dimF.maxY+1)); // exclusivo
+    const yBottomPx  = baseY - yWorldOfYSub(ySubBottom);
+    const yTopPx     = baseY - yWorldOfYSub(ySubTop);
+    const rx = cx + (e.x + minCol) * UNIT_Y;
+    const ry = yTopPx;
+    const rw = wCols * UNIT_Y;
+    const rh = Math.max(1, yBottomPx - yTopPx);
     cacheFront.set(e.id, {x:rx,y:ry,w:rw,h:rh});
 
+    // contorno a partir da máscara frontal (em blocos)
     const segs = segmentsFromMask(e.frontMask);
     ctxF.strokeStyle = selectedIds.has(e.id)? '#ffc107' : hexToRgba(e.color, 0.95);
     ctxF.beginPath();
     for (const s of segs){
-      const y1 = e.y + s.y1, y2 = e.y + s.y2;
-      if (y1>floors.length || y2>floors.length) continue;
       const px1 = cx + (e.x + s.x1)*UNIT_Y;
       const px2 = cx + (e.x + s.x2)*UNIT_Y;
-      const py1 = baseY - cum[y1];
-      const py2 = baseY - cum[y2];
-      ctxF.moveTo(px1, py1); ctxF.lineTo(px2, py2);
+
+      const ySub1 = ySubOfLocal(e, s.y1);
+      const ySub2 = ySubOfLocal(e, s.y2);
+
+      const py1 = baseY - yWorldOfYSub(ySub1);
+      const py2 = baseY - yWorldOfYSub(ySub2);
+
+      ctxF.moveTo(px1, py1);
+      ctxF.lineTo(px2, py2);
     }
     ctxF.stroke();
   }
@@ -370,13 +441,19 @@ function drawFrontal(){
 /* ==================== 2D: Superior ==================== */
 function computeFloorTopMask(e, floorIndex){
   if (floorIndex==null) return e.topMask;
-  const yLocal = floorIndex - e.y;
-  if (yLocal < 0) return new Set();
-  const xHasY = new Set();
-  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if (y===yLocal) xHasY.add(x); });
-  if (xHasY.size===0) return new Set();
+  // acha colunas X que têm algum bloco no pavimento isolado
+  const xs = new Set();
+  e.frontMask.forEach(k=>{
+    const [x,yLocal]=k.split(',').map(Number);
+    if (floorOfYSub(ySubOfLocal(e, yLocal)) === floorIndex) xs.add(x);
+  });
+  if (xs.size===0) return new Set();
+
   const out = new Set();
-  e.topMask.forEach(k=>{ const [x,z]=k.split(',').map(Number); if (xHasY.has(x)) out.add(k); });
+  e.topMask.forEach(k=>{
+    const [x,z]=k.split(',').map(Number);
+    if (xs.has(x)) out.add(k);
+  });
   return out;
 }
 function drawSuperior(){
@@ -482,23 +559,100 @@ function selectId(id, additive=false){
 }
 
 /* Pan 2D */
-[frontCanvas, topCanvas].forEach(cv=>{
-  cv.addEventListener('contextmenu', e=> e.preventDefault());
-  cv.addEventListener('mousedown', (e)=>{
-    if (e.button===2 || (e.button===0 && isSpaceDown) || e.button===1){
-      panDrag = {view:(cv===frontCanvas?'front':'top'), lastX:e.clientX, lastY:e.clientY};
-    }
-  });
-});
 window.addEventListener('mousemove', (e)=>{
   if (!panDrag) return;
   const dx = e.clientX - panDrag.lastX;
   const dy = e.clientY - panDrag.lastY;
-  panDrag.lastX = e.clientX; panDrag.lastY = e.clientY;
-  if (panDrag.view==='front'){ frontPanX += dx; frontPanY += dy; }
-  else { topPanX += dx; topPanY += dy; }
+  panDrag.lastX = e.clientX; 
+  panDrag.lastY = e.clientY;
+
+  if (panDrag.view==='front'){ 
+    frontPanX += dx; 
+    frontPanY += dy; 
+  } else { 
+    topPanX += dx; 
+    topPanY += dy; 
+  }
+  drawAll();
+});  
+ 
+[frontCanvas, topCanvas].forEach(cv=>{
+  cv.addEventListener('contextmenu', e=> e.preventDefault());
+  cv.addEventListener('mousedown', (e)=>{
+    const wantPan = (e.button===2 || e.button===1 || (e.button===0 && isSpaceDown));
+    if (!wantPan) return;
+    panDrag = { view:(cv===frontCanvas?'front':'top'), lastX:e.clientX, lastY:e.clientY };
+    e.preventDefault(); // evita seleção de texto/scroll
+  });
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!drag || drag.view!=='front') return;
+  const r=frontCanvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const world = mouseToWorld(mx,my,'front');
+
+  // mover horizontal (X) continua por colunas UNIT_Y
+  const dxCols = Math.round((world.x - drag.start.wx)/UNIT_Y);
+
+  // snap vertical em BLOCO GLOBAL
+  const baseY = frontCanvas.clientHeight - GRID_PAD;
+  const ySubAtPixel = (py)=>{
+    const cum = buildCumHeights();
+    let bestF=0, bestErr=Infinity;
+    for (let f=0; f<cum.length; f++){
+      const y0 = baseY - cum[f];
+      const err = Math.abs(y0 - py);
+      if (err<bestErr){ bestErr=err; bestF=f; }
+    }
+    const topPx = baseY - cum[bestF];
+    const nextPx = baseY - (cum[bestF+1] ?? cum.at(-1));
+    const heightPx = topPx - nextPx;
+    const frac = Math.max(0, Math.min(1, (topPx - py)/Math.max(1, heightPx)));
+    const subFloat = bestF*BLOCKS_PER_FLOOR + frac*BLOCKS_PER_FLOOR;
+    return Math.round(subFloat);
+  };
+
+  const currentYSubAtMouse = ySubAtPixel(world.y);
+  const deltaBlocks = currentYSubAtMouse - drag.start.ySubAtMouse;
+
+  for (const id of drag.ids){
+    const s = drag.start.xById.get(id);
+    const el = elements.find(x=>x.id===id);
+    if (!s || !el) continue;
+
+    // horizontal
+    el.x = s.x + dxCols;
+
+    // vertical em blocos: altera yb e y com normalização
+    const dimF = dimsFromSet(el.frontMask);
+    const heightBlocks = (dimF.maxY>=0 ? dimF.maxY+1 : 1);
+
+    let yb = (s.yb|0) + deltaBlocks;
+    let y = s.y;
+
+    // normaliza offset para 0..BPP-1
+    while (yb < 0){ y -= 1; yb += BLOCKS_PER_FLOOR; }
+    while (yb >= BLOCKS_PER_FLOOR){ y += 1; yb -= BLOCKS_PER_FLOOR; }
+
+    // clamp inferior/superior em blocos globais
+    const totalBlocks = floors.length * BLOCKS_PER_FLOOR;
+    const startSub = y * BLOCKS_PER_FLOOR + yb;
+    const endSubEx = startSub + heightBlocks;
+
+    if (startSub < 0){
+      y = 0; yb = 0;
+    } else if (endSubEx > totalBlocks){
+      const maxStart = totalBlocks - heightBlocks;
+      y = Math.floor(maxStart / BLOCKS_PER_FLOOR);
+      yb = maxStart - y*BLOCKS_PER_FLOOR;
+    }
+
+    el.y = Math.max(0, Math.min(floors.length-1, y));
+    el.yb = yb;
+  }
   drawAll();
 });
+
 window.addEventListener('mouseup', ()=>{ 
   if (drag){ commitAction(); renumberIds(); }
   drag=null; panDrag=null; 
@@ -536,6 +690,7 @@ frontCanvas.addEventListener('mousedown', (e)=>{
   const mx=e.clientX-r.left, my=e.clientY-r.top;
   const wPos = mouseToWorld(mx,my,'front');
 
+  // clique na régua (isolar pavimento)
   for (const hit of floorHits){
     if (wPos.x>=hit.x1 && wPos.x<=hit.x2 && wPos.y>=hit.y1 && wPos.y<=hit.y2){
       if (isolatedFloor===hit.floor) { isolatedFloor = null; selectedIds.clear(); selId=null; }
@@ -555,24 +710,25 @@ frontCanvas.addEventListener('mousedown', (e)=>{
 
   startAction();
 
+  // âncora vertical em BLOCO GLOBAL
   const elClicked = elements.find(x=>x.id===hitId);
   const dimF = dimsFromSet(elClicked.frontMask);
-  const bottomLocal = Math.max(0, dimF.minY);
+  const bottomLocalBlock = Math.max(0, dimF.minY);
+  const anchorYSub = ySubOfLocal(elClicked, bottomLocalBlock);
 
-  const cum=buildCumHeights();
-  const baseY = frontCanvas.clientHeight - GRID_PAD;
-  const floorBottomPx = (f)=> baseY - (cum[f]||0);
-  const anchorFloor = elClicked.y + bottomLocal;
-  const offsetWorldY = wPos.y - floorBottomPx(anchorFloor);
+  // ySub “snapado” no ponto de clique
+  const startYSubAtMouse = ySubFromPixelY(wPos.y);
 
   const starts = new Map();
   selectedIds.forEach(id=>{
     const e = elements.find(x=>x.id===id);
-    if (e) starts.set(id, {x:e.x, y:e.y, z:e.z});
+    if (e) starts.set(id, {x:e.x, y:e.y, z:e.z, yb:(e.yb|0)});
   });
 
-  drag = { view:'front', ids: Array.from(selectedIds),
-           start:{ mx,my, wx:wPos.x, wy:wPos.y, xById: starts, anchorFloor }, offsetWorldY };
+  drag = { 
+    view:'front', ids: Array.from(selectedIds),
+    start:{ mx,my, wx:wPos.x, wy:wPos.y, xById: starts, anchorYSub, ySubAtMouse:startYSubAtMouse }
+  };
 });
 frontCanvas.addEventListener('dblclick', (e)=>{
   const r=frontCanvas.getBoundingClientRect();
@@ -586,30 +742,68 @@ window.addEventListener('mousemove', (e)=>{
   const mx=e.clientX-r.left, my=e.clientY-r.top;
   const world = mouseToWorld(mx,my,'front');
 
+  // mover horizontal (X) por colunas de UNIT_Y
   const dxCols = Math.round((world.x - drag.start.wx)/UNIT_Y);
 
-  const target = world.y - drag.offsetWorldY;
-  const cum=buildCumHeights();
-  const baseY = frontCanvas.clientHeight - GRID_PAD;
-  let bestF = 0, bestErr=Infinity;
-  for (let f=0; f<=floors.length; f++){
-    const fb = baseY - (cum[f]||0);
-    const err = Math.abs(fb - target);
-    if (err<bestErr){ bestErr=err; bestF=f; }
-  }
-  const deltaFloors = bestF - drag.start.anchorFloor;
+  // snap vertical em BLOCO GLOBAL
+  const currentYSubAtMouse = ySubFromPixelY(world.y);
+  const deltaBlocks = currentYSubAtMouse - drag.start.ySubAtMouse;
 
   for (const id of drag.ids){
-    const e0 = drag.start.xById.get(id);
+    const s = drag.start.xById.get(id);
     const el = elements.find(x=>x.id===id);
-    if (!e0 || !el) continue;
-    el.x = e0.x + dxCols;
+    if (!s || !el) continue;
 
+    // horizontal
+    el.x = s.x + dxCols;
+
+    // vertical em blocos: altera yb e y com normalização
     const dimF = dimsFromSet(el.frontMask);
-    const heightLocal = (dimF.maxY>=0 ? dimF.maxY+1 : 1);
-    let newY = e0.y + deltaFloors;
-    newY = Math.max(0, Math.min(newY, Math.max(0, floors.length - heightLocal)));
-    el.y = newY;
+    const heightBlocks = (dimF.maxY>=0 ? dimF.maxY+1 : 1);
+
+    let yb = (s.yb|0) + deltaBlocks;
+    let y  = s.y;
+
+    // normaliza offset para 0..BPP-1
+    if (BLOCKS_PER_FLOOR > 0){
+      // usa divisão inteira com cuidado para negativos/positivos
+      if (yb < 0){
+        const k = Math.ceil((-yb) / BLOCKS_PER_FLOOR);
+        y  -= k;
+        yb += k * BLOCKS_PER_FLOOR;
+      }
+      if (yb >= BLOCKS_PER_FLOOR){
+        const k = Math.floor(yb / BLOCKS_PER_FLOOR);
+        y  += k;
+        yb -= k * BLOCKS_PER_FLOOR;
+      }
+    } else {
+      yb = 0;
+    }
+
+    // clamp inferior/superior em blocos globais
+    const totalBlocks = floors.length * BLOCKS_PER_FLOOR;
+    let startSub = y * BLOCKS_PER_FLOOR + yb;
+    let endSubEx = startSub + heightBlocks;
+
+    if (!(Number.isFinite(startSub) && Number.isFinite(endSubEx))){
+      // fallback de segurança
+      y = Math.max(0, Math.min(floors.length-1, s.y));
+      yb = Math.max(0, Math.min(BLOCKS_PER_FLOOR-1, s.yb|0));
+      startSub = y*BLOCKS_PER_FLOOR + yb;
+      endSubEx = startSub + heightBlocks;
+    }
+
+    if (startSub < 0){
+      y = 0; yb = 0;
+    } else if (endSubEx > totalBlocks){
+      const maxStart = Math.max(0, totalBlocks - heightBlocks);
+      y = Math.floor(maxStart / BLOCKS_PER_FLOOR);
+      yb = maxStart - y*BLOCKS_PER_FLOOR;
+    }
+
+    el.y  = Math.max(0, Math.min(floors.length-1, y));
+    el.yb = Math.max(0, Math.min(BLOCKS_PER_FLOOR-1, yb|0));
   }
   drawAll();
 });
@@ -664,10 +858,13 @@ window.addEventListener('mousemove', (e)=>{
 });
 
 function elementTouchesFloor(e, f){
-  const yLocal = f - e.y;
-  if (yLocal < 0) return false;
+  // Toca se existir algum bloco (yLocal) cuja projeção em pavimento seja f
   let ok=false;
-  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if (y===yLocal) ok=true; });
+  e.frontMask.forEach(k=>{
+    const [x, yLocal]=k.split(',').map(Number);
+    const ySub = ySubOfLocal(e, yLocal);
+    if (floorOfYSub(ySub) === f) ok=true;
+  });
   return ok;
 }
 
@@ -675,13 +872,15 @@ function elementTouchesFloor(e, f){
 function serializeElement(e){
   return {
     id:e.id, code:e.code, color:e.color, x:e.x, y:e.y, z:e.z, W:e.W, H:e.H, D:e.D,
+    yb: e.yb|0,
     topMask:[...e.topMask], frontMask:[...e.frontMask],
-    sideMask: e.sideMask ? [...e.sideMask] : [] // opcional
+    sideMask: e.sideMask ? [...e.sideMask] : []
   };
 }
 function deserializeElement(o){
   return {
     id:o.id, code:o.code, color:o.color, x:o.x, y:o.y, z:o.z, W:o.W, H:o.H, D:o.D,
+    yb: (o.yb|0),
     topMask:new Set(o.topMask), frontMask:new Set(o.frontMask),
     sideMask: new Set(o.sideMask || [])
   };
@@ -715,9 +914,10 @@ function copySelection(){
   sel.forEach(e=>{ minX=Math.min(minX,e.x); minY=Math.min(minY,e.y); minZ=Math.min(minZ,e.z); });
   clipboard = {
     base:{x:minX,y:minY,z:minZ},
-    items: sel.map(e=>({
+items: sel.map(e=>({
   dx: e.x - minX, dy: e.y - minY, dz: e.z - minZ,
   W:e.W,H:e.H,D:e.D, color:e.color, code:e.code,
+  yb: e.yb|0,
   topMask:[...e.topMask], frontMask:[...e.frontMask], sideMask: e.sideMask ? [...e.sideMask] : [],
   id:e.id
 }))
@@ -739,6 +939,7 @@ const e = {
   y: baseOffset.y + it.dy,
   z: baseOffset.z + it.dz,
   W: it.W, H: it.H, D: it.D,
+  yb: it.yb|0,
   topMask: new Set(it.topMask),
   frontMask: new Set(it.frontMask),
   sideMask: new Set(it.sideMask || [])
@@ -918,52 +1119,50 @@ function weldGeometry(geom, tol=1e-4){
 function voxelsOf(e, max=200000){
   const out = new Set();
 
-  // Mapas por X local
-  const yByX = new Map(); // front: (x -> {y})
+  // front: (x -> {yLocalBlock})
+  const yByX = new Map();
   e.frontMask.forEach(k=>{
     const [x,y]=k.split(',').map(Number);
     if(!yByX.has(x)) yByX.set(x,new Set());
     yByX.get(x).add(y);
   });
 
-  const zByX = new Map(); // top: (x -> {z})
+  // top: (x -> {z})
+  const zByX = new Map();
   e.topMask.forEach(k=>{
     const [x,z]=k.split(',').map(Number);
     if(!zByX.has(x)) zByX.set(x,new Set());
     zByX.get(x).add(z);
   });
 
-  // side: (z,y) permitido (opcional)
+  // side: (z,yLocalBlock) permitido (opcional)
   let yzAllowed = null;
   if (e.sideMask && e.sideMask.size){
-    yzAllowed = new Set(e.sideMask); // strings "z,y"
+    yzAllowed = new Set(e.sideMask); // "z,yLocalBlock"
   }
 
   if (yByX.size===0 || zByX.size===0) return out;
-
-  const floorCount = floors.length;
-  const clampY = (gy)=> (gy>=0 && gy<floorCount);
 
   for (const [lx, yset] of yByX.entries()){
     const zset = zByX.get(lx);
     if (!zset) continue;
 
-    for (const ly of yset){
-      const gy = e.y + ly;
+    for (const yLocal of yset){
+      const ySub = ySubOfLocal(e, yLocal);
+      const gyFloor = floorOfYSub(ySub);
 
-      // --- FATIAMENTO POR PAVIMENTO ISOLADO ---
-      if (isolatedFloor != null && gy !== isolatedFloor) continue;
-
-      // fora do prédio? (segurança)
-      if (!clampY(gy)) continue;
+      // fatiamento por pavimento
+      if (isolatedFloor != null && gyFloor !== isolatedFloor) continue;
+      if (gyFloor < 0 || gyFloor >= floors.length) continue;
 
       for (const lz of zset){
-        if (yzAllowed && !yzAllowed.has(`${lz},${ly}`)) continue; // interseção com Lateral
+        if (yzAllowed && !yzAllowed.has(`${lz},${yLocal}`)) continue;
 
         const gx = e.x + lx;
         const gz = e.z + lz;
 
-        out.add(`${gx},${gy},${gz}`);
+        // armazenamos y como "índice global de bloco"
+        out.add(`${gx},${ySub},${gz}`);
         if (out.size > max) return out;
       }
     }
@@ -1205,66 +1404,61 @@ function rebuild3D(){
 
   // Constrói a superfície "voxelizada" do elemento: só faces de fronteira (sem internas)
 function buildSurfaceGeometryForElement(e){
-  // Usa a nova voxelsOf (Top ∩ Front ∩ Side)
   const vox = voxelsOf(e);
   if (!vox || vox.size===0) return null;
 
-  // Coletar bounds
-  let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
-  for (const key of vox){
-    const [x,y,z]=key.split(',').map(Number);
-    if (x<minX) minX=x; if (y<minY) minY=y; if (z<minZ) minZ=z;
-    if (x>maxX) maxX=x; if (y>maxY) maxY=y; if (z>maxZ) maxZ=z;
-  }
-
-  const has = (x,y,z)=> vox.has(`${x},${y},${z}`);
+  const has = (x,ySub,z)=> vox.has(`${x},${ySub},${z}`);
 
   const positions = [];
   const indices   = [];
   let vbase = 0;
 
   function pushQuad(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz){
-    positions.push(
-      ax,ay,az,  bx,by,bz,  cx,cy,cz,  dx,dy,dz
-    );
+    if (
+      !Number.isFinite(ax)||!Number.isFinite(ay)||!Number.isFinite(az)||
+      !Number.isFinite(bx)||!Number.isFinite(by)||!Number.isFinite(bz)||
+      !Number.isFinite(cx)||!Number.isFinite(cy)||!Number.isFinite(cz)||
+      !Number.isFinite(dx)||!Number.isFinite(dy)||!Number.isFinite(dz)
+    ){
+      return; // descarta faces degeneradas
+    }
+    positions.push(ax,ay,az,  bx,by,bz,  cx,cy,cz,  dx,dy,dz);
     indices.push(vbase, vbase+1, vbase+2,  vbase, vbase+2, vbase+3);
     vbase += 4;
   }
 
   for (const key of vox){
-    const [gx,gy,gz] = key.split(',').map(Number);
+    const [gx,ySub,gz] = key.split(',').map(Number);
 
-    const x0 = gx * UNIT_XZ;
-    const x1 = (gx+1) * UNIT_XZ;
-    const z0 = gz * UNIT_XZ;
-    const z1 = (gz+1) * UNIT_XZ;
+    const x0 = gx * UNIT_XZ, x1 = (gx+1) * UNIT_XZ;
+    const z0 = gz * UNIT_XZ, z1 = (gz+1) * UNIT_XZ;
+    const y0 = yWorldOfYSub(ySub);
+    const y1 = yWorldOfYSub(ySub+1);
 
-    // usa cumAt do escopo de rebuild3D
-    const y0 = cumAt(gy);
-    const y1 = cumAt(gy+1);
+    if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 === y0) continue;
 
     // -X
-    if (!has(gx-1,gy,gz)){
+    if (!has(gx-1,ySub,gz)){
       pushQuad( x0,y0,z1,  x0,y0,z0,  x0,y1,z0,  x0,y1,z1 );
     }
     // +X
-    if (!has(gx+1,gy,gz)){
+    if (!has(gx+1,ySub,gz)){
       pushQuad( x1,y0,z0,  x1,y0,z1,  x1,y1,z1,  x1,y1,z0 );
     }
     // -Z
-    if (!has(gx,gy,gz-1)){
+    if (!has(gx,ySub,gz-1)){
       pushQuad( x1,y0,z0,  x0,y0,z0,  x0,y1,z0,  x1,y1,z0 );
     }
     // +Z
-    if (!has(gx,gy,gz+1)){
+    if (!has(gx,ySub,gz+1)){
       pushQuad( x0,y0,z1,  x1,y0,z1,  x1,y1,z1,  x0,y1,z1 );
     }
     // -Y
-    if (!has(gx,gy-1,gz)){
+    if (!has(gx,ySub-1,gz)){
       pushQuad( x0,y0,z0,  x1,y0,z0,  x1,y0,z1,  x0,y0,z1 );
     }
     // +Y
-    if (!has(gx,gy+1,gz)){
+    if (!has(gx,ySub+1,gz)){
       pushQuad( x0,y1,z1,  x1,y1,z1,  x1,y1,z0,  x0,y1,z0 );
     }
   }
@@ -1484,14 +1678,22 @@ function makeUniqueId(base){
   return `${id}-${i}`;
 }
 function minGlobalXZAtFloor(e,f){
-  const yLocal = f - e.y; if (yLocal<0) return null;
-  const xsWithY = new Set();
-  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if (y===yLocal) xsWithY.add(x); });
-  if (xsWithY.size===0) return null;
+  const xs = new Set();
+  e.frontMask.forEach(k=>{
+    const [x,yLocal]=k.split(',').map(Number);
+    if (floorOfYSub(ySubOfLocal(e, yLocal)) === f) xs.add(x);
+  });
+  if (xs.size===0) return null;
+
   let minGX=Infinity,minGZ=Infinity;
   e.topMask.forEach(k=>{
     const [lx,lz]=k.split(',').map(Number);
-    if (xsWithY.has(lx)){ minGX=Math.min(minGX, e.x+lx); minGZ=Math.min(minGZ, e.z+lz); }
+    if (xs.has(lx)){
+      const gx = e.x + lx;
+      const gz = e.z + lz;
+      if (gx<minGX) minGX=gx;
+      if (gz<minGZ) minGZ=gz;
+    }
   });
   if (!isFinite(minGX)) return null;
   return {gx:minGX, gz:minGZ};
@@ -1603,13 +1805,14 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
     selId = e.id;
   } else {
     const bornY = (isolatedFloor!=null ? isolatedFloor : 0);
-    const e = { 
-      id: rndId(), 
-      code: (cID.value||'').trim() || autoAptCode(bornY, null),
-      color: COLORS[elements.length % COLORS.length],
-      x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv,
-      topMask: normTop, frontMask: normFront, sideMask: normSide
-    };
+const e = { 
+  id: rndId(), 
+  code: (cID.value||'').trim() || autoAptCode(bornY, null),
+  color: COLORS[elements.length % COLORS.length],
+  x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv,
+  yb: 0,
+  topMask: normTop, frontMask: normFront, sideMask: normSide
+};
     elements.push(e); selId = e.id; selectedIds = new Set([e.id]);
   }
   closeCreator(); drawAll(); updateButtonsState();
@@ -1629,13 +1832,14 @@ document.getElementById('dupElem').addEventListener('click', ()=>{
   const ids = Array.from(selectedIds); const newIds=[];
   for (const id of ids){
     const src = elements.find(e=>e.id===id); if (!src) continue;
-    const dup = { 
+const dup = { 
   id: rndId(), code: src.code, color: src.color, x: src.x+1, y: src.y, z: src.z,
   W: src.W, H: src.H, D: src.D,
+  yb: src.yb|0,
   topMask: new Set(src.topMask),
   frontMask: new Set(src.frontMask),
   sideMask: new Set(src.sideMask || [])
-  };
+};
     elements.push(dup); newIds.push(dup.id);
   }
   selectedIds = new Set(newIds); selId = newIds[0] ?? null; drawAll(); updateButtonsState();
@@ -1684,13 +1888,13 @@ function areAdjacent3D(e1, e2){
   return false;
 }
 function mergeSelected(){
-  if (selectedIds.size<2) return;
-  const ids=[...selectedIds];
-  const els = ids.map(id=>elements.find(e=>e.id===id)).filter(Boolean);
+  if (selectedIds.size < 2) return;
+  const ids = [...selectedIds];
+  const els = ids.map(id => elements.find(e => e.id === id)).filter(Boolean);
 
-  // Verificação de adjacência 6-conexo
-  for (let i=0;i<els.length;i++){
-    for (let j=i+1;j<els.length;j++){
+  // Verificação 6-conexa (continua igual)
+  for (let i = 0; i < els.length; i++){
+    for (let j = i+1; j < els.length; j++){
       if (!areAdjacent3D(els[i], els[j])){
         alert('Seleção precisa encostar por face em 3D (6-conexo).');
         return;
@@ -1701,72 +1905,90 @@ function mergeSelected(){
   // Snapshot para Undo
   pushUndo(snapshotState());
 
-  // União de voxels
+  // ==== União de voxels em coordenadas globais (x, ySub, z) ====
   const union = new Set();
-  let minX=Infinity,minY=Infinity,minZ=Infinity, color=els[0].color;
+  let minGX=Infinity, minYSub=Infinity, minGZ=Infinity;
+  let maxGX=-Infinity, maxYSub=-Infinity, maxGZ=-Infinity;
+  let color = els[0]?.color || COLORS[0];
+
   for (const e of els){
-    const vox=voxelsOf(e);
-    for (const v of vox){
+    const vset = voxelsOf(e); // retorna `${gx},${ySub},${gz}`
+    for (const v of vset){
+      if (union.has(v)) continue;
       union.add(v);
-      const [x,y,z]=v.split(',').map(Number);
-      if (x<minX) minX=x;
-      if (y<minY) minY=y;
-      if (z<minZ) minZ=z;
+      const [gx, ySub, gz] = v.split(',').map(Number);
+      if (gx < minGX) minGX = gx;
+      if (gz < minGZ) minGZ = gz;
+      if (ySub < minYSub) minYSub = ySub;
+
+      if (gx > maxGX) maxGX = gx;
+      if (gz > maxGZ) maxGZ = gz;
+      if (ySub > maxYSub) maxYSub = ySub;
     }
   }
-  if (!isFinite(minX)){
+  if (!isFinite(minGX) || !isFinite(minYSub) || !isFinite(minGZ)){
     alert('Não foi possível mesclar.');
     return;
   }
 
-  // Reconstruir máscaras a partir da união (normalizadas para iniciar em 0,0)
-  const newTop   = new Set(); // (x,z)
-  const newFront = new Set(); // (x,y)
-  const newSide  = new Set(); // (z,y)
-  let maxGX=-Infinity,maxGY=-Infinity,maxGZ=-Infinity;
+  // ==== Reconstruir máscaras normalizadas (em coordenadas locais) ====
+  const newTop   = new Set(); // (lx, lz)
+  const newFront = new Set(); // (lx, yLocalBlocks)
+  const newSide  = new Set(); // (lz, yLocalBlocks)
+
   for (const v of union){
-    const [gx,gy,gz]=v.split(',').map(Number);
-    const lx = gx-minX, ly = gy-minY, lz = gz-minZ;
+    const [gx, ySub, gz] = v.split(',').map(Number);
+    const lx = gx - minGX;
+    const lz = gz - minGZ;
+    const yLocal = ySub - minYSub; // blocos locais
+
     newTop.add(`${lx},${lz}`);
-    newFront.add(`${lx},${ly}`);
-    newSide.add(`${lz},${ly}`);
-    if (gx>maxGX) maxGX=gx;
-    if (gy>maxGY) maxGY=gy;
-    if (gz>maxGZ) maxGZ=gz;
+    newFront.add(`${lx},${yLocal}`);
+    newSide.add(`${lz},${yLocal}`);
   }
 
-  // Dimensões globais do novo bloco
-  const W = Math.max(1, (maxGX - minX + 1));
-  const H = Math.max(1, (maxGY - minY + 1));
-  const D = Math.max(1, (maxGZ - minZ + 1));
+  // ==== Dimensões ====
+  const W = Math.max(1, (maxGX - minGX + 1));
+  const D = Math.max(1, (maxGZ - minGZ + 1));
+  const HBlocks = Math.max(1, (maxYSub - minYSub + 1)); // altura em BLOCO(s)
 
-  // Código: menor código numérico da seleção, se existir
+  // ==== Base em pavimento + offset de bloco ====
+  const yFloor = floorOfYSub(minYSub);
+  const yb     = minYSub - yFloor * BLOCKS_PER_FLOOR; // 0..BPP-1
+  const yClamped = Math.max(0, Math.min(floors.length - 1, yFloor));
+
+  // ==== Código: menor código numérico da seleção (se houver) ====
   let minCode = Infinity;
   for (const e of els){
-    const parsed = parseInt(e.code,10);
-    if (!isNaN(parsed)) minCode = Math.min(minCode, parsed);
+    const n = parseInt(e.code, 10);
+    if (!isNaN(n)) minCode = Math.min(minCode, n);
   }
 
-  // Cria elemento mesclado
-  const merged = { 
+  const merged = {
     id: rndId(),
-    code: isFinite(minCode)? String(minCode) : '',
+    code: isFinite(minCode) ? String(minCode) : '',
     color,
-    x:minX, y:minY, z:minZ,
-    W,H,D,
-    topMask:newTop, 
-    frontMask:newFront,
-    sideMask:newSide
+    x: minGX,
+    y: yClamped,
+    z: minGZ,
+    W,
+    // H (em blocos) não é usado diretamente fora; mantemos H=HBlocks para coerência com editor
+    H: HBlocks,
+    D,
+    yb: Math.max(0, Math.min(BLOCKS_PER_FLOOR - 1, yb|0)),
+    topMask: newTop,
+    frontMask: newFront,
+    sideMask: newSide
   };
 
   // Substitui no array
-  elements = elements.filter(e=>!selectedIds.has(e.id));
+  elements = elements.filter(e => !selectedIds.has(e.id));
   elements.push(merged);
 
-  // Seleciona novo elemento e remove isolamento para evitar "sumiço" por filtro
-  selectedIds = new Set([merged.id]); 
+  // Seleciona novo elemento e remove isolamento para não esconder
+  selectedIds = new Set([merged.id]);
   selId = merged.id;
-  isolatedFloor = null; // <<< importante para não esconder o bloco mesclado
+  isolatedFloor = null;
 
   // Renumera, redesenha e atualiza UI
   renumberIds();
@@ -1876,9 +2098,20 @@ function boot(){
 }
 window.addEventListener('resize', ()=>{ drawAll(); });
 boot();
+const bpfInput = document.getElementById('blocksPerFloor');
 
+  bpfInput.addEventListener('change', ()=>{
+  const v = Math.max(1, Math.min(50, parseInt(bpfInput.value||1,10)));
+  BLOCKS_PER_FLOOR = v;
+  drawAll(); // redesenha 2D e reconstrói 3D
+});
+  
+  
 /* ==================== Renumeração automática ==================== */
-function baseFloorOf(e){ return Math.max(0, Math.min(floors.length-1, e.y)); }
+function baseFloorOf(e){
+  const ySub = e.y * BLOCKS_PER_FLOOR + (e.yb|0);
+  return Math.max(0, Math.min(floors.length-1, floorOfYSub(ySub)));
+}
 function renumberIds(){
   const groups = new Map();
   for (const e of elements){
@@ -1900,27 +2133,23 @@ function renumberIds(){
 /* ==================== EXPORT / IMPORT JSON ==================== */
 function computePlacements(){
   const placements = [];
-  const cum = buildCumHeights();
-  const cumAt=(i)=> cum[Math.max(0, Math.min(i, cum.length-1))];
 
   for (const e of elements){
-    // front → por X: Y locais
+    // front: X→{yLocalBlocks}
     const yByX = new Map();
     e.frontMask.forEach(k=>{
       const [x,y]=k.split(',').map(Number);
       if(!yByX.has(x)) yByX.set(x,new Set());
       yByX.get(x).add(y);
     });
-
-    // top → por X: Z locais
+    // top: X→{z}
     const zByX = new Map();
     e.topMask.forEach(k=>{
       const [x,z]=k.split(',').map(Number);
       if(!zByX.has(x)) zByX.set(x,new Set());
       zByX.get(x).add(z);
     });
-
-    // side → por Z: Y permitidos (opcional)
+    // side: Z→{yLocalBlocks} (opcional)
     const yByZ = new Map();
     if (e.sideMask && e.sideMask.size){
       e.sideMask.forEach(k=>{
@@ -1930,23 +2159,18 @@ function computePlacements(){
       });
     }
 
-    // runsByXZ: para cada (lx,lz), cria "runs" contíguos de Y (após interseção com side)
-    const runsByXZ = new Map();
+    const runsByXZ = new Map(); // key (lx,lz) -> [{y0,y1} em blocos locais]
 
-    for (const [lx, zset] of zByX.entries()){
-      const yBase = yByX.get(lx) || new Set();
-      if (yBase.size===0) continue;
+    for (const [lx, ysetBase] of yByX.entries()){
+      const zset = zByX.get(lx); if (!zset) continue;
 
       for (const lz of zset){
-        // Restringe Y pelo side(z) se houver
+        // restringe Y pela lateral, se existir
         let ySet;
         if (yByZ.size>0){
-          const allow = yByZ.get(lz);
-          if (!allow) continue;
-          ySet = new Set([...yBase].filter(y=>allow.has(y)));
-        } else {
-          ySet = yBase;
-        }
+          const allow = yByZ.get(lz); if (!allow) continue;
+          ySet = new Set([...ysetBase].filter(y=>allow.has(y)));
+        } else ySet = ysetBase;
         if (ySet.size===0) continue;
 
         const ys = Array.from(ySet.values()).sort((a,b)=>a-b);
@@ -1957,12 +2181,12 @@ function computePlacements(){
           const y1 = y; // exclusivo
           const key = `${lx},${lz}`;
           if (!runsByXZ.has(key)) runsByXZ.set(key, []);
-          runsByXZ.get(key).push({y0,y1});
+          runsByXZ.get(key).push({y0,y1}); // em blocos locais
         }
       }
     }
 
-    // Helpers para agrupar retângulos (mesma lógica antiga, agora com runs corretos)
+    // compacta em retângulos X×Z por faixas de Y-blocos iguais
     const visited = new Set();
     const hasRun=(lx,lz,y0,y1)=>{
       const arr=runsByXZ.get(`${lx},${lz}`); 
@@ -1995,28 +2219,37 @@ function computePlacements(){
           xMax=nx;
         }
 
-        // marcar visitados
+        // marca como visitado
         for (let x=xMin; x<=xMax; x++){
           for (let z=zMin; z<=zMax; z++){
             markRun(x,z,y0,y1);
           }
         }
 
-        // converter para coordenadas globais e clipe por topo do prédio
-        let gY0 = e.y + y0, gY1 = e.y + y1;
-        if (gY0 >= floors.length) continue;
-        gY1 = Math.min(gY1, floors.length);
-        if (gY1 <= gY0) continue;
+        // Converter blocos (y0..y1) para pavimentos globais:
+        // base do elemento é em pavimentos (e.y).
+        // ySub global de início e fim-1:
+        const ySubStart = ySubOfLocal(e, y0);
+        const ySubEndEx = ySubOfLocal(e, y1); // exclusivo
+        // pavimento inicial
+        let gFloorStart = floorOfYSub(ySubStart);
+        // pavimento final exclusivo (se acaba no meio do pavimento, ainda conta aquele)
+        let gFloorEndEx = floorOfYSub(ySubEndEx - 1) + 1;
+
+        // clipe aos limites do prédio
+        gFloorStart = Math.max(0, Math.min(gFloorStart, floors.length));
+        gFloorEndEx = Math.max(0, Math.min(gFloorEndEx, floors.length));
+        if (gFloorEndEx <= gFloorStart) continue;
 
         placements.push({
           apto: e.code,
           color: e.color,
-          andar: gY0,
+          andar: gFloorStart,
           x: e.x + xMin,
           z: e.z + zMin,
           w: (xMax - xMin + 1),
           d: (zMax - zMin + 1),
-          h: gY1 - gY0
+          h: gFloorEndEx - gFloorStart
         });
       }
     }
@@ -2025,6 +2258,7 @@ function computePlacements(){
   placements.sort((a,b)=> a.andar-b.andar || a.z-b.z || a.x-b.x || String(a.apto).localeCompare(String(b.apto)));
   return placements;
 }
+
 function exportModel(){
   return {
     meta: { cellW:1, cellD:1, gap:0, floors: floors.slice() },
