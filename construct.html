@@ -96,11 +96,11 @@
   .grids{ display:grid; gap:12px; grid-template-columns: 1fr 1fr; min-height:0; }
   .shapePane{ background:#0b111b; border:1px solid #16233a; border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:8px; min-height:200px; }
   .shapePane h4{ margin:0; font-size:13px; color:#c9d1d9 }
-  #shapeTopCanvas, #shapeFrontCanvas{
-    width:100%; flex:1; display:block; background:#0a0f19; border-radius:10px; border:1px solid #1c2433;
-    min-height:180px; height:34vh; max-height:420px;
-    box-sizing:border-box;
-  }
+.shapePane canvas{
+  width:100%; flex:1; display:block; background:#0a0f19; border-radius:10px; border:1px solid #1c2433;
+  min-height:180px; height:34vh; max-height:420px;
+  box-sizing:border-box;
+}
   #gridModal{ width:min(92vw, 720px); }
   #floorsList{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
   #floorsList .floorRow{ display:flex; gap:8px; align-items:center; background:#0b111b; border:1px solid #16233a; padding:8px; border-radius:10px; }
@@ -173,6 +173,7 @@
         <label>D (Z) <input id="cD" type="number" min="1" max="64" value="4"></label>
         <button id="clearTopMask">Limpar Superior</button>
         <button id="clearFrontMask">Limpar Frontal</button>
+        <button id="clearSideMask">Limpar Lateral</button>
         <span class="kbd">Pintar: clique/arraste • Shift = borracha</span>
       </div>
       <div class="grids">
@@ -183,6 +184,10 @@
         <div class="shapePane">
           <h4>Frontal (W × H)</h4>
           <canvas id="shapeFrontCanvas"></canvas>
+        </div>
+        <div class="shapePane" style="grid-column: 1 / span 1;">
+          <h4>Lateral (D × H)</h4>
+          <canvas id="shapeSideCanvas"></canvas>
         </div>
       </div>
       <div class="row" style="justify-content:flex-end; position:sticky; bottom:0; background:transparent;">
@@ -669,12 +674,18 @@ function elementTouchesFloor(e, f){
 
 /* ==================== Undo/Redo/Clipboard ==================== */
 function serializeElement(e){
-  return { id:e.id, code:e.code, color:e.color, x:e.x, y:e.y, z:e.z, W:e.W, H:e.H, D:e.D,
-           topMask:[...e.topMask], frontMask:[...e.frontMask] };
+  return {
+    id:e.id, code:e.code, color:e.color, x:e.x, y:e.y, z:e.z, W:e.W, H:e.H, D:e.D,
+    topMask:[...e.topMask], frontMask:[...e.frontMask],
+    sideMask: e.sideMask ? [...e.sideMask] : [] // opcional
+  };
 }
 function deserializeElement(o){
-  return { id:o.id, code:o.code, color:o.color, x:o.x, y:o.y, z:o.z, W:o.W, H:o.H, D:o.D,
-           topMask:new Set(o.topMask), frontMask:new Set(o.frontMask) };
+  return {
+    id:o.id, code:o.code, color:o.color, x:o.x, y:o.y, z:o.z, W:o.W, H:o.H, D:o.D,
+    topMask:new Set(o.topMask), frontMask:new Set(o.frontMask),
+    sideMask: new Set(o.sideMask || [])
+  };
 }
 function snapshotState(){ return { elements: elements.map(serializeElement), floors:[...floors], isolatedFloor }; }
 function restoreSnapshot(snap){
@@ -706,10 +717,11 @@ function copySelection(){
   clipboard = {
     base:{x:minX,y:minY,z:minZ},
     items: sel.map(e=>({
-      dx: e.x - minX, dy: e.y - minY, dz: e.z - minZ,
-      W:e.W,H:e.H,D:e.D, color:e.color, code:e.code,
-      topMask:[...e.topMask], frontMask:[...e.frontMask], id:e.id
-    }))
+  dx: e.x - minX, dy: e.y - minY, dz: e.z - minZ,
+  W:e.W,H:e.H,D:e.D, color:e.color, code:e.code,
+  topMask:[...e.topMask], frontMask:[...e.frontMask], sideMask: e.sideMask ? [...e.sideMask] : [],
+  id:e.id
+}))
   };
   pasteBump = 0;
   statusEl.textContent = `Copiados ${sel.length} elemento(s). Ctrl+V para colar.`;
@@ -720,17 +732,18 @@ function pasteClipboard(){
   const baseOffset = {x:clipboard.base.x + 1 + pasteBump, y:clipboard.base.y, z:clipboard.base.z};
   const newIds=[];
   clipboard.items.forEach(it=>{
-    const e = {
-      id: rndId(),
-      code: it.code,
-      color: it.color,
-      x: baseOffset.x + it.dx,
-      y: baseOffset.y + it.dy,
-      z: baseOffset.z + it.dz,
-      W: it.W, H: it.H, D: it.D,
-      topMask: new Set(it.topMask),
-      frontMask: new Set(it.frontMask)
-    };
+const e = {
+  id: rndId(),
+  code: it.code,
+  color: it.color,
+  x: baseOffset.x + it.dx,
+  y: baseOffset.y + it.dy,
+  z: baseOffset.z + it.dz,
+  W: it.W, H: it.H, D: it.D,
+  topMask: new Set(it.topMask),
+  frontMask: new Set(it.frontMask),
+  sideMask: new Set(it.sideMask || [])
+};
     elements.push(e);
     newIds.push(e.id);
   });
@@ -855,21 +868,45 @@ function weldGeometry(geom, tol=1e-4){
 
 /* ===== voxelização global e meshing só da fronteira ===== */
 function voxelsOf(e, max=200000){
-  const set = new Set();
-  const yByX = new Map();
-  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
-  if (yByX.size===0 || e.topMask.size===0) return set;
-  for (const key of e.topMask){
-    const [lx,lz]=key.split(',').map(Number);
-    const yset = yByX.get(lx);
-    if (!yset) continue;
+  const out = new Set();
+
+  // Mapas por X local
+  const yByX = new Map(); // front: (x -> {y})
+  e.frontMask.forEach(k=>{
+    const [x,y]=k.split(',').map(Number);
+    if(!yByX.has(x)) yByX.set(x,new Set());
+    yByX.get(x).add(y);
+  });
+
+  const zByX = new Map(); // top: (x -> {z})
+  e.topMask.forEach(k=>{
+    const [x,z]=k.split(',').map(Number);
+    if(!zByX.has(x)) zByX.set(x,new Set());
+    zByX.get(x).add(z);
+  });
+
+  // side: (z,y) permitido (opcional)
+  let yzAllowed = null;
+  if (e.sideMask && e.sideMask.size){
+    yzAllowed = new Set(e.sideMask); // strings "z,y"
+  }
+
+  if (yByX.size===0 || zByX.size===0) return out;
+
+  for (const [lx, yset] of yByX.entries()){
+    const zset = zByX.get(lx);
+    if (!zset) continue;
+
     for (const ly of yset){
-      const gx = e.x + lx, gy = e.y + ly, gz = e.z + lz;
-      set.add(`${gx},${gy},${gz}`);
-      if (set.size>max) return set;
+      for (const lz of zset){
+        if (yzAllowed && !yzAllowed.has(`${lz},${ly}`)) continue; // interseção com Lateral
+        const gx = e.x + lx, gy = e.y + ly, gz = e.z + lz;
+        out.add(`${gx},${gy},${gz}`);
+        if (out.size > max) return out;
+      }
     }
   }
-  return set;
+  return out;
 }
 
 function buildGlobalOccupancy(){
@@ -1105,116 +1142,79 @@ function rebuild3D(){
   }
 
   // Constrói a superfície "voxelizada" do elemento: só faces de fronteira (sem internas)
-  function buildSurfaceGeometryForElement(e){
-    // 1) Conjunto de voxels ocupados (clippado pelo pavimento isolado, se houver)
-    const xsByYLocal = new Map(); // por x local, conjunto de y locais
-    e.frontMask.forEach(k=>{
-      const [lx,ly]=k.split(',').map(Number);
-      if(!xsByYLocal.has(lx)) xsByYLocal.set(lx,new Set());
-      xsByYLocal.get(lx).add(ly);
-    });
+function buildSurfaceGeometryForElement(e){
+  // Usa a nova voxelsOf (Top ∩ Front ∩ Side)
+  const vox = voxelsOf(e);
+  if (!vox || vox.size===0) return null;
 
-    const zSetByXLocal = new Map();
-    e.topMask.forEach(k=>{
-      const [lx,lz]=k.split(',').map(Number);
-      if(!zSetByXLocal.has(lx)) zSetByXLocal.set(lx,new Set());
-      zSetByXLocal.get(lx).add(lz);
-    });
-
-    const vox = new Set(); // strings "gx,gy,gz" em coordenadas de grade globais
-    if (xsByYLocal.size===0 || zSetByXLocal.size===0) return null;
-
-    // popula voxels por interseção (x em comum nas duas máscaras)
-    xsByYLocal.forEach((yset,lx)=>{
-      const zset = zSetByXLocal.get(lx);
-      if (!zset) return;
-      yset.forEach(ly=>{
-        const gy = e.y + ly;
-        if (gy < 0 || gy >= floors.length) return; // fora do prédio
-        if (isolatedFloor!=null && (gy<isolatedFloor || gy>isolatedFloor)) return; // clippado
-        zset.forEach(lz=>{
-          const gx = e.x + lx;
-          const gz = e.z + lz;
-          vox.add(`${gx},${gy},${gz}`);
-        });
-      });
-    });
-    if (vox.size===0) return null;
-
-    // acessor presença vizinho
-    const has = (x,y,z)=> vox.has(`${x},${y},${z}`);
-
-    // 2) Constrói faces de fronteira (6 direções). Cada voxel vira até 6 quads.
-    const positions = [];
-    const indices = [];
-    let vbase = 0;
-
-    function pushQuad(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz){
-      // ordem (a,b,c,d): dois triângulos (a,b,c) (a,c,d)
-      positions.push(
-        ax,ay,az,  bx,by,bz,  cx,cy,cz,  dx,dy,dz
-      );
-      indices.push(vbase, vbase+1, vbase+2,  vbase, vbase+2, vbase+3);
-      vbase += 4;
-    }
-
-    for (const key of vox){
-      const [gx,gy,gz] = key.split(',').map(Number);
-
-      const x0 = gx * UNIT_XZ;
-      const x1 = (gx+1) * UNIT_XZ;
-      const z0 = gz * UNIT_XZ;
-      const z1 = (gz+1) * UNIT_XZ;
-      const y0 = cumAt(gy);
-      const y1 = cumAt(gy+1);
-
-      // -X
-      if (!has(gx-1,gy,gz)){
-        pushQuad(
-          x0,y0,z1,  x0,y0,z0,  x0,y1,z0,  x0,y1,z1
-        );
-      }
-      // +X
-      if (!has(gx+1,gy,gz)){
-        pushQuad(
-          x1,y0,z0,  x1,y0,z1,  x1,y1,z1,  x1,y1,z0
-        );
-      }
-      // -Z
-      if (!has(gx,gy,gz-1)){
-        pushQuad(
-          x1,y0,z0,  x0,y0,z0,  x0,y1,z0,  x1,y1,z0
-        );
-      }
-      // +Z
-      if (!has(gx,gy,gz+1)){
-        pushQuad(
-          x0,y0,z1,  x1,y0,z1,  x1,y1,z1,  x0,y1,z1
-        );
-      }
-      // -Y (piso inferior)
-      if (!has(gx,gy-1,gz)){
-        pushQuad(
-          x0,y0,z0,  x1,y0,z0,  x1,y0,z1,  x0,y0,z1
-        );
-      }
-      // +Y (teto)
-      if (!has(gx,gy+1,gz)){
-        pushQuad(
-          x0,y1,z1,  x1,y1,z1,  x1,y1,z0,  x0,y1,z0
-        );
-      }
-    }
-
-    if (positions.length===0) return null;
-
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
-    geom.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(indices), 1));
-    // otimiza (solda) e calcula normais
-    const welded = weldGeometry(geom, 1e-3);
-    return welded;
+  // Coletar bounds
+  let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
+  for (const key of vox){
+    const [x,y,z]=key.split(',').map(Number);
+    if (x<minX) minX=x; if (y<minY) minY=y; if (z<minZ) minZ=z;
+    if (x>maxX) maxX=x; if (y>maxY) maxY=y; if (z>maxZ) maxZ=z;
   }
+
+  const has = (x,y,z)=> vox.has(`${x},${y},${z}`);
+
+  const positions = [];
+  const indices   = [];
+  let vbase = 0;
+
+  function pushQuad(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz){
+    positions.push(
+      ax,ay,az,  bx,by,bz,  cx,cy,cz,  dx,dy,dz
+    );
+    indices.push(vbase, vbase+1, vbase+2,  vbase, vbase+2, vbase+3);
+    vbase += 4;
+  }
+
+  for (const key of vox){
+    const [gx,gy,gz] = key.split(',').map(Number);
+
+    const x0 = gx * UNIT_XZ;
+    const x1 = (gx+1) * UNIT_XZ;
+    const z0 = gz * UNIT_XZ;
+    const z1 = (gz+1) * UNIT_XZ;
+
+    // usa cumAt do escopo de rebuild3D
+    const y0 = cumAt(gy);
+    const y1 = cumAt(gy+1);
+
+    // -X
+    if (!has(gx-1,gy,gz)){
+      pushQuad( x0,y0,z1,  x0,y0,z0,  x0,y1,z0,  x0,y1,z1 );
+    }
+    // +X
+    if (!has(gx+1,gy,gz)){
+      pushQuad( x1,y0,z0,  x1,y0,z1,  x1,y1,z1,  x1,y1,z0 );
+    }
+    // -Z
+    if (!has(gx,gy,gz-1)){
+      pushQuad( x1,y0,z0,  x0,y0,z0,  x0,y1,z0,  x1,y1,z0 );
+    }
+    // +Z
+    if (!has(gx,gy,gz+1)){
+      pushQuad( x0,y0,z1,  x1,y0,z1,  x1,y1,z1,  x0,y1,z1 );
+    }
+    // -Y
+    if (!has(gx,gy-1,gz)){
+      pushQuad( x0,y0,z0,  x1,y0,z0,  x1,y0,z1,  x0,y0,z1 );
+    }
+    // +Y
+    if (!has(gx,gy+1,gz)){
+      pushQuad( x0,y1,z1,  x1,y1,z1,  x1,y1,z0,  x0,y1,z0 );
+    }
+  }
+
+  if (positions.length===0) return null;
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
+  geom.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(indices), 1));
+  const welded = weldGeometry(geom, 1e-3);
+  return welded;
+}
 
   // === Loop por elemento: superfície limpa + contorno inflado ===
   for (const e of elements){
@@ -1276,8 +1276,9 @@ const shapeTopCanvas = document.getElementById('shapeTopCanvas');
 const topCtx2 = shapeTopCanvas.getContext('2d');
 const shapeFrontCanvas = document.getElementById('shapeFrontCanvas');
 const frontCtx2 = shapeFrontCanvas.getContext('2d');
-
-let tempTop = new Set(), tempFront = new Set();
+const shapeSideCanvas = document.getElementById('shapeSideCanvas');
+const sideCtx2 = shapeSideCanvas.getContext('2d');
+let tempTop = new Set(), tempFront = new Set(), tempSide = new Set();
 let painting = null, editMode=false, editId=null;
 
 function fitCanvasHiDPI(c){ const dpr=Math.max(1, window.devicePixelRatio||1); const r=c.getBoundingClientRect(); c.width=Math.round(r.width*dpr); c.height=Math.round(r.height*dpr); c.getContext('2d').setTransform(dpr,0,0,dpr,0,0); }
@@ -1295,15 +1296,44 @@ function drawCreatorGrids(){
   const Wv = Math.max(1, parseInt(cW.value,10)||1);
   const Hv = Math.max(1, parseInt(cH.value,10)||1);
   const Dv = Math.max(1, parseInt(cD.value,10)||1);
-  fitCanvasHiDPI(shapeTopCanvas); fitCanvasHiDPI(shapeFrontCanvas);
 
+  fitCanvasHiDPI(shapeTopCanvas);
+  fitCanvasHiDPI(shapeFrontCanvas);
+  fitCanvasHiDPI(shapeSideCanvas);
+
+  // --- Superior (W × D) ---
   const gt = drawGridGeneric(topCtx2, shapeTopCanvas, Wv, Dv);
-  tempTop.forEach(key=>{ const [x,z]=key.split(',').map(Number); if (x>=0&&x<Wv&&z>=0&&z<Dv){ topCtx2.fillStyle='rgba(88,166,255,0.25)'; topCtx2.fillRect(gt.offX + x*gt.cell +1, gt.offY + z*gt.cell +1, gt.cell-2, gt.cell-2); } });
+  tempTop.forEach(key=>{
+    const [x,z]=key.split(',').map(Number);
+    if (x>=0&&x<Wv&&z>=0&&z<Dv){
+      topCtx2.fillStyle='rgba(88,166,255,0.25)';
+      topCtx2.fillRect(gt.offX + x*gt.cell +1, gt.offY + z*gt.cell +1, gt.cell-2, gt.cell-2);
+    }
+  });
 
+  // --- Frontal (W × H) ---
   const gf = drawGridGeneric(frontCtx2, shapeFrontCanvas, Wv, Hv);
-  tempFront.forEach(key=>{ const [x,y]=key.split(',').map(Number); if (x>=0&&x<Wv&&y>=0&&y<Hv){ const sy=(Hv-1-y); frontCtx2.fillStyle='rgba(255,198,40,0.25)'; frontCtx2.fillRect(gf.offX + x*gf.cell +1, gf.offY + sy*gf.cell +1, gf.cell-2, gf.cell-2); } });
+  tempFront.forEach(key=>{
+    const [x,y]=key.split(',').map(Number);
+    if (x>=0&&x<Wv&&y>=0&&y<Hv){
+      const sy=(Hv-1-y);
+      frontCtx2.fillStyle='rgba(255,198,40,0.25)';
+      frontCtx2.fillRect(gf.offX + x*gf.cell +1, gf.offY + sy*gf.cell +1, gf.cell-2, gf.cell-2);
+    }
+  });
 
-  // traça apenas contornos das máscaras
+  // --- Lateral (D × H) ---
+  const gs = drawGridGeneric(sideCtx2, shapeSideCanvas, Dv, Hv);
+  tempSide.forEach(key=>{
+    const [z,y]=key.split(',').map(Number);
+    if (z>=0&&z<Dv&&y>=0&&y<Hv){
+      const sy=(Hv-1-y);
+      sideCtx2.fillStyle='rgba(80,227,194,0.25)'; // verde-água leve
+      sideCtx2.fillRect(gs.offX + z*gs.cell +1, gs.offY + sy*gs.cell +1, gs.cell-2, gs.cell-2);
+    }
+  });
+
+  // --- Contornos das máscaras (superior/frontal/lateral) ---
   function strokeMask(ctx, mask, offX, offY, cell, color, invertY=false, rows=0){
     const segs = segmentsFromMask(mask);
     ctx.strokeStyle = color;
@@ -1318,9 +1348,12 @@ function drawCreatorGrids(){
   }
   strokeMask(topCtx2,   tempTop,   gt.offX, gt.offY, gt.cell, 'rgba(88,166,255,0.9)', false, Dv);
   strokeMask(frontCtx2, tempFront, gf.offX, gf.offY, gf.cell, 'rgba(255,198,40,0.9)', true,  Hv);
+  strokeMask(sideCtx2,  tempSide,  gs.offX, gs.offY, gs.cell, 'rgba(80,227,194,0.9)',  true,  Hv);
 
+  // guardar metadados p/ hit-test no modal
   shapeTopCanvas._cell=gt.cell; shapeTopCanvas._offX=gt.offX; shapeTopCanvas._offY=gt.offY; shapeTopCanvas._cols=Wv; shapeTopCanvas._rows=Dv;
   shapeFrontCanvas._cell=gf.cell; shapeFrontCanvas._offX=gf.offX; shapeFrontCanvas._offY=gf.offY; shapeFrontCanvas._cols=Wv; shapeFrontCanvas._rows=Hv;
+  shapeSideCanvas._cell=gs.cell; shapeSideCanvas._offX=gs.offX; shapeSideCanvas._offY=gs.offY; shapeSideCanvas._cols=Dv; shapeSideCanvas._rows=Hv;
 }
 function cellAtCreator(c, mx,my){
   const cell=c._cell||16, offX=c._offX||0, offY=c._offY||0, cols=c._cols||1, rows=c._rows||1;
@@ -1340,6 +1373,31 @@ shapeFrontCanvas.addEventListener('mousedown', (e)=>{
   const Hv = shapeFrontCanvas._rows||1; const yBase = (Hv-1-p.y);
   const key = `${p.x},${yBase}`; if (painting.mode==='add') tempFront.add(key); else tempFront.delete(key);
   drawCreatorGrids();
+});
+shapeSideCanvas.addEventListener('mousedown', (e)=>{
+  const r=shapeSideCanvas.getBoundingClientRect();
+  const p=cellAtCreator(shapeSideCanvas, e.clientX-r.left, e.clientY-r.top);
+  if(!p) return;
+  painting = {target:'side', mode: e.shiftKey?'del':'add'};
+  const Hv = shapeSideCanvas._rows||1;
+  const yBase = (Hv-1-p.y);
+  const key = `${p.x},${yBase}`; // (z,y)
+  if (painting.mode==='add') tempSide.add(key); else tempSide.delete(key);
+  drawCreatorGrids();
+});
+
+window.addEventListener('mousemove', (e)=>{
+  if (!painting) return;
+  if (painting.target==='side'){
+    const r=shapeSideCanvas.getBoundingClientRect();
+    const p=cellAtCreator(shapeSideCanvas, e.clientX-r.left, e.clientY-r.top);
+    if(!p) return;
+    const Hv = shapeSideCanvas._rows||1;
+    const yBase = (Hv-1-p.y);
+    const key = `${p.x},${yBase}`; // (z,y)
+    if (painting.mode==='add') tempSide.add(key); else tempSide.delete(key);
+    drawCreatorGrids();
+  }
 });
 window.addEventListener('mousemove', (e)=>{
   if (!painting) return;
@@ -1392,20 +1450,49 @@ function autoAptCode(floor, candidate){
   const index = autoIndexOnFloor(floor, candidate);
   return String(floor*100 + index);
 }
-
 /* Criar/Editar */
 function openCreator(mode='new'){
+  function deriveSideFrom(topMask, frontMask){
+    // side = { (z,y) existe x tal que (x,z)∈top e (x,y)∈front }
+    const xsByZ = new Map();
+    topMask.forEach(k=>{
+      const [x,z]=k.split(',').map(Number);
+      if(!xsByZ.has(z)) xsByZ.set(z,new Set());
+      xsByZ.get(z).add(x);
+    });
+    const xsByY = new Map();
+    frontMask.forEach(k=>{
+      const [x,y]=k.split(',').map(Number);
+      if(!xsByY.has(y)) xsByY.set(y,new Set());
+      xsByY.get(y).add(x);
+    });
+    const out = new Set();
+    xsByZ.forEach((xset,z)=>{
+      xsByY.forEach((xsetY,y)=>{
+        // intersecção não-vazia?
+        for (const x of xset){
+          if (xsetY.has(x)){ out.add(`${z},${y}`); break; }
+        }
+      });
+    });
+    return out;
+  }
+
   editMode = (mode==='edit'); editId = editMode ? selId : null;
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
     cID.value = e.code || '';
     cW.value = e.W; cH.value = e.H; cD.value = e.D;
-    tempTop = new Set(e.topMask); tempFront = new Set(e.frontMask);
+    tempTop   = new Set(e.topMask);
+    tempFront = new Set(e.frontMask);
+    // side existente → usa; senão, deriva
+    tempSide  = new Set(e.sideMask ? e.sideMask : deriveSideFrom(e.topMask, e.frontMask));
     creatorTitle.textContent = 'Editar elemento';
   } else {
     cID.value = '';
     cW.value = 6; cH.value = Math.max(6, floors.length); cD.value = 4;
-    tempTop.clear(); tempFront.clear(); creatorTitle.textContent = 'Novo elemento';
+    tempTop.clear(); tempFront.clear(); tempSide.clear();
+    creatorTitle.textContent = 'Novo elemento';
   }
   document.getElementById('creatorOverlay').style.display='flex';
   drawCreatorGrids();
@@ -1417,21 +1504,40 @@ document.getElementById('creatorClose').addEventListener('click', closeCreator);
 document.getElementById('creatorCancel').addEventListener('click', closeCreator);
 document.getElementById('clearTopMask').addEventListener('click', ()=>{ tempTop.clear(); drawCreatorGrids(); });
 document.getElementById('clearFrontMask').addEventListener('click', ()=>{ tempFront.clear(); drawCreatorGrids(); });
+document.getElementById('clearSideMask').addEventListener('click', ()=>{
+  tempSide.clear(); drawCreatorGrids();
+});
 document.getElementById('creatorSave').addEventListener('click', ()=>{
   const Wv = Math.max(1, parseInt(cW.value,10)||1);
   const Hv = Math.max(1, parseInt(cH.value,10)||1);
   const Dv = Math.max(1, parseInt(cD.value,10)||1);
-  const normTop = new Set([...tempTop].filter(k=>{ const [x,z]=k.split(',').map(Number); return x>=0&&x<Wv&&z>=0&&z<Dv; }));
-  const normFront = new Set([...tempFront].filter(k=>{ const [x,y]=k.split(',').map(Number); return x>=0&&x<Wv&&y>=0&&y<Hv; }));
-  if (normTop.size===0) normTop.add('0,0');
+
+  const normTop = new Set([...tempTop].filter(k=>{
+    const [x,z]=k.split(',').map(Number);
+    return x>=0&&x<Wv&&z>=0&&z<Dv;
+  }));
+  const normFront = new Set([...tempFront].filter(k=>{
+    const [x,y]=k.split(',').map(Number);
+    return x>=0&&x<Wv&&y>=0&&y<Hv;
+  }));
+  const normSide = new Set([...tempSide].filter(k=>{
+    const [z,y]=k.split(',').map(Number);
+    return z>=0&&z<Dv&&y>=0&&y<Hv;
+  }));
+
+  if (normTop.size===0)   normTop.add('0,0');
   if (normFront.size===0) normFront.add('0,0');
+  // side é opcional; não precisamos forçar conteúdo
 
   pushUndo(snapshotState());
 
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
     e.code = (cID.value||'').trim() || e.code;
-    e.W=Wv; e.H=Hv; e.D=Dv; e.topMask = normTop; e.frontMask = normFront;
+    e.W=Wv; e.H=Hv; e.D=Dv;
+    e.topMask   = normTop;
+    e.frontMask = normFront;
+    e.sideMask  = normSide; // pode estar vazio
     selId = e.id;
   } else {
     const bornY = (isolatedFloor!=null ? isolatedFloor : 0);
@@ -1439,14 +1545,14 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
       id: rndId(), 
       code: (cID.value||'').trim() || autoAptCode(bornY, null),
       color: COLORS[elements.length % COLORS.length],
-      x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv, topMask: normTop, frontMask: normFront 
+      x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv,
+      topMask: normTop, frontMask: normFront, sideMask: normSide
     };
     elements.push(e); selId = e.id; selectedIds = new Set([e.id]);
   }
   closeCreator(); drawAll(); updateButtonsState();
   renumberIds();
 });
-
 /* ==================== UI básica & grelha de pavimentos ==================== */
 function updateButtonsState(){
   const hasSel = selectedIds.size>0;
@@ -1461,8 +1567,13 @@ document.getElementById('dupElem').addEventListener('click', ()=>{
   const ids = Array.from(selectedIds); const newIds=[];
   for (const id of ids){
     const src = elements.find(e=>e.id===id); if (!src) continue;
-    const dup = { id: rndId(), code: src.code, color: src.color, x: src.x+1, y: src.y, z: src.z,
-      W: src.W, H: src.H, D: src.D, topMask: new Set(src.topMask), frontMask: new Set(src.frontMask) };
+    const dup = { 
+  id: rndId(), code: src.code, color: src.color, x: src.x+1, y: src.y, z: src.z,
+  W: src.W, H: src.H, D: src.D,
+  topMask: new Set(src.topMask),
+  frontMask: new Set(src.frontMask),
+  sideMask: new Set(src.sideMask || [])
+  };
     elements.push(dup); newIds.push(dup.id);
   }
   selectedIds = new Set(newIds); selId = newIds[0] ?? null; drawAll(); updateButtonsState();
@@ -1488,23 +1599,24 @@ function bboxXYZ(e){
   if (!isFinite(minX)) return null;
   return {minX,minY,minZ,maxX,maxY,maxZ};
 }
-function areAdjacent3D(e1,e2){
-  const b1=bboxXYZ(e1), b2=bboxXYZ(e2);
-  if (!b1||!b2) return false;
-  if (b1.minX > b2.maxX+1 || b2.minX > b1.maxX+1) return false;
-  if (b1.minY > b2.maxY+1 || b2.minY > b1.maxY+1) return false;
-  if (b1.minZ > b2.maxZ+1 || b2.minZ > b1.maxZ+1) return false;
-
-  const v1=voxelsOf(e1), v2=voxelsOf(e2);
+function areAdjacent3D(e1, e2){
+  // Constrói voxels de cada elemento (em coordenadas globais)
+  const v1 = voxelsOf(e1);
+  const v2 = voxelsOf(e2);
   if (v1.size===0 || v2.size===0) return false;
 
-  const dirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-  const [A,B] = v1.size<=v2.size ? [v1,v2] : [v2,v1];
+  // Coloque o menor conjunto como A para acelerar
+  const A = v1.size <= v2.size ? v1 : v2;
+  const B = v1.size <= v2.size ? v2 : v1;
+
+  // Verificação de vizinhança 6-conexa (faces): +/-X, +/-Y, +/-Z
+  const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+
   for (const key of A){
     const [x,y,z] = key.split(',').map(Number);
     for (const [dx,dy,dz] of dirs){
       const s = `${x+dx},${y+dy},${z+dz}`;
-      if (B.has(s)) return true;
+      if (B.has(s)) return true; // toca por face → adjacente
     }
   }
   return false;
@@ -1514,6 +1626,7 @@ function mergeSelected(){
   const ids=[...selectedIds];
   const els = ids.map(id=>elements.find(e=>e.id===id)).filter(Boolean);
 
+  // Verificação de adjacência 6-conexo
   for (let i=0;i<els.length;i++){
     for (let j=i+1;j<els.length;j++){
       if (!areAdjacent3D(els[i], els[j])){
@@ -1523,8 +1636,10 @@ function mergeSelected(){
     }
   }
 
+  // Snapshot para Undo
   pushUndo(snapshotState());
 
+  // União de voxels
   const union = new Set();
   let minX=Infinity,minY=Infinity,minZ=Infinity, color=els[0].color;
   for (const e of els){
@@ -1532,41 +1647,69 @@ function mergeSelected(){
     for (const v of vox){
       union.add(v);
       const [x,y,z]=v.split(',').map(Number);
-      minX=Math.min(minX,x); minY=Math.min(minY,y); minZ=Math.min(minZ,z);
+      if (x<minX) minX=x;
+      if (y<minY) minY=y;
+      if (z<minZ) minZ=z;
     }
   }
-  if (!isFinite(minX)){ alert('Não foi possível mesclar.'); return; }
+  if (!isFinite(minX)){
+    alert('Não foi possível mesclar.');
+    return;
+  }
 
-  const newTop = new Set();
-  const newFront = new Set();
+  // Reconstruir máscaras a partir da união (normalizadas para iniciar em 0,0)
+  const newTop   = new Set(); // (x,z)
+  const newFront = new Set(); // (x,y)
+  const newSide  = new Set(); // (z,y)
+  let maxGX=-Infinity,maxGY=-Infinity,maxGZ=-Infinity;
   for (const v of union){
     const [gx,gy,gz]=v.split(',').map(Number);
-    newTop.add(`${gx-minX},${gz-minZ}`);
-    newFront.add(`${gx-minX},${gy-minY}`);
+    const lx = gx-minX, ly = gy-minY, lz = gz-minZ;
+    newTop.add(`${lx},${lz}`);
+    newFront.add(`${lx},${ly}`);
+    newSide.add(`${lz},${ly}`);
+    if (gx>maxGX) maxGX=gx;
+    if (gy>maxGY) maxGY=gy;
+    if (gz>maxGZ) maxGZ=gz;
   }
-  const dT = dimsFromSet(newTop);
-  const dF = dimsFromSet(newFront);
-  const W = Math.max(1, dT.maxX - dT.minX + 1);
-  const D = Math.max(1, dT.maxY - dT.minY + 1);
-  const H = Math.max(1, dF.maxY - dF.minY + 1);
 
+  // Dimensões globais do novo bloco
+  const W = Math.max(1, (maxGX - minX + 1));
+  const H = Math.max(1, (maxGY - minY + 1));
+  const D = Math.max(1, (maxGZ - minZ + 1));
+
+  // Código: menor código numérico da seleção, se existir
   let minCode = Infinity;
   for (const e of els){
     const parsed = parseInt(e.code,10);
     if (!isNaN(parsed)) minCode = Math.min(minCode, parsed);
   }
+
+  // Cria elemento mesclado
   const merged = { 
     id: rndId(),
     code: isFinite(minCode)? String(minCode) : '',
-    color, x:minX, y:minY, z:minZ, W,H,D, topMask:newTop, frontMask:newFront 
+    color,
+    x:minX, y:minY, z:minZ,
+    W,H,D,
+    topMask:newTop, 
+    frontMask:newFront,
+    sideMask:newSide
   };
 
+  // Substitui no array
   elements = elements.filter(e=>!selectedIds.has(e.id));
   elements.push(merged);
-  selectedIds = new Set([merged.id]); selId=merged.id;
 
+  // Seleciona novo elemento e remove isolamento para evitar "sumiço" por filtro
+  selectedIds = new Set([merged.id]); 
+  selId = merged.id;
+  isolatedFloor = null; // <<< importante para não esconder o bloco mesclado
+
+  // Renumera, redesenha e atualiza UI
   renumberIds();
-  drawAll(); updateButtonsState();
+  drawAll();
+  updateButtonsState();
 }
 document.getElementById('mergeSel').addEventListener('click', mergeSelected);
 
@@ -1705,30 +1848,70 @@ function computePlacements(){
   const cumAt=(i)=> cum[Math.max(0, Math.min(i, cum.length-1))];
 
   for (const e of elements){
+    // front → por X: Y locais
     const yByX = new Map();
-    e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
-    const zCols = new Map();
-    e.topMask.forEach(k=>{ const [x,z]=k.split(',').map(Number); if(!zCols.has(x)) zCols.set(x,new Set()); zCols.get(x).add(z); });
+    e.frontMask.forEach(k=>{
+      const [x,y]=k.split(',').map(Number);
+      if(!yByX.has(x)) yByX.set(x,new Set());
+      yByX.get(x).add(y);
+    });
 
+    // top → por X: Z locais
+    const zByX = new Map();
+    e.topMask.forEach(k=>{
+      const [x,z]=k.split(',').map(Number);
+      if(!zByX.has(x)) zByX.set(x,new Set());
+      zByX.get(x).add(z);
+    });
+
+    // side → por Z: Y permitidos (opcional)
+    const yByZ = new Map();
+    if (e.sideMask && e.sideMask.size){
+      e.sideMask.forEach(k=>{
+        const [z,y]=k.split(',').map(Number);
+        if(!yByZ.has(z)) yByZ.set(z,new Set());
+        yByZ.get(z).add(y);
+      });
+    }
+
+    // runsByXZ: para cada (lx,lz), cria "runs" contíguos de Y (após interseção com side)
     const runsByXZ = new Map();
-    for (const [lx, setZ] of zCols.entries()){
-      const ySet = yByX.get(lx) || new Set();
-      if (ySet.size===0) continue;
-      const ys = Array.from(ySet.values()); const yMin=Math.min(...ys), yMax=Math.max(...ys);
-      const hasY = new Set(ys);
-      for (const lz of setZ){
-        let y = yMin;
-        while (y <= yMax){
-          if (!hasY.has(y)){ y++; continue; }
-          let y0=y; while (hasY.has(y)) y++; let y1=y;
-          const key = `${lx},${lz}`; if (!runsByXZ.has(key)) runsByXZ.set(key, []);
+
+    for (const [lx, zset] of zByX.entries()){
+      const yBase = yByX.get(lx) || new Set();
+      if (yBase.size===0) continue;
+
+      for (const lz of zset){
+        // Restringe Y pelo side(z) se houver
+        let ySet;
+        if (yByZ.size>0){
+          const allow = yByZ.get(lz);
+          if (!allow) continue;
+          ySet = new Set([...yBase].filter(y=>allow.has(y)));
+        } else {
+          ySet = yBase;
+        }
+        if (ySet.size===0) continue;
+
+        const ys = Array.from(ySet.values()).sort((a,b)=>a-b);
+        let i=0;
+        while (i<ys.length){
+          let y0 = ys[i], y = ys[i]+1; i++;
+          while (i<ys.length && ys[i]===y){ y=ys[i]+1; i++; }
+          const y1 = y; // exclusivo
+          const key = `${lx},${lz}`;
+          if (!runsByXZ.has(key)) runsByXZ.set(key, []);
           runsByXZ.get(key).push({y0,y1});
         }
       }
     }
 
+    // Helpers para agrupar retângulos (mesma lógica antiga, agora com runs corretos)
     const visited = new Set();
-    const hasRun=(lx,lz,y0,y1)=>{ const arr=runsByXZ.get(`${lx},${lz}`); return !!arr && arr.some(r=>r.y0===y0&&r.y1===y1); };
+    const hasRun=(lx,lz,y0,y1)=>{
+      const arr=runsByXZ.get(`${lx},${lz}`); 
+      return !!arr && arr.some(r=>r.y0===y0&&r.y1===y1);
+    };
     const markRun=(lx,lz,y0,y1)=> visited.add(`${lx},${lz},${y0},${y1}`);
     const isVisited=(lx,lz,y0,y1)=> visited.has(`${lx},${lz},${y0},${y1}`);
 
@@ -1738,10 +1921,12 @@ function computePlacements(){
         const {y0,y1} = run;
         if (isVisited(lx0,lz0,y0,y1)) continue;
 
+        // expandir em Z
         let zMin=lz0, zMax=lz0;
         while (hasRun(lx0, zMin-1, y0, y1) && !isVisited(lx0, zMin-1, y0, y1)) zMin--;
         while (hasRun(lx0, zMax+1, y0, y1) && !isVisited(lx0, zMax+1, y0, y1)) zMax++;
 
+        // expandir em X
         let xMin=lx0, xMax=lx0;
         outerNeg: while (true){
           const nx=xMin-1;
@@ -1754,8 +1939,14 @@ function computePlacements(){
           xMax=nx;
         }
 
-        for (let x=xMin; x<=xMax; x++){ for (let z=zMin; z<=zMax; z++){ markRun(x,z,y0,y1); } }
+        // marcar visitados
+        for (let x=xMin; x<=xMax; x++){
+          for (let z=zMin; z<=zMax; z++){
+            markRun(x,z,y0,y1);
+          }
+        }
 
+        // converter para coordenadas globais e clipe por topo do prédio
         let gY0 = e.y + y0, gY1 = e.y + y1;
         if (gY0 >= floors.length) continue;
         gY1 = Math.min(gY1, floors.length);
@@ -1843,6 +2034,27 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
       });
       const topMask = new Set();
       const frontMask = new Set();
+      function deriveSideFrom(topMask, frontMask){
+  const xsByZ = new Map();
+  topMask.forEach(k=>{
+    const [x,z]=k.split(',').map(Number);
+    if(!xsByZ.has(z)) xsByZ.set(z,new Set());
+    xsByZ.get(z).add(x);
+  });
+  const xsByY = new Map();
+  frontMask.forEach(k=>{
+    const [x,y]=k.split(',').map(Number);
+    if(!xsByY.has(y)) xsByY.set(y,new Set());
+    xsByY.get(y).add(x);
+  });
+  const out = new Set();
+  xsByZ.forEach((xset,z)=>{
+    xsByY.forEach((xsetY,y)=>{
+      for (const x of xset){ if (xsetY.has(x)){ out.add(`${z},${y}`); break; } }
+    });
+  });
+  return out;
+}
       list.forEach(pl=>{
         for (let lx=0; lx<pl.w; lx++){
           for (let lz=0; lz<pl.d; lz++){
@@ -1858,13 +2070,15 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
       const W = Math.max(1, dimsFromSet(topMask).maxX+1);
       const D = Math.max(1, dimsFromSet(topMask).maxY+1);
       const H = Math.max(1, dimsFromSet(frontMask).maxY+1);
+      const sideMask = deriveSideFrom(topMask, frontMask);
       elements.push({
         id:rndId(),
         code:String(apto),
         color,
         x:minGX, y:minGY, z:minGZ,
         W,H,D,
-        topMask, frontMask
+        topMask, frontMask,
+        sideMask
       });
     }
     selId=null; selectedIds.clear(); isolatedFloor=null;
