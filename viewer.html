@@ -233,28 +233,35 @@ function applyExplode(){
     return;
   }
 
-  // Centroide das posições base (coladas) para explode radial em XZ
+  // Centroide dos ANCHORS (não das basePos)
   let sumX = 0, sumZ = 0, n = 0;
-  for (const g of torre.children){ sumX += g.userData.basePos.x; sumZ += g.userData.basePos.z; n++; }
-  const cx = n ? (sumX/n) : 0, cz = n ? (sumZ/n) : 0;
+  for (const g of torre.children){
+    const a = g.userData.anchor || g.userData.basePos;
+    sumX += a.x; sumZ += a.z; n++;
+  }
+  const cx = n ? (sumX/n) : 0;
+  const cz = n ? (sumZ/n) : 0;
 
   const step = Math.max(stepX, stepZ) || 1;
 
   for (const g of torre.children){
-    const base = g.userData.basePos;        // posição “colada”
+    const base = g.userData.basePos;            // onde fica "colado"
     const pos  = base.clone();
 
-    // Explode radial no plano XZ
+    // Explode radial no plano XZ a partir do centroide dos anchors
     if (explodeXY > 0){
-      const dir = new THREE.Vector3(base.x - cx, 0, base.z - cz);
+      const a = g.userData.anchor || base;
+      const dir = new THREE.Vector3(a.x - cx, 0, a.z - cz);
       const len = dir.length();
       if (len > 1e-6){
-        dir.multiplyScalar(1/len);                 // mesmo deslocamento p/ todos
+        dir.multiplyScalar(1/len);              // mesmo deslocamento p/ todos
         pos.addScaledVector(dir, explodeXY * step);
+        // Se quiser proporcional ao raio, troque por:
+        // pos.addScaledVector(dir, explodeXY * step * (len/Math.max(1, step)));
       }
     }
 
-    // Explode vertical por pavimento (levelIndex)
+    // Explode vertical por pavimento
     if (explodeY !== 0){
       pos.y += (g.userData.levelIndex || 0) * explodeY;
     }
@@ -352,7 +359,7 @@ function buildFromLayout(l){
     const surface = buildSurfaceGeometryFromOcc(occ);
     if (!surface) continue;
 
-    // material neutro (cores reais virão do FVS)
+    // material neutro (cores virão do FVS; opacidade coerente)
     const faceMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(0x6e7681),
       metalness: 0.05,
@@ -373,7 +380,7 @@ function buildFromLayout(l){
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
     edges.renderOrder = 2;
 
-    // pavimento mínimo do apto (para explodeY)
+    // pavimento mínimo (explodeY)
     let minLevel = Infinity;
     for (const key of occ){
       const gy = parseInt(key.split(',')[1],10);
@@ -385,38 +392,60 @@ function buildFromLayout(l){
     group.add(mesh); group.add(edges);
     group.position.set(0,0,0);
 
+    // guardaremos basePos e anchor após centralizar tudo
     group.userData = {
       apto: String(apto),
       mesh, edges,
       levelIndex: minLevel,
-      basePos: new THREE.Vector3(0,0,0) // será definido após centralização
+      basePos: new THREE.Vector3(0,0,0),
+      anchor:  new THREE.Vector3(0,0,0)
     };
 
+    // já calcula o centro LOCAL da malha (em coords do geometry)
+    surface.computeBoundingBox();
+    const bb = surface.boundingBox;
+    const localCenter = new THREE.Vector3();
+    bb.getCenter(localCenter);                 // centro no espaço LOCAL do mesh
+    group.__localCenter = localCenter;         // usamos depois para calcular o anchor
     torre.add(group);
   }
 
-  // === Centraliza TODO o conjunto no (0,0,0) alterando APENAS positions dos grupos
+  // === Centraliza TODO o conjunto no (0,0,0) movendo os grupos
   const bbox = new THREE.Box3().setFromObject(torre);
   const center = new THREE.Vector3(); bbox.getCenter(center);
   const size   = new THREE.Vector3(); bbox.getSize(size);
 
   for (const g of torre.children){
-    g.position.sub(center);            // move cada grupo pelo centro global
-    g.userData.basePos.copy(g.position); // grava posição “colada” para explode
+    // posição "colada" = antes era (0,0,0), agora deslocamos pelo centro global
+    g.position.sub(center);
+    // basePos = onde o grupo fica quando explode = 0
+    g.userData.basePos.copy(g.position);
+
+    // === ANCHOR: centro do apto em mundo colado
+    // Como o geometry está em "coords globais", seu centro local (.__localCenter)
+    // somado à translation do grupo dá o centro em "mundo colado".
+    const lc = g.__localCenter || new THREE.Vector3();
+    g.userData.anchor.set(
+      g.position.x + lc.x,
+      g.position.y + lc.y,
+      g.position.z + lc.z
+    );
+    delete g.__localCenter; // limpeza
   }
 
-  // === Ajuste de câmera/zoom inicial baseado no tamanho real
+  // === Câmera inicial baseada no tamanho real
   const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
   const idealRadius = Math.max(8, diag * 0.75);
   radius = clamp(idealRadius, 4, 200);
 
-  // Target na meia-altura do conjunto centralizado
-  orbitTarget.set(0, size.y * 0.5 * 0.0, 0); // 0 para mirar no 0; use 0.5 se preferir meio-altura
+  // Se quiser mirar pro meio da altura, use size.y*0.5
+  orbitTarget.set(0, 0, 0);
   updateCamera();
 
-  // Aplica estado atual de explode (zero → colado)
+  // Aplica estado atual do explode (zero → colado)
   applyExplode();
 }
+
 
     function recenterOrbitTarget(){
       const bbox2 = new THREE.Box3().setFromObject(torre);
@@ -486,10 +515,22 @@ function buildFromLayout(l){
     });
     document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
 // === HUD: Explode ===
+// === HUD ===
+const wireOnly = document.getElementById('wireOnly');
+wireOnly.addEventListener('change', (e) => setFacesVisible(!e.target.checked));
+
+const opacity = document.getElementById('opacity');
+const opacityVal = document.getElementById('opacityVal');
+opacity.addEventListener('input', () => {
+  const v = Number(opacity.value) / 100;
+  opacityVal.textContent = v.toFixed(2);
+  setFaceOpacity(v);
+});
+
 const explodeXYRange = document.getElementById('explodeXY');
 const explodeXYVal   = document.getElementById('explodeXYVal');
 explodeXYRange.addEventListener('input', () => {
-  explodeXY = parseFloat(explodeXYRange.value) || 0;
+  explodeXY = Number(explodeXYRange.value) || 0;
   explodeXYVal.textContent = explodeXY.toFixed(2);
   applyExplode();
 });
@@ -497,31 +538,34 @@ explodeXYRange.addEventListener('input', () => {
 const explodeYRange = document.getElementById('explodeY');
 const explodeYVal   = document.getElementById('explodeYVal');
 explodeYRange.addEventListener('input', () => {
-  explodeY = parseFloat(explodeYRange.value) || 0;
+  explodeY = Number(explodeYRange.value) || 0;
   explodeYVal.textContent = explodeY.toFixed(2);
   applyExplode();
 });
 
-document.getElementById('resetExplode').addEventListener('click', () => {
+const resetExplodeBtn = document.getElementById('resetExplode');
+resetExplodeBtn.addEventListener('click', () => {
   explodeXY = 0; explodeY = 0;
   explodeXYRange.value = '0'; explodeYRange.value = '0';
   explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
   applyExplode();
 });
-document.getElementById('resetExplode').addEventListener('click', () => {
-  explodeXY = 0; explodeY = 0;
-  explodeXYRange.value = '0'; explodeYRange.value = '0';
-  explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
-  applyExplode();
-});
-    document.getElementById('resetRot').addEventListener('click', () => { pivot.rotation.set(0,0,0); theta = 0; });
-    document.getElementById('recenter').addEventListener('click', () => {
-      recenterOrbitTarget(); radius = INITIAL_RADIUS; phi = INITIAL_PHI; updateCamera();
-    });
 
-    // Estado inicial
-    setFaceOpacity(parseInt(opacity.value,10)/100);
-    setFacesVisible(true);
+// Rotação e recentrar
+document.getElementById('resetRot').addEventListener('click', () => {
+  pivot.rotation.set(0,0,0);
+  theta = 0;
+  updateCamera();
+});
+document.getElementById('recenter').addEventListener('click', () => {
+  recenterOrbitTarget();
+  radius = INITIAL_RADIUS; phi = INITIAL_PHI;
+  updateCamera();
+});
+
+// Estado inicial
+setFaceOpacity(Number(opacity.value)/100);
+setFacesVisible(true);
 
     // ====== Cores herdadas do 2D ======
     function normApto(s){
@@ -599,6 +643,7 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
 
 
