@@ -922,4 +922,10 @@ async function carregarDuracoesEFazerDraw(fvsSelecionada){
   }finally{
     hideLoading();
   }
-}
+} 
+
+/* ===== 3D: exporta mapa de cores da FVS selecionada ===== */
+(function(){
+  // ... (bloco que te passei)
+})();
+
