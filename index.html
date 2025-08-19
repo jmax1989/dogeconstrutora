@@ -15,6 +15,9 @@
         <option value="">Carregando FVS...</option>
       </select>
       <button id="btn-nc" class="btn-nc" type="button">NC</button>
+
+      <!-- novo botão 3D -->
+      <button id="btn-3d" class="btn-3d" type="button" title="Alternar para visão 3D">3D</button>
     </div>
   </div>
 
@@ -32,8 +35,23 @@
     </div>
   </div>
 
+  <!-- Overlay do 3D -->
+  <div id="viewer3d-overlay" hidden>
+    <div class="viewer3d-bar">
+      <button id="btn-3d-close" type="button" title="Voltar para 2D">2D ✕</button>
+    </div>
+    <iframe
+      id="viewer3d-iframe"
+      loading="lazy"
+      allow="xr-spatial-tracking; gyroscope; accelerometer">
+    </iframe>
+  </div>
+
   <script type="module" src="assets/js/main.js" defer></script>
+  <!-- script para abrir/fechar o viewer 3D -->
+  <script type="module" src="assets/js/toggle-3d.js" defer></script>
 </body>
 </html>
+
 
 
