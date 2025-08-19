@@ -215,7 +215,7 @@
 <script>
 /* ==================== Constantes / Estado ==================== */
 const UNIT_XZ = 22;           // tamanho de 1 célula no plano XZ (px)
-const UNIT_Y  = 28;           // altura de 1 "bloco" (de 1 pavimento de altura)
+const UNIT_Y  = 28;           // altura base de 1 "bloco" vertical (escala aplicada por pavimento)
 const GRID_PAD = 18;
 const MIN_CELL_XZ = 16;
 const COLORS = ['#58a6ff','#50e3c2','#b388ff','#ffa657','#7ee787','#e05d44','#f2cc60','#8ab4f8'];
@@ -387,7 +387,7 @@ function drawSuperior(){
 
   ctxT.strokeStyle='#16233a'; ctxT.lineWidth=1/Math.max(0.001, topZoom);
   for (let x=ox%cell; x<=w; x+=cell){ ctxT.beginPath(); ctxT.moveTo(x,0); ctxT.lineTo(x,h); ctxT.stroke(); }
-  for (let y=oy%cell; y<=h; y+=cell){ ctxT.beginPath(); ctxT.moveTo(0,y); ctxT.lineTo(w,y); ctxT.stroke(); }
+  for (let y=oy%cell; y<=h; y+=cell){ ctxT.beginPath(); ctxT.moveTo(0,y); ctxT.lineTo(0+w,y); ctxT.stroke(); }
   ctxT.strokeStyle='#1c2a3f'; ctxT.lineWidth=2/Math.max(0.001, topZoom);
   ctxT.beginPath(); ctxT.moveTo(0, oy); ctxT.lineTo(w, oy); ctxT.stroke();
   ctxT.beginPath(); ctxT.moveTo(ox, 0); ctxT.lineTo(ox, h); ctxT.stroke();
@@ -759,7 +759,7 @@ document.addEventListener('keydown', (e)=>{
 });
 document.addEventListener('keyup', (e)=>{ if (e.code==='Space') isSpaceDown=false; });
 
-/* ==================== 3D — Caixas → merge → weld ==================== */
+/* ==================== 3D — Surface meshing global (sem faces internas) ==================== */
 const glcanvas = document.getElementById('view3d');
 let scene=null, camera=null, renderer=null, group3D=null;
 let yaw=Math.PI*0.35, pitch=Math.PI*0.28, radius=260;
@@ -823,35 +823,7 @@ function updateCamera3D(){
 }
 function animate3D(){ if (!renderer || !scene || !camera) return; requestAnimationFrame(animate3D); renderer.render(scene,camera); }
 
-/* helpers merge/weld */
-function mergeBufferGeometries(geoms){
-  if (!geoms.length) return null;
-  let totalVert=0, totalIdx=0;
-  for (const g of geoms){
-    const pos = g.getAttribute('position');
-    totalVert += pos.count;
-    totalIdx  += g.index ? g.index.count : pos.count;
-  }
-  const posArr = new Float32Array(totalVert*3);
-  const idxArr = new Uint32Array(totalIdx);
-  let vOff=0, iOff=0, base=0;
-  for (const g of geoms){
-    const pos = g.getAttribute('position').array;
-    posArr.set(pos, vOff*3);
-    const count = g.getAttribute('position').count;
-    if (g.index){
-      const gi = g.index.array;
-      for (let i=0;i<gi.length;i++) idxArr[iOff++] = base + gi[i];
-    } else {
-      for (let i=0;i<count;i++) idxArr[iOff++] = base + i;
-    }
-    vOff += count; base += count;
-  }
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-  geom.setIndex(new THREE.BufferAttribute(idxArr, 1));
-  return geom;
-}
+/* ===== helpers de geometria ===== */
 function weldGeometry(geom, tol=1e-4){
   const pos = geom.getAttribute('position');
   const index = geom.index ? geom.index.array : null;
@@ -881,124 +853,403 @@ function weldGeometry(geom, tol=1e-4){
   return out;
 }
 
-/* rebuild3D com clipping por pavimento e edges “limpos” */
+/* ===== voxelização global e meshing só da fronteira ===== */
+function voxelsOf(e, max=200000){
+  const set = new Set();
+  const yByX = new Map();
+  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
+  if (yByX.size===0 || e.topMask.size===0) return set;
+  for (const key of e.topMask){
+    const [lx,lz]=key.split(',').map(Number);
+    const yset = yByX.get(lx);
+    if (!yset) continue;
+    for (const ly of yset){
+      const gx = e.x + lx, gy = e.y + ly, gz = e.z + lz;
+      set.add(`${gx},${gy},${gz}`);
+      if (set.size>max) return set;
+    }
+  }
+  return set;
+}
+
+function buildGlobalOccupancy(){
+  const occ = new Set();
+  let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
+  for (const e of elements){
+    const vset = voxelsOf(e);
+    for (const v of vset){
+      const [x,y,z] = v.split(',').map(Number);
+      if (isolatedFloor!=null && y!==isolatedFloor) continue; // só o pavimento isolado
+      occ.add(v);
+      if (x<minX) minX=x; if (y<minY) minY=y; if (z<minZ) minZ=z;
+      if (x>maxX) maxX=x; if (y>maxY) maxY=y; if (z>maxZ) maxZ=z;
+    }
+  }
+  if (!isFinite(minX)) return null;
+  return { occ, minX, maxX, minY, maxY, minZ, maxZ };
+}
+
+function buildSurfaceGeometry(){
+  const info = buildGlobalOccupancy();
+  if (!info) return null;
+  const {occ, minX, maxX, minY, maxY, minZ, maxZ} = info;
+  const cum = buildCumHeights();
+  const yBottom = (y)=> cum[Math.max(0, Math.min(y, cum.length-1))];
+  const yTop    = (y)=> cum[Math.max(0, Math.min(y+1, cum.length-1))];
+  const has = (x,y,z)=> occ.has(`${x},${y},${z}`);
+
+  const pos = [];
+  const idx = [];
+  let vbase = 0;
+  const pushQuad = (vlist, flip=false)=>{
+    // vlist: [x,y,z] * 4 no sentido CCW do lado VISÍVEL
+    // flip=true inverte winding
+    const start = vbase;
+    for (const v of vlist){ pos.push(v[0],v[1],v[2]); }
+    if (!flip){
+      idx.push(start, start+1, start+2,  start, start+2, start+3);
+    } else {
+      idx.push(start, start+2, start+1,  start, start+3, start+2);
+    }
+    vbase += 4;
+  };
+
+  /* --- faces em planos X (laterais +/-X), mesclando ao longo de Z por linha de Y --- */
+  for (let x=minX; x<=maxX+1; x++){
+    for (let y=minY; y<=maxY; y++){
+      let z = minZ;
+      while (z<=maxZ){
+        const s = (has(x-1,y,z)?1:0) - (has(x,y,z)?1:0); // +1 = normal +X, -1 = normal -X
+        if (s===0){ z++; continue; }
+        const z0 = z;
+        do { z++; } while (z<=maxZ && ((has(x-1,y,z)?1:0) - (has(x,y,z)?1:0))===s);
+        const z1 = z;
+
+        const Xw = x * UNIT_XZ;
+        const Z0 = z0 * UNIT_XZ, Z1 = z1 * UNIT_XZ;
+        const Y0 = yBottom(y),   Y1 = yTop(y);
+
+        if (s>0){
+          // normal +X
+          pushQuad([[Xw,Y0,Z0],[Xw,Y0,Z1],[Xw,Y1,Z1],[Xw,Y1,Z0]], false);
+        } else {
+          // normal -X
+          pushQuad([[Xw,Y0,Z0],[Xw,Y1,Z0],[Xw,Y1,Z1],[Xw,Y0,Z1]], false);
+        }
+      }
+    }
+  }
+
+  /* --- faces em planos Z (laterais +/-Z), mesclando ao longo de X por linha de Y --- */
+  for (let z=minZ; z<=maxZ+1; z++){
+    for (let y=minY; y<=maxY; y++){
+      let x = minX;
+      while (x<=maxX){
+        const s = (has(x,y,z-1)?1:0) - (has(x,y,z)?1:0); // +1 = normal +Z, -1 = normal -Z
+        if (s===0){ x++; continue; }
+        const x0 = x;
+        do { x++; } while (x<=maxX && ((has(x,y,z-1)?1:0) - (has(x,y,z)?1:0))===s);
+        const x1 = x;
+
+        const Zw = z * UNIT_XZ;
+        const X0 = x0 * UNIT_XZ, X1 = x1 * UNIT_XZ;
+        const Y0 = yBottom(y),   Y1 = yTop(y);
+
+        if (s>0){
+          // normal +Z
+          pushQuad([[X0,Y0,Zw],[X1,Y0,Zw],[X1,Y1,Zw],[X0,Y1,Zw]], false);
+        } else {
+          // normal -Z
+          pushQuad([[X0,Y0,Zw],[X0,Y1,Zw],[X1,Y1,Zw],[X1,Y0,Zw]], false);
+        }
+      }
+    }
+  }
+
+  /* --- faces em planos Y (tampas +/-Y), mesclando ao longo de X por linha de Z --- */
+  for (let y=minY; y<=maxY+1; y++){
+    for (let z=minZ; z<=maxZ; z++){
+      let x = minX;
+      while (x<=maxX){
+        const s = (has(x,y-1,z)?1:0) - (has(x,y,z)?1:0); // +1 = normal +Y (tampa de cima), -1 = normal -Y (fundo)
+        if (s===0){ x++; continue; }
+        const x0 = x;
+        do { x++; } while (x<=maxX && ((has(x,y-1,z)?1:0) - (has(x,y,z)?1:0))===s);
+        const x1 = x;
+
+        const Yw = yBottom(y); // plano entre y-1 e y
+        const X0 = x0 * UNIT_XZ, X1 = x1 * UNIT_XZ;
+        const Z0 = z  * UNIT_XZ, Z1 = (z+1) * UNIT_XZ;
+
+        if (s>0){
+          // topo (+Y)
+          pushQuad([[X0,Yw,Z0],[X1,Yw,Z0],[X1,Yw,Z1],[X0,Yw,Z1]], false);
+        } else {
+          // base (-Y)
+          pushQuad([[X0,Yw,Z0],[X0,Yw,Z1],[X1,Yw,Z1],[X1,Yw,Z0]], false);
+        }
+      }
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(pos), 3));
+  geom.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(idx), 1));
+  geom.computeVertexNormals();
+  geom.computeBoundingBox(); geom.computeBoundingSphere();
+  return weldGeometry(geom, 1e-4);
+}
+
+// infla a geometria alguns décimos de unidade ao longo das normais
+function inflateGeometry(geom, offset=0.25){
+  // offset em unidades de mundo (com UNIT_XZ=22, 0.25 é ~1% do tamanho de célula)
+  const g = geom.clone();
+  g.computeVertexNormals();
+  const pos = g.getAttribute('position');
+  const nor = g.getAttribute('normal');
+  for (let i=0; i<pos.count; i++){
+    pos.setX(i, pos.getX(i) + nor.getX(i)*offset);
+    pos.setY(i, pos.getY(i) + nor.getY(i)*offset);
+    pos.setZ(i, pos.getZ(i) + nor.getZ(i)*offset);
+  }
+  pos.needsUpdate = true;
+  return g;
+} 
+  
 function rebuild3D(){
   if (!group3D) return;
   while (group3D.children.length) group3D.remove(group3D.children[0]);
-
   if (elements.length===0){ updateCamera3D(); return; }
 
   const cum = buildCumHeights();
-  const cumAt=(i)=> cum[Math.max(0, Math.min(i, cum.length-1))];
+  const cumAt = (i)=> cum[Math.max(0, Math.min(i, cum.length-1))];
 
+  // === Helpers locais ===
+
+  // Infla a geometria alguns décimos de unidade ao longo das normais
+  function inflateGeometry(geom, offset=0.25){
+    const g = geom.clone();
+    g.computeVertexNormals();
+    const pos = g.getAttribute('position');
+    const nor = g.getAttribute('normal');
+    for (let i=0;i<pos.count;i++){
+      pos.setX(i, pos.getX(i) + nor.getX(i)*offset);
+      pos.setY(i, pos.getY(i) + nor.getY(i)*offset);
+      pos.setZ(i, pos.getZ(i) + nor.getZ(i)*offset);
+    }
+    pos.needsUpdate = true;
+    return g;
+  }
+
+  // Junta várias BufferGeometries simples em uma só
+  function mergeBufferGeometries(geoms){
+    if (!geoms || !geoms.length) return null;
+    let totalVert=0, totalIdx=0;
+    for (const g of geoms){
+      const pos=g.getAttribute('position'); if(!pos) continue;
+      totalVert += pos.count;
+      totalIdx  += g.index ? g.index.count : (pos.count);
+    }
+    const posArr = new Float32Array(totalVert*3);
+    const idxArr = new Uint32Array(totalIdx);
+    let vOff=0, iOff=0, base=0;
+    for (const g of geoms){
+      const pos=g.getAttribute('position'); if(!pos) continue;
+      posArr.set(pos.array, vOff*3);
+      const count = pos.count;
+      if (g.index){
+        const gi=g.index.array;
+        for (let i=0;i<gi.length;i++) idxArr[iOff++] = base + gi[i];
+      } else {
+        for (let i=0;i<count;i++) idxArr[iOff++] = base + i;
+      }
+      vOff += count; base += count;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(posArr,3));
+    out.setIndex(new THREE.BufferAttribute(idxArr,1));
+    return out;
+  }
+
+  // "Solda" vértices coincidentes (tolerância), remove triângulos degenerados
+  function weldGeometry(geom, tol=1e-5){
+    const pos = geom.getAttribute('position');
+    const idx = geom.index ? geom.index.array : null;
+
+    const keyMap = new Map();
+    const remap = new Uint32Array(pos.count);
+    const outPos = [];
+    let n=0;
+    for (let i=0;i<pos.count;i++){
+      // quantização robusta (usa tolerância relativa ao UNIT_XZ, que é inteiro)
+      const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+      const k = `${Math.round(x/tol)},${Math.round(y/tol)},${Math.round(z/tol)}`;
+      if (!keyMap.has(k)){ keyMap.set(k,n); outPos.push(x,y,z); remap[i]=n++; }
+      else remap[i]=keyMap.get(k);
+    }
+    const outIdx=[];
+    if (idx){
+      for (let i=0;i<idx.length;i+=3){
+        const a=remap[idx[i]], b=remap[idx[i+1]], c=remap[idx[i+2]];
+        if (a!==b && b!==c && c!==a) outIdx.push(a,b,c);
+      }
+    } else {
+      for (let i=0;i<pos.count;i++) outIdx.push(remap[i]);
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(outPos),3));
+    out.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(outIdx),1));
+    out.computeVertexNormals();
+    out.computeBoundingBox(); out.computeBoundingSphere();
+    return out;
+  }
+
+  // Constrói a superfície "voxelizada" do elemento: só faces de fronteira (sem internas)
+  function buildSurfaceGeometryForElement(e){
+    // 1) Conjunto de voxels ocupados (clippado pelo pavimento isolado, se houver)
+    const xsByYLocal = new Map(); // por x local, conjunto de y locais
+    e.frontMask.forEach(k=>{
+      const [lx,ly]=k.split(',').map(Number);
+      if(!xsByYLocal.has(lx)) xsByYLocal.set(lx,new Set());
+      xsByYLocal.get(lx).add(ly);
+    });
+
+    const zSetByXLocal = new Map();
+    e.topMask.forEach(k=>{
+      const [lx,lz]=k.split(',').map(Number);
+      if(!zSetByXLocal.has(lx)) zSetByXLocal.set(lx,new Set());
+      zSetByXLocal.get(lx).add(lz);
+    });
+
+    const vox = new Set(); // strings "gx,gy,gz" em coordenadas de grade globais
+    if (xsByYLocal.size===0 || zSetByXLocal.size===0) return null;
+
+    // popula voxels por interseção (x em comum nas duas máscaras)
+    xsByYLocal.forEach((yset,lx)=>{
+      const zset = zSetByXLocal.get(lx);
+      if (!zset) return;
+      yset.forEach(ly=>{
+        const gy = e.y + ly;
+        if (gy < 0 || gy >= floors.length) return; // fora do prédio
+        if (isolatedFloor!=null && (gy<isolatedFloor || gy>isolatedFloor)) return; // clippado
+        zset.forEach(lz=>{
+          const gx = e.x + lx;
+          const gz = e.z + lz;
+          vox.add(`${gx},${gy},${gz}`);
+        });
+      });
+    });
+    if (vox.size===0) return null;
+
+    // acessor presença vizinho
+    const has = (x,y,z)=> vox.has(`${x},${y},${z}`);
+
+    // 2) Constrói faces de fronteira (6 direções). Cada voxel vira até 6 quads.
+    const positions = [];
+    const indices = [];
+    let vbase = 0;
+
+    function pushQuad(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz){
+      // ordem (a,b,c,d): dois triângulos (a,b,c) (a,c,d)
+      positions.push(
+        ax,ay,az,  bx,by,bz,  cx,cy,cz,  dx,dy,dz
+      );
+      indices.push(vbase, vbase+1, vbase+2,  vbase, vbase+2, vbase+3);
+      vbase += 4;
+    }
+
+    for (const key of vox){
+      const [gx,gy,gz] = key.split(',').map(Number);
+
+      const x0 = gx * UNIT_XZ;
+      const x1 = (gx+1) * UNIT_XZ;
+      const z0 = gz * UNIT_XZ;
+      const z1 = (gz+1) * UNIT_XZ;
+      const y0 = cumAt(gy);
+      const y1 = cumAt(gy+1);
+
+      // -X
+      if (!has(gx-1,gy,gz)){
+        pushQuad(
+          x0,y0,z1,  x0,y0,z0,  x0,y1,z0,  x0,y1,z1
+        );
+      }
+      // +X
+      if (!has(gx+1,gy,gz)){
+        pushQuad(
+          x1,y0,z0,  x1,y0,z1,  x1,y1,z1,  x1,y1,z0
+        );
+      }
+      // -Z
+      if (!has(gx,gy,gz-1)){
+        pushQuad(
+          x1,y0,z0,  x0,y0,z0,  x0,y1,z0,  x1,y1,z0
+        );
+      }
+      // +Z
+      if (!has(gx,gy,gz+1)){
+        pushQuad(
+          x0,y0,z1,  x1,y0,z1,  x1,y1,z1,  x0,y1,z1
+        );
+      }
+      // -Y (piso inferior)
+      if (!has(gx,gy-1,gz)){
+        pushQuad(
+          x0,y0,z0,  x1,y0,z0,  x1,y0,z1,  x0,y0,z1
+        );
+      }
+      // +Y (teto)
+      if (!has(gx,gy+1,gz)){
+        pushQuad(
+          x0,y1,z1,  x1,y1,z1,  x1,y1,z0,  x0,y1,z0
+        );
+      }
+    }
+
+    if (positions.length===0) return null;
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
+    geom.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(indices), 1));
+    // otimiza (solda) e calcula normais
+    const welded = weldGeometry(geom, 1e-3);
+    return welded;
+  }
+
+  // === Loop por elemento: superfície limpa + contorno inflado ===
   for (const e of elements){
+    const surface = buildSurfaceGeometryForElement(e);
+    if (!surface) continue;
+
+    // corpo translúcido
     const matFace = new THREE.MeshStandardMaterial({
       color: new THREE.Color(e.color),
       metalness: 0.05, roughness: 0.9,
-      transparent: true, opacity: FACE_OPACITY, depthWrite: true,
+      transparent: true, opacity: FACE_OPACITY,
+      depthWrite: true,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
     });
-    const matEdge = new THREE.LineBasicMaterial({ color: 0xcad7ff, transparent:true, opacity:0.95 });
+    const mesh = new THREE.Mesh(surface, matFace);
+    mesh.renderOrder = 1;
 
-    // agrupa runs verticais por (x,z)
-    const yByX = new Map();
-    e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
-    const zCols = new Map();
-    e.topMask.forEach(k=>{ const [x,z]=k.split(',').map(Number); if(!zCols.has(x)) zCols.set(x,new Set()); zCols.get(x).add(z); });
+    // contorno externo do elemento (inflado)
+    const EDGE_OFFSET = 0.25; // ajuste fino 0.15–0.40
+    const inflated = inflateGeometry(surface, EDGE_OFFSET);
+    const edgeGeom = new THREE.EdgesGeometry(inflated, 1);
+    const edgeMat = new THREE.LineBasicMaterial({
+      color: 0xcad7ff, transparent:true, opacity:0.95,
+      depthTest:true, depthWrite:false
+    });
+    const edges = new THREE.LineSegments(edgeGeom, edgeMat);
+    edges.renderOrder = 2;
 
-    const runsByXZ = new Map();
-    for (const [lx, setZ] of zCols.entries()){
-      const ySet = yByX.get(lx) || new Set();
-      if (ySet.size===0) continue;
-      const ys = Array.from(ySet.values()); const yMin=Math.min(...ys), yMax=Math.max(...ys);
-      const hasY = new Set(ys);
-      for (const lz of setZ){
-        let y = yMin;
-        while (y <= yMax){
-          if (!hasY.has(y)){ y++; continue; }
-          let y0=y; while (hasY.has(y)) y++; let y1=y;
-          const key = `${lx},${lz}`; if (!runsByXZ.has(key)) runsByXZ.set(key, []);
-          runsByXZ.get(key).push({y0,y1});
-        }
-      }
-    }
-
-    const visited = new Set();
-    const hasRun=(lx,lz,y0,y1)=>{ const arr=runsByXZ.get(`${lx},${lz}`); return !!arr && arr.some(r=>r.y0===y0&&r.y1===y1); };
-    const markRun=(lx,lz,y0,y1)=> visited.add(`${lx},${lz},${y0},${y1}`);
-    const isVisited=(lx,lz,y0,y1)=> visited.has(`${lx},${lz},${y0},${y1}`);
-
-    const parts = [];
-
-    for (const [key, arr] of runsByXZ.entries()){
-      const [lx0, lz0] = key.split(',').map(Number);
-      for (const run of arr){
-        const {y0,y1} = run;
-        if (isVisited(lx0,lz0,y0,y1)) continue;
-
-        // expande em Z
-        let zMin=lz0, zMax=lz0;
-        while (hasRun(lx0, zMin-1, y0, y1) && !isVisited(lx0, zMin-1, y0, y1)) zMin--;
-        while (hasRun(lx0, zMax+1, y0, y1) && !isVisited(lx0, zMax+1, y0, y1)) zMax++;
-
-        // expande em X
-        let xMin=lx0, xMax=lx0;
-        outerNeg: while (true){
-          const nx=xMin-1;
-          for (let z=zMin; z<=zMax; z++){ if (!hasRun(nx,z,y0,y1) || isVisited(nx,z,y0,y1)) break outerNeg; }
-          xMin=nx;
-        }
-        outerPos: while (true){
-          const nx=xMax+1;
-          for (let z=zMin; z<=zMax; z++){ if (!hasRun(nx,z,y0,y1) || isVisited(nx,z,y0,y1)) break outerPos; }
-          xMax=nx;
-        }
-
-        for (let x=xMin; x<=xMax; x++){ for (let z=zMin; z<=zMax; z++){ markRun(x,z,y0,y1); } }
-
-        // clipe por pavimento isolado (se houver)
-        let gY0 = e.y + y0, gY1 = e.y + y1;
-        if (gY0 >= floors.length) continue;
-        gY1 = Math.min(gY1, floors.length);
-        if (gY1 <= gY0) continue;
-        const clip0 = (isolatedFloor==null)? gY0 : Math.max(gY0, isolatedFloor);
-        const clip1 = (isolatedFloor==null)? gY1 : Math.min(gY1, isolatedFloor+1);
-        if (clip1 <= clip0) continue;
-
-        // dimensões em mundo
-        const spanX = (xMax - xMin + 1);
-        const spanZ = (zMax - zMin + 1);
-        const width  = spanX * UNIT_XZ;
-        const depth  = spanZ * UNIT_XZ;
-        const height = (cumAt(clip1) - cumAt(clip0));
-
-        // caixa centrada
-        const geom = new THREE.BoxGeometry(width, height, depth);
-
-        // posição global (centro)
-        const cx = (e.x + xMin + spanX/2) * UNIT_XZ;
-        const cy = (cumAt(clip0) + cumAt(clip1)) / 2;
-        const cz = (e.z + zMin + spanZ/2) * UNIT_XZ;
-
-        geom.applyMatrix4(new THREE.Matrix4().makeTranslation(cx, cy, cz));
-        parts.push(geom);
-      }
-    }
-
-    if (parts.length===0) continue;
-
-    // merge + solda (elimina costuras e evita “arestas de junção”)
-    let merged = mergeBufferGeometries(parts);
-    merged = weldGeometry(merged, 1e-4);
-
-    const mesh  = new THREE.Mesh(merged, matFace);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(merged, 1), matEdge);
-
-    const container = new THREE.Group();
-    container.add(mesh); container.add(edges);
-    group3D.add(container);
+    const g = new THREE.Group();
+    g.add(mesh);
+    g.add(edges);
+    group3D.add(g);
   }
 
+  // centraliza e ajusta câmera
   if (group3D.children.length>0){
     const bbox = new THREE.Box3().setFromObject(group3D);
     const center = new THREE.Vector3(); bbox.getCenter(center);
@@ -1010,7 +1261,7 @@ function rebuild3D(){
   }
   updateCamera3D();
 }
-
+  
 let rebuildTimer=null;
 function requestRebuild3D(){ if (!group3D) return; if (rebuildTimer) cancelAnimationFrame(rebuildTimer); rebuildTimer = requestAnimationFrame(rebuild3D); }
 
@@ -1219,23 +1470,6 @@ document.getElementById('dupElem').addEventListener('click', ()=>{
 });
 
 /* ==================== Mesclar (adjacência 6-neigh) ==================== */
-function voxelsOf(e, max=200000){
-  const set = new Set();
-  const yByX = new Map();
-  e.frontMask.forEach(k=>{ const [x,y]=k.split(',').map(Number); if(!yByX.has(x)) yByX.set(x,new Set()); yByX.get(x).add(y); });
-  if (yByX.size===0 || e.topMask.size===0) return set;
-  for (const key of e.topMask){
-    const [lx,lz]=key.split(',').map(Number);
-    const yset = yByX.get(lx);
-    if (!yset) continue;
-    for (const ly of yset){
-      const gx = e.x + lx, gy = e.y + ly, gz = e.z + lz;
-      set.add(`${gx},${gy},${gz}`);
-      if (set.size>max) return set;
-    }
-  }
-  return set;
-}
 function bboxXYZ(e){
   let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
   const yByX = new Map();
