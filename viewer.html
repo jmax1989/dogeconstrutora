@@ -4,26 +4,77 @@
   <meta charset="utf-8" />
   <title>Prédio 3D — viewer (cores herdadas da FVS)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    html, body { height: 100%; margin: 0; }
-    body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
-    #app { position: fixed; inset: 0; }
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  canvas { display:block; }
+
+  /* === HUD (desktop por padrão) === */
+  #hud {
+    position: fixed; left: 12px; top: 12px; padding: 10px 12px;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
+    border: 1px solid #30363d; border-radius: 10px; font-size: 14px; z-index: 10;
+    display: grid; gap: 8px; width: max-content;
+    transition: transform .25s ease;
+  }
+  #hud .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .val { width: 3.6rem; text-align: right; display: inline-block; }
+  button, label { user-select: none; }
+
+  /* Alça (handle) e botão de toggle */
+  #hud .handle { display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
+  #hud .grabber {
+    width: 44px; height: 6px; border-radius: 4px;
+    background: #58606b; opacity: .85;
+    margin-right: 4px;
+  }
+  #hudToggle {
+    border: 1px solid #30363d;
+    background: #0d1117;
+    color: #c9d1d9;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  /* Estado recolhido (no mobile vira bottom sheet; no desktop, opcional) */
+  #hud.collapsed { transform: translateY(0); } /* neutro no desktop */
+
+  /* === Mobile: HUD como bottom sheet === */
+  @media (max-width: 640px) {
     #hud {
-      position: fixed; left: 12px; top: 12px; padding: 10px 12px;
-      background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
-      border: 1px solid #30363d; border-radius: 10px; font-size: 14px; z-index: 10;
-      display: grid; gap: 8px; width: max-content;
+      left: 0; right: 0; top: auto; bottom: 0;
+      margin: 0 8px 8px;
+      width: auto;
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+      max-height: 65vh;
+      overflow: auto;
+      transform: translateY(0); /* expandido */
     }
-    #hud .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .val { width: 3.6rem; text-align: right; display: inline-block; }
-    button, label { user-select: none; }
-    canvas { display:block; }
-  </style>
+    /* No mobile, recolhido = só a “alça” visível (~40px) */
+    #hud.collapsed {
+      transform: translateY(calc(100% - 40px));
+    }
+  }
+
+  /* Respeita usuários com movimento reduzido */
+  @media (prefers-reduced-motion: reduce) {
+    #hud { transition: none; }
+  }
+</style>
 </head>
 <body>
   <div id="app"></div>
 
   <div id="hud">
+    <div class="row handle" id="hudHandle">
+    <div class="grabber" aria-hidden="true"></div>
+    <span style="font-weight:600; flex:1;">Controles</span>
+    <button id="hudToggle" aria-expanded="true" title="Recolher/Expandir">▾</button>
+    </div>
     <div class="row" id="dragHint">
       <b>Arraste</b> (esq = orbitar, dir = mover) • <b>Scroll</b> = zoom
     </div>
@@ -509,6 +560,48 @@ const faceMat = new THREE.MeshStandardMaterial({
     // ====== UI ======
     document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
 // === HUD: Explode ===
+// ===== HUD: recolher/expandir e gesto de deslizar =====
+const hud       = document.getElementById('hud');
+const hudToggle = document.getElementById('hudToggle');
+const hudHandle = document.getElementById('hudHandle');
+
+// botão de toggle
+hudToggle.addEventListener('click', () => {
+  const collapsed = hud.classList.toggle('collapsed');
+  hudToggle.textContent = collapsed ? '▴' : '▾';
+  hudToggle.setAttribute('aria-expanded', String(!collapsed));
+});
+
+// gesto simples no mobile: deslizar a alça pra baixo/para cima
+let touchStartY = null;
+hudHandle.addEventListener('touchstart', (e) => {
+  touchStartY = e.touches[0].clientY;
+}, {passive:true});
+
+hudHandle.addEventListener('touchend', (e) => {
+  if (touchStartY == null) return;
+  const endY = (e.changedTouches[0] || e.touches[0]).clientY;
+  const dy = endY - touchStartY;
+  // limiares simples: >30px desce (recolhe), < -30px sobe (expande)
+  if (dy > 30) {
+    hud.classList.add('collapsed');
+    hudToggle.textContent = '▴';
+    hudToggle.setAttribute('aria-expanded', 'false');
+  } else if (dy < -30) {
+    hud.classList.remove('collapsed');
+    hudToggle.textContent = '▾';
+    hudToggle.setAttribute('aria-expanded', 'true');
+  }
+  touchStartY = null;
+}, {passive:true});
+
+// opcional: clique na alça também alterna (bom em desktop)
+hudHandle.addEventListener('click', (e) => {
+  // evita conflito com o botão
+  if (e.target === hudToggle) return;
+  hudToggle.click();
+});
+    
 const wireOnly = document.getElementById('wireOnly');
 wireOnly.addEventListener('change', (e) => setFacesVisible(!e.target.checked));
 
@@ -636,3 +729,4 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
