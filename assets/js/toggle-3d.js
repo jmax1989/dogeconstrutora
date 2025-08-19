@@ -1,51 +1,78 @@
 // assets/js/toggle-3d.js
-const btn3d    = document.getElementById('btn-3d');
-const overlay  = document.getElementById('viewer3d-overlay');
-const iframe   = document.getElementById('viewer3d-iframe');
-const closeBtn = document.getElementById('btn-3d-close');
+(function(){
+  const BTN_ID = 'toggle3d';
+  const VIEWER_URL = './viewer.html'; // já está no repo
 
-// Caminho RELATIVO para funcionar no GitHub Pages do repositório.
-// O viewer já busca data/layout-3d.json por padrão.
-const VIEWER_URL = 'viewer.html';
+  let overlay = null;
+  let iframe = null;
+  let open = false;
 
-let showing3D = false;
-let prevOverflow = '';
+  function ensureOverlay(){
+    if (overlay) return;
 
-function open3D(){
-  if (!iframe.src) iframe.src = VIEWER_URL; // carrega na 1ª vez
-  overlay.hidden = false;
-  showing3D = true;
+    overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position:fixed; inset:0; background:rgba(0,0,0,.4); backdrop-filter:blur(4px);
+      display:none; z-index:9999999; padding:0; margin:0;
+    `;
 
-  // trava scroll da página 2D enquanto o overlay está aberto
-  const root = document.documentElement;
-  prevOverflow = root.style.overflow;
-  root.style.overflow = 'hidden';
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Fechar 3D';
+    closeBtn.style.cssText = `
+      position:absolute; top:12px; right:12px; z-index:2;
+      background:#161b22; color:#c9d1d9; border:1px solid #30363d; border-radius:10px;
+      padding:8px 10px; cursor:pointer;
+    `;
+    closeBtn.addEventListener('click', toggle);
 
-  // feedback visual opcional no botão
-  btn3d?.classList.add('is-active');
-}
+    iframe = document.createElement('iframe');
+    iframe.src = VIEWER_URL;
+    iframe.allow = 'fullscreen';
+    iframe.style.cssText = `position:absolute; inset:0; width:100%; height:100%; border:0; background:#0d1117; z-index:1;`;
 
-function close3D(){
-  overlay.hidden = true;
-  showing3D = false;
+    overlay.appendChild(iframe);
+    overlay.appendChild(closeBtn);
+    document.body.appendChild(overlay);
 
-  // libera scroll
-  document.documentElement.style.overflow = prevOverflow;
+    // quando o viewer carregar, manda as cores atuais
+    iframe.addEventListener('load', sendColors);
+  }
 
-  // feedback visual opcional no botão
-  btn3d?.classList.remove('is-active');
-}
+  function sendColors(){
+    try{
+      const map = window.DOGE?.get3DColorMap?.();
+      if (!map || !iframe?.contentWindow) return;
+      iframe.contentWindow.postMessage({ type:'fvs-colors', payload: map }, '*');
+    }catch(e){}
+  }
 
-btn3d?.addEventListener('click', () => (showing3D ? close3D() : open3D()));
-closeBtn?.addEventListener('click', close3D);
+  function onColorsUpdated(){ // recebe eventos do main.js sempre que o 2D redesenha
+    if (open) sendColors();
+  }
 
-// Fechar com ESC
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && showing3D) close3D();
-});
+  function toggle(){
+    ensureOverlay();
+    open = !open;
+    overlay.style.display = open ? 'block' : 'none';
+    document.documentElement.style.overflow = open ? 'hidden' : '';
+    document.body.style.overflow = open ? 'hidden' : '';
 
-// (opcional) abrir direto via hash ou query, ex.: index.html#3d
-if (location.hash === '#3d') {
-  // aguarda o frame para garantir que os elementos existem
-  requestAnimationFrame(open3D);
-}
+    if (open){
+      // pede as cores atuais e começa a ouvir futuras atualizações
+      window.DOGE?.emit3DColorsUpdated?.();
+      sendColors();
+      window.addEventListener('doge:colors-updated', onColorsUpdated);
+    } else {
+      window.removeEventListener('doge:colors-updated', onColorsUpdated);
+    }
+  }
+
+  // exporta para debug se quiser
+  window.toggle3D = { toggle, sendColors, isOpen: ()=>open };
+
+  // botão na topbar
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const btn = document.getElementById(BTN_ID);
+    if (btn) btn.addEventListener('click', toggle);
+  });
+})();
