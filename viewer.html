@@ -506,16 +506,8 @@ function buildFromLayout(l){
     });
 
     // ====== UI ======
-    const opacity = document.getElementById('opacity');
-    const opacityVal = document.getElementById('opacityVal');
-    opacity.addEventListener('input', () => {
-      const v = parseInt(opacity.value, 10)/100;
-      opacityVal.textContent = v.toFixed(2);
-      setFaceOpacity(v);
-    });
     document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
 // === HUD: Explode ===
-// === HUD ===
 const wireOnly = document.getElementById('wireOnly');
 wireOnly.addEventListener('change', (e) => setFacesVisible(!e.target.checked));
 
@@ -643,6 +635,7 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
 
 
