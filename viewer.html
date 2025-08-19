@@ -154,18 +154,20 @@
 
     // ====== Materiais (base NEUTRA cinza) ======
     let faceOpacity = 0.30;
-    const NEUTRAL_HEX = 0x6e7681; // cinza base
+    const NEUTRAL_HEX_STR = '#6e7681';
+    const NEUTRAL_HEX_INT = 0x6e7681;
     const makeFace = (color)=> new THREE.MeshStandardMaterial({
       color, metalness:0.0, roughness:0.9, transparent:true, opacity:faceOpacity, depthWrite:false
     });
     const makeLine = (color,width=1)=> new THREE.LineBasicMaterial({ color, linewidth:width });
 
     const MAT = {
-      face: ()=>makeFace(NEUTRAL_HEX),
+      face: ()=>makeFace(NEUTRAL_HEX_INT),
       line: makeLine(0x9aa3ab),
       selLine: makeLine(0xffc107, 2)
     };
 
+    // ====== Passos e helpers ======
     const stepX = (layout.meta?.cellW ?? 1.2) + (layout.meta?.gap ?? 0.15);
     const stepZ = (layout.meta?.cellD ?? 1.2) + (layout.meta?.gap ?? 0.15);
     const aptoHeight = 0.5;
@@ -205,6 +207,29 @@
         pos.y += g.userData.levelIndex * explodeY;
         g.position.copy(pos);
       }
+    }
+
+    // ====== Índice por apartamento (para aplicar cores rapidamente) ======
+    let IDX = new Map(); // aptKey -> Array<THREE.Group>
+
+    function aptKey(s){
+      if (s == null) return '';
+      let t = String(s).trim().toUpperCase();
+      t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');  // sem acento
+      t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, ''); // sem prefixos
+      t = t.replace(/[\s\-\._\/]/g, ''); // sem separadores
+      return t;
+    }
+
+    function rebuildIndex(){
+      IDX.clear();
+      for (const g of torre.children){
+        const k = aptKey(g.userData.apto);
+        if (!IDX.has(k)) IDX.set(k, []);
+        IDX.get(k).push(g);
+      }
+      // para debug:
+      // console.debug('Index 3D rebuild:', IDX);
     }
 
     // ====== Construção ======
@@ -248,7 +273,7 @@
       recenterOrbitTarget();
       updateCamera();
 
-      // (re)constrói índices para pintura
+      // cria/atualiza índice
       rebuildIndex();
     }
 
@@ -335,91 +360,41 @@
     setFaceOpacity(parseInt(opacity.value,10)/100);
     setFacesVisible(true);
 
-    // ====== Índices + Normalização de chaves ======
-    function aptKey(s){
-      if (s == null) return '';
-      let t = String(s).trim().toUpperCase();
-      t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, '');
-      t = t.replace(/[\s\-\._\/]/g, '');
-      return t;
-    }
+    // ====== Aplicação de cores recebidas do 2D ======
+    function applyColorMap(payload){
+      // payload: { mode, colors: { [aptKey]: '#RRGGBB' }, default: '#6e7681' }
+      if (!payload) return;
+      const defHex = (payload.default || NEUTRAL_HEX_STR).trim();
+      const map = payload.colors || {};
 
-    const IDX = { byApt:new Map(), byLevel:new Map() };
-    function rebuildIndex(){
-      IDX.byApt.clear(); IDX.byLevel.clear();
+      // pinta tudo com a cor default primeiro
       for (const g of torre.children){
-        IDX.byApt.set(aptKey(g.userData.apto), g);
-        const lev = String(g.userData.andar);
-        if (!IDX.byLevel.has(lev)) IDX.byLevel.set(lev, []);
-        IDX.byLevel.get(lev).push(g);
-      }
-    }
-
-    // ====== Aplicação de cores vindas do 2D ======
-    const DEFAULT_GRAY = '#6e7681';
-
-    function resetAllToGray(def=DEFAULT_GRAY){
-      const col = new THREE.Color(def);
-      for (const g of torre.children){
-        g.userData.mesh.material.color.copy(col);
+        g.userData.mesh.material.color.set(defHex);
         g.userData.mesh.material.needsUpdate = true;
       }
-      renderer.render(scene, camera);
-    }
 
-    function applyColorMap(map){
-      if (!map || !map.colors) { resetAllToGray(map?.default || DEFAULT_GRAY); return; }
-
-      // 1) cinza em tudo
-      resetAllToGray(map.default || DEFAULT_GRAY);
-
-      // 2) pinta conforme modo
-      if (map.mode === 'pav'){
-        for (const [floorKey, hex] of Object.entries(map.colors)){
-          const arr = IDX.byLevel.get(String(floorKey));
-          if (!arr) continue;
-          const c = new THREE.Color(hex);
-          arr.forEach(g => { g.userData.mesh.material.color.copy(c); g.userData.mesh.material.needsUpdate = true; });
-        }
-      } else { // 'apt' (ou fallback)
-        for (const [rawKey, hex] of Object.entries(map.colors)){
-          const g = IDX.byApt.get(aptKey(rawKey));
-          if (!g) continue;
+      // aplica overrides por unidade (aptKey)
+      for (const [rawKey, hex] of Object.entries(map)){
+        const k = aptKey(rawKey);
+        const arr = IDX.get(k);
+        if (!arr) continue;
+        for (const g of arr){
           g.userData.mesh.material.color.set(hex);
           g.userData.mesh.material.needsUpdate = true;
         }
       }
-
-      renderer.render(scene, camera);
     }
 
-    // Compat: formato legado { colors:{apto->hex}, default?... } sem "mode"
-    function aplicarCoresLegado(payload){
-      const defHex = (payload && payload.default) || DEFAULT_GRAY;
-      const map = (payload && payload.colors) || {};
-      resetAllToGray(defHex);
-      for (const [k,hex] of Object.entries(map)){
-        const g = IDX.byApt.get(aptKey(k));
-        if (g) { g.userData.mesh.material.color.set(hex); g.userData.mesh.material.needsUpdate = true; }
-      }
-      renderer.render(scene, camera);
-    }
-
-    // ====== Mensagens do 2D (postMessage) ======
+    // Recebe mapa do 2D
     window.addEventListener('message', (e)=>{
       const data = e.data || {};
       if (data.type === 'fvsColorMap') {
         applyColorMap(data.payload);
-      } else if (data.type === 'fvs-colors') {
-        // legado
-        const p = data.payload || {};
-        if (p.mode) applyColorMap(p); else aplicarCoresLegado(p);
       }
     });
 
-    // Handshake: avisa que está pronto e pede o mapa atual
-    try { window.parent?.postMessage({ type:'ready-3d', want:'fvsColorMap' }, '*'); } catch {}
+    // Handshake: avisa que o 3D está pronto
+    try { window.parent?.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
 
     // ====== Resize & Loop ======
     addEventListener('resize', () => {
