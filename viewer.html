@@ -237,9 +237,9 @@ const gap   = (layout.meta?.gap   ?? 0.15);
 
 // No viewer, a altura de um "andar" é uniforme:
 //const aptoHeight = 0.5;
-const stepX = cellW + gap;
-const stepZ = cellD + gap;
-const stepY = aptoHeight + gap;
+//const stepX = cellW + gap;
+//const stepZ = cellD + gap;
+//const stepY = aptoHeight + gap;
 
 // Centro de um retângulo W×D começando em (x,z) em coordenadas de grade:
 function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
@@ -538,4 +538,5 @@ if (inter.length) {
   </script>
 </body>
 </html>
+
 
