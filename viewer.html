@@ -218,47 +218,39 @@ function setFaceOpacity(op){
     function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
     // ===== Explodir =====
-//let explodeXY = 0.0;
-//let explodeY  = 0.0;
+// ===== Explode (única fonte de verdade) =====
 let explodeXY = 0.0;
 let explodeY  = 0.0;
 
+// aplica explode atual às posições dos grupos
 function applyExplode(){
   if (!torre || torre.children.length === 0) return;
 
-  // Se está "colado", apenas reseta as posições para basePos
-  if ((explodeXY === 0 || !isFinite(explodeXY)) && (explodeY === 0 || !isFinite(explodeY))) {
-    for (const g of torre.children) {
-      g.position.copy(g.userData.basePos);
-    }
+  // Se ambos zero → volta para as posições coladas
+  if ((explodeXY === 0 || !Number.isFinite(explodeXY)) &&
+      (explodeY  === 0 || !Number.isFinite(explodeY))) {
+    for (const g of torre.children) g.position.copy(g.userData.basePos);
     return;
   }
 
-  // Centroide das posições base (já centralizadas/“coladas”)
+  // Centroide das posições base (coladas) para explode radial em XZ
   let sumX = 0, sumZ = 0, n = 0;
-  for (const g of torre.children){
-    const b = g.userData.basePos;
-    sumX += b.x; sumZ += b.z; n++;
-  }
-  const cx = (n>0) ? (sumX / n) : 0;
-  const cz = (n>0) ? (sumZ / n) : 0;
+  for (const g of torre.children){ sumX += g.userData.basePos.x; sumZ += g.userData.basePos.z; n++; }
+  const cx = n ? (sumX/n) : 0, cz = n ? (sumZ/n) : 0;
 
-  // Passo horizontal (escala da explosão XY)
   const step = Math.max(stepX, stepZ) || 1;
 
   for (const g of torre.children){
-    const base = g.userData.basePos;       // posição “colada”
+    const base = g.userData.basePos;        // posição “colada”
     const pos  = base.clone();
 
-    // Explode radial no plano XZ a partir do centroide
+    // Explode radial no plano XZ
     if (explodeXY > 0){
       const dir = new THREE.Vector3(base.x - cx, 0, base.z - cz);
       const len = dir.length();
       if (len > 1e-6){
-        dir.multiplyScalar(1/len); // mesma distância para todos
+        dir.multiplyScalar(1/len);                 // mesmo deslocamento p/ todos
         pos.addScaledVector(dir, explodeXY * step);
-        // Se quiser explosão proporcional ao raio, troque a linha acima por:
-        // pos.addScaledVector(dir, explodeXY * step * (len/Math.max(1, step)));
       }
     }
 
@@ -350,17 +342,19 @@ function applyExplode(){
 
     // ====== Construção ======
 function buildFromLayout(l){
+  // limpa torre
   while (torre.children.length) torre.remove(torre.children[0]);
 
+  // voxeliza por apartamento
   const occByApto = voxelizeByApto(l);
 
   for (const [apto, occ] of occByApto.entries()){
     const surface = buildSurfaceGeometryFromOcc(occ);
     if (!surface) continue;
 
-    // material neutro na criação (sem usar p.color do JSON)
+    // material neutro (cores reais virão do FVS)
     const faceMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(0x6e7681),   // cinza neutro
+      color: new THREE.Color(0x6e7681),
       metalness: 0.05,
       roughness: 0.9,
       transparent: faceOpacity < 0.999,
@@ -374,11 +368,12 @@ function buildFromLayout(l){
     const mesh = new THREE.Mesh(surface, faceMat);
     mesh.renderOrder = 1;
 
+    // contorno limpo
     const inflated = inflateGeometry(surface, 0.04);
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
     edges.renderOrder = 2;
 
-    // menor nível Y do apto (explodeY)
+    // pavimento mínimo do apto (para explodeY)
     let minLevel = Infinity;
     for (const key of occ){
       const gy = parseInt(key.split(',')[1],10);
@@ -389,40 +384,38 @@ function buildFromLayout(l){
     const group = new THREE.Group();
     group.add(mesh); group.add(edges);
     group.position.set(0,0,0);
+
     group.userData = {
       apto: String(apto),
       mesh, edges,
-      levelIndex: minLevel,     // pavimento para fallback de cor
-      basePos: new THREE.Vector3(0,0,0)
+      levelIndex: minLevel,
+      basePos: new THREE.Vector3(0,0,0) // será definido após centralização
     };
 
     torre.add(group);
   }
 
-  // centraliza inteiro e fixa basePos "colado"
+  // === Centraliza TODO o conjunto no (0,0,0) alterando APENAS positions dos grupos
   const bbox = new THREE.Box3().setFromObject(torre);
   const center = new THREE.Vector3(); bbox.getCenter(center);
-  const size = new THREE.Vector3();  bbox.getSize(size);
+  const size   = new THREE.Vector3(); bbox.getSize(size);
 
   for (const g of torre.children){
-    g.position.sub(center);
-    g.userData.basePos.copy(g.position);
+    g.position.sub(center);            // move cada grupo pelo centro global
+    g.userData.basePos.copy(g.position); // grava posição “colada” para explode
   }
 
-  // ajuste de câmera/zoom inicial
+  // === Ajuste de câmera/zoom inicial baseado no tamanho real
   const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
-  const ideal = Math.max(8, diag * 0.75);
-  radius = clamp(ideal, 4, 200);
-  const cY = (size.y > 1e-6) ? (-center.y + size.y/2) : 0;
-  orbitTarget.set(0, cY, 0);
-// depois de calcular bbox e center:
-for (const g of torre.children){
-  g.position.sub(center);          // centraliza
-  g.userData.basePos = g.position.clone(); // << base “colada”
-}
-applyExplode(); // aplica estado atual dos sliders (zero = colado)
-updateCamera();
+  const idealRadius = Math.max(8, diag * 0.75);
+  radius = clamp(idealRadius, 4, 200);
 
+  // Target na meia-altura do conjunto centralizado
+  orbitTarget.set(0, size.y * 0.5 * 0.0, 0); // 0 para mirar no 0; use 0.5 se preferir meio-altura
+  updateCamera();
+
+  // Aplica estado atual de explode (zero → colado)
+  applyExplode();
 }
 
     function recenterOrbitTarget(){
@@ -492,6 +485,7 @@ updateCamera();
       setFaceOpacity(v);
     });
     document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
+// === HUD: Explode ===
 const explodeXYRange = document.getElementById('explodeXY');
 const explodeXYVal   = document.getElementById('explodeXYVal');
 explodeXYRange.addEventListener('input', () => {
@@ -508,6 +502,12 @@ explodeYRange.addEventListener('input', () => {
   applyExplode();
 });
 
+document.getElementById('resetExplode').addEventListener('click', () => {
+  explodeXY = 0; explodeY = 0;
+  explodeXYRange.value = '0'; explodeYRange.value = '0';
+  explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
+  applyExplode();
+});
 document.getElementById('resetExplode').addEventListener('click', () => {
   explodeXY = 0; explodeY = 0;
   explodeXYRange.value = '0'; explodeYRange.value = '0';
@@ -599,6 +599,7 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
 
 
