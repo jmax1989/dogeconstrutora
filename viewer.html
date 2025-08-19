@@ -3,84 +3,84 @@
 <head>
   <meta charset="utf-8" />
   <title>Prédio 3D — viewer (cores herdadas da FVS)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>
-  html, body { height: 100%; margin: 0; }
-  body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
-  #app { position: fixed; inset: 0; }
-  canvas { display:block; }
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
+    #app { position: fixed; inset: 0; }
+    canvas { display:block; }
 
-  /* === HUD (desktop por padrão) === */
-  #hud {
-    position: fixed; left: 12px; top: 12px; padding: 10px 12px;
-    background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
-    border: 1px solid #30363d; border-radius: 10px; font-size: 14px; z-index: 10;
-    display: grid; gap: 8px; width: max-content;
-    transition: transform .25s ease;
-  }
-  #hud .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .val { width: 3.6rem; text-align: right; display: inline-block; }
-  button, label { user-select: none; }
-
-  /* Alça (handle) e botão de toggle */
-  #hud .handle { display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
-  #hud .grabber {
-    width: 44px; height: 6px; border-radius: 4px;
-    background: #58606b; opacity: .85;
-    margin-right: 4px;
-  }
-  #hudToggle {
-    border: 1px solid #30363d;
-    background: #0d1117;
-    color: #c9d1d9;
-    border-radius: 8px;
-    padding: 4px 8px;
-    font-size: 13px;
-    line-height: 1;
-  }
-
-  /* Estado recolhido (no mobile vira bottom sheet; no desktop, opcional) */
-  #hud.collapsed { transform: translateY(0); } /* neutro no desktop */
-
-  /* === Mobile: HUD como bottom sheet === */
-  @media (max-width: 640px) {
+    /* === HUD (desktop por padrão) === */
     #hud {
-      left: 0; right: 0; top: auto; bottom: 0;
-      margin: 0 8px 8px;
-      width: auto;
-      border-radius: 12px;
-      backdrop-filter: blur(8px);
-      max-height: 65vh;
-      overflow: auto;
-      transform: translateY(0); /* expandido */
+      position: fixed; left: 12px; top: 12px; padding: 10px 12px;
+      background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
+      border: 1px solid #30363d; border-radius: 10px; font-size: 14px; z-index: 10;
+      display: grid; gap: 8px; width: max-content;
+      transition: transform .25s ease;
     }
-    /* No mobile, recolhido = só a “alça” visível (~40px) */
-    #hud.collapsed {
-      transform: translateY(calc(100% - 40px));
+    #hud .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .val { width: 3.6rem; text-align: right; display: inline-block; }
+    button, label { user-select: none; }
+
+    /* Alça (handle) e botão de toggle */
+    #hud .handle { display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
+    #hud .grabber {
+      width: 44px; height: 6px; border-radius: 4px;
+      background: #58606b; opacity: .85;
+      margin-right: 4px;
     }
-  }
+    #hudToggle {
+      border: 1px solid #30363d;
+      background: #0d1117;
+      color: #c9d1d9;
+      border-radius: 8px;
+      padding: 4px 8px;
+      font-size: 13px;
+      line-height: 1;
+    }
 
-  /* Respeita usuários com movimento reduzido */
-  @media (prefers-reduced-motion: reduce) {
-    #hud { transition: none; }
-  }
+    /* Estado recolhido (no mobile vira bottom sheet; no desktop, opcional) */
+    #hud.collapsed { transform: translateY(0); } /* neutro no desktop */
 
-/* O canvas deve receber todos os gestos (sem scroll/browser gestures) */
-canvas { touch-action: none; }
+    /* === Mobile: HUD como bottom sheet === */
+    @media (max-width: 640px) {
+      #hud {
+        left: 0; right: 0; top: auto; bottom: 0;
+        margin: 0 8px 8px;
+        width: auto;
+        border-radius: 12px;
+        backdrop-filter: blur(8px);
+        max-height: 65vh;
+        overflow: auto;
+        transform: translateY(0); /* expandido */
+      }
+      /* No mobile, recolhido = só a “alça” visível (~40px) */
+      #hud.collapsed {
+        transform: translateY(calc(100% - 40px));
+      }
+    }
 
-/* O HUD pode rolar verticalmente, mas a alça não */
-#hud { touch-action: pan-y; }
-#hudHandle { touch-action: none; } /* nossa alça (grip) */
-</style>
+    /* Respeita usuários com movimento reduzido */
+    @media (prefers-reduced-motion: reduce) {
+      #hud { transition: none; }
+    }
+
+    /* O canvas deve receber todos os gestos (sem scroll/browser gestures) */
+    canvas { touch-action: none; }
+
+    /* O HUD pode rolar verticalmente, mas a alça não */
+    #hud { touch-action: pan-y; }
+    #hudHandle { touch-action: none; }
+  </style>
 </head>
 <body>
   <div id="app"></div>
 
   <div id="hud">
     <div class="row handle" id="hudHandle">
-    <div class="grabber" aria-hidden="true"></div>
-    <span style="font-weight:600; flex:1;">Controles</span>
-    <button id="hudToggle" aria-expanded="true" title="Recolher/Expandir">▾</button>
+      <div class="grabber" aria-hidden="true"></div>
+      <span style="font-weight:600; flex:1;">Controles</span>
+      <button id="hudToggle" aria-expanded="true" title="Recolher/Expandir">▾</button>
     </div>
     <div class="row" id="dragHint">
       <b>Arraste</b> (esq = orbitar, dir = mover) • <b>Scroll</b> = zoom
@@ -157,92 +157,127 @@ canvas { touch-action: none; }
     }
     updateCamera();
 
+    // ===== Órbita + Pan (mouse) + Pinça (zoom) e 2 dedos (pan) — Pointer Events =====
+    let activePointers = new Map();     // pointerId -> {x,y}
+    let dragging = false;
+    let dragMode = 'orbit';
+    let lastX = 0, lastY = 0;
 
-// ===== Órbita + Pan (Pointer Events unificados) =====
-let dragging = false, dragMode = 'orbit', lastX = 0, lastY = 0, activePointerId = null;
+    const ptsArr   = () => Array.from(activePointers.values());
+    const centroid = (pts)=>({ x: pts.reduce((a,p)=>a+p.x,0)/pts.length,
+                               y: pts.reduce((a,p)=>a+p.y,0)/pts.length });
+    const dist     = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
 
-function pointerDown3D(e){
-  // Botão direito = pan, senão orbit. Em toque, default = orbit.
-  const isRight = (e.button === 2);
-  dragMode = isRight ? 'pan' : 'orbit';
+    let gesture = null; // { startDist, startRadius, lastCentroid }
 
-  activePointerId = e.pointerId;
-  dragging = true;
-  lastX = e.clientX; lastY = e.clientY;
+    function pointerDown3D(e){
+      activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+      renderer.domElement.setPointerCapture(e.pointerId);
 
-  // Captura e bloqueia gesto do navegador (scroll/zoom)
-  renderer.domElement.setPointerCapture(activePointerId);
-  e.preventDefault();
-}
+      const pts = ptsArr();
+      if (pts.length === 1){
+        // 1 dedo / 1 mouse: ORBIT (botão direito do mouse = pan)
+        dragMode = (e.button === 2) ? 'pan' : 'orbit';
+        dragging = true;
+        lastX = e.clientX; lastY = e.clientY;
+      } else if (pts.length === 2){
+        // 2 dedos: pinça + pan do centroide
+        const [p1,p2] = pts;
+        gesture = {
+          startDist:   dist(p1,p2),
+          startRadius: radius,
+          lastCentroid: centroid(pts)
+        };
+      }
+      e.preventDefault();
+    }
 
-function pointerMove3D(e){
-  if (!dragging || e.pointerId !== activePointerId) return;
-  const dx = e.clientX - lastX;
-  const dy = e.clientY - lastY;
-  lastX = e.clientX; lastY = e.clientY;
+    function pointerMove3D(e){
+      if (!activePointers.has(e.pointerId)) return;
+      activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
 
-  if (dragMode === 'orbit') {
-    pivot.rotation.y += dx * 0.005;
-    theta = pivot.rotation.y;
-    phi -= dy * 0.005; phi = clamp(phi, minPhi, maxPhi);
-    updateCamera();
-  } else {
-    const panScale = radius * 0.0025;
-    const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
-    const right   = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-    const upv     = new THREE.Vector3().copy(camera.up).normalize();
-    orbitTarget.addScaledVector(right, -dx * panScale);
-    orbitTarget.addScaledVector(upv,    dy * panScale);
-    updateCamera();
-  }
-  e.preventDefault();
-}
+      const pts = ptsArr();
 
-function pointerUp3D(e){
-  if (e.pointerId !== activePointerId) return;
-  dragging = false;
-  try { renderer.domElement.releasePointerCapture(activePointerId); } catch(_){}
-  activePointerId = null;
-  e.preventDefault();
-}
+      // 1 apontador (mouse/1 dedo)
+      if (pts.length === 1 && dragging){
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
 
-renderer.domElement.addEventListener('pointerdown', pointerDown3D, {passive:false});
-renderer.domElement.addEventListener('pointermove', pointerMove3D,   {passive:false});
-renderer.domElement.addEventListener('pointerup',   pointerUp3D,     {passive:false});
-renderer.domElement.addEventListener('pointercancel', pointerUp3D,   {passive:false});
+        if (dragMode === 'orbit'){
+          pivot.rotation.y += dx * 0.005;
+          theta = pivot.rotation.y;
+          phi   = clamp(phi - dy * 0.005, minPhi, maxPhi);
+          updateCamera();
+        } else {
+          const panScale = radius * 0.0025;
+          const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+          const right   = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+          const upv     = new THREE.Vector3().copy(camera.up).normalize();
+          orbitTarget.addScaledVector(right, -dx * panScale);
+          orbitTarget.addScaledVector(upv,     dy * panScale);
+          updateCamera();
+        }
+        e.preventDefault();
+        return;
+      }
 
-// bloqueia menu do botão direito (para pan no desktop)
-renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+      // 2 apontadores (pinça para zoom + centroide para pan)
+      if (pts.length === 2 && gesture){
+        const c  = centroid(pts);
+        const d  = dist(pts[0], pts[1]);
 
-// Zoom: mantém wheel como estava
-renderer.domElement.addEventListener('wheel', e=>{
-  e.preventDefault();
-  const f = 1 + (e.deltaY>0 ? 0.1 : -0.1);
-  radius = clamp(radius*f, minRadius, maxRadius);
-  updateCamera();
-}, {passive:false});
+        if (gesture.startDist > 0){
+          // afastar dedos afasta a câmera (zoom out)
+          const scale = d / gesture.startDist;
+          const newR  = gesture.startRadius / Math.max(0.2, Math.min(5, scale));
+          radius = clamp(newR, minRadius, maxRadius);
+        }
+
+        const dx = c.x - gesture.lastCentroid.x;
+        const dy = c.y - gesture.lastCentroid.y;
+        if (dx || dy){
+          const panScale = radius * 0.0025;
+          const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+          const right   = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+          const upv     = new THREE.Vector3().copy(camera.up).normalize();
+          orbitTarget.addScaledVector(right, -dx * panScale);
+          orbitTarget.addScaledVector(upv,     dy * panScale);
+        }
+
+        gesture.lastCentroid = c;
+        updateCamera();
+        e.preventDefault();
+        return;
+      }
+    }
+
+    function pointerUp3D(e){
+      if (activePointers.has(e.pointerId)){
+        try { renderer.domElement.releasePointerCapture(e.pointerId); } catch {}
+        activePointers.delete(e.pointerId);
+      }
+      const pts = ptsArr();
+      if (pts.length === 0){ dragging = false; gesture = null; }
+      if (pts.length < 2){ gesture = null; }
+      e.preventDefault();
+    }
+
+    renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
+    renderer.domElement.addEventListener('pointermove',   pointerMove3D,   {passive:false});
+    renderer.domElement.addEventListener('pointerup',     pointerUp3D,     {passive:false});
+    renderer.domElement.addEventListener('pointercancel', pointerUp3D,     {passive:false});
+
+    // bloqueia menu do botão direito (para pan no desktop)
     renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
-    // Touch (1 dedo = orbitar)
-    renderer.domElement.addEventListener('touchstart',e=>{
-      if(e.touches.length===1){
-        dragging=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY; dragMode='orbit';
-      }
-    },{passive:true});
-    renderer.domElement.addEventListener('touchmove',e=>{
-      if(e.touches.length===1){
-        onMoveMouse({ clientX:e.touches[0].clientX, clientY:e.touches[0].clientY });
-      }
-    },{passive:true});
-    window.addEventListener('touchend',()=>{ dragging=false; });
-
-    // Zoom
-    renderer.domElement.addEventListener('wheel',e=>{
+    // Scroll do mouse (zoom)
+    renderer.domElement.addEventListener('wheel', e=>{
       e.preventDefault();
-      const f=1+(e.deltaY>0?0.1:-0.1);
-      radius=clamp(radius*f,minRadius,maxRadius);
+      const f = 1 + (e.deltaY>0 ? 0.1 : -0.1);
+      radius = clamp(radius*f, minRadius, maxRadius);
       updateCamera();
-    },{passive:false});
+    }, {passive:false});
 
     // ====== Materiais com polygonOffset (linhas limpas, sem z-fighting) ======
     let faceOpacity = 0.30;
@@ -276,24 +311,24 @@ renderer.domElement.addEventListener('wheel', e=>{
     function setFacesVisible(visible){
       for (const g of torre.children) g.userData.mesh.visible = visible;
     }
-    
-function setFaceOpacity(op){
-  faceOpacity = op;
-  for (const g of torre.children){
-    const m = g.userData.mesh.material;
-    m.opacity = faceOpacity;
 
-    if (faceOpacity >= 0.999) {
-      m.transparent = false;
-      m.depthWrite = true;
-      m.opacity = 1.0; // garante sólido
-    } else {
-      m.transparent = true;
-      m.depthWrite = false;
+    function setFaceOpacity(op){
+      faceOpacity = op;
+      for (const g of torre.children){
+        const m = g.userData.mesh.material;
+        m.opacity = faceOpacity;
+
+        if (faceOpacity >= 0.999) {
+          m.transparent = false;
+          m.depthWrite = true;
+          m.opacity = 1.0;
+        } else {
+          m.transparent = true;
+          m.depthWrite = false;
+        }
+        m.needsUpdate = true;
+      }
     }
-    m.needsUpdate = true;
-  }
-}
 
     // ===== Dimensão básica em "mundo" =====
     const cellW = (layout.meta?.cellW ?? 1.2);
@@ -308,58 +343,52 @@ function setFaceOpacity(op){
     function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
     function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
-    // ===== Explodir =====
-// ===== Explode (única fonte de verdade) =====
-let explodeXY = 0.0;
-let explodeY  = 0.0;
+    // ===== Explode (única fonte de verdade) =====
+    let explodeXY = 0.0;
+    let explodeY  = 0.0;
 
-// aplica explode atual às posições dos grupos
-function applyExplode(){
-  if (!torre || torre.children.length === 0) return;
+    function applyExplode(){
+      if (!torre || torre.children.length === 0) return;
 
-  // Se ambos zero → volta para as posições coladas
-  if ((explodeXY === 0 || !Number.isFinite(explodeXY)) &&
-      (explodeY  === 0 || !Number.isFinite(explodeY))) {
-    for (const g of torre.children) g.position.copy(g.userData.basePos);
-    return;
-  }
+      if ((explodeXY === 0 || !Number.isFinite(explodeXY)) &&
+          (explodeY  === 0 || !Number.isFinite(explodeY))) {
+        for (const g of torre.children) g.position.copy(g.userData.basePos);
+        return;
+      }
 
-  // Centroide dos ANCHORS (não das basePos)
-  let sumX = 0, sumZ = 0, n = 0;
-  for (const g of torre.children){
-    const a = g.userData.anchor || g.userData.basePos;
-    sumX += a.x; sumZ += a.z; n++;
-  }
-  const cx = n ? (sumX/n) : 0;
-  const cz = n ? (sumZ/n) : 0;
+      // Centroide dos anchors
+      let sumX = 0, sumZ = 0, n = 0;
+      for (const g of torre.children){
+        const a = g.userData.anchor || g.userData.basePos;
+        sumX += a.x; sumZ += a.z; n++;
+      }
+      const cx = n ? (sumX/n) : 0;
+      const cz = n ? (sumZ/n) : 0;
 
-  const step = Math.max(stepX, stepZ) || 1;
+      const step = Math.max(stepX, stepZ) || 1;
 
-  for (const g of torre.children){
-    const base = g.userData.basePos;            // onde fica "colado"
-    const pos  = base.clone();
+      for (const g of torre.children){
+        const base = g.userData.basePos;
+        const pos  = base.clone();
 
-    // Explode radial no plano XZ a partir do centroide dos anchors
-    if (explodeXY > 0){
-      const a = g.userData.anchor || base;
-      const dir = new THREE.Vector3(a.x - cx, 0, a.z - cz);
-      const len = dir.length();
-      if (len > 1e-6){
-        dir.multiplyScalar(1/len);              // mesmo deslocamento p/ todos
-        pos.addScaledVector(dir, explodeXY * step);
-        // Se quiser proporcional ao raio, troque por:
-        // pos.addScaledVector(dir, explodeXY * step * (len/Math.max(1, step)));
+        if (explodeXY > 0){
+          const a = g.userData.anchor || base;
+          const dir = new THREE.Vector3(a.x - cx, 0, a.z - cz);
+          const len = dir.length();
+          if (len > 1e-6){
+            dir.multiplyScalar(1/len);
+            pos.addScaledVector(dir, explodeXY * step);
+          }
+        }
+
+        if (explodeY !== 0){
+          pos.y += (g.userData.levelIndex || 0) * explodeY;
+        }
+
+        g.position.copy(pos);
       }
     }
 
-    // Explode vertical por pavimento
-    if (explodeY !== 0){
-      pos.y += (g.userData.levelIndex || 0) * explodeY;
-    }
-
-    g.position.copy(pos);
-  }
-}
     // ===== Voxelização por APTO =====
     function voxelizeByApto(l){
       const byApto = new Map();
@@ -439,105 +468,100 @@ function applyExplode(){
     }
 
     // ====== Construção ======
-function buildFromLayout(l){
-  // limpa torre
-  while (torre.children.length) torre.remove(torre.children[0]);
+    function buildFromLayout(l){
+      // limpa torre
+      while (torre.children.length) torre.remove(torre.children[0]);
 
-  // voxeliza por apartamento
-  const occByApto = voxelizeByApto(l);
+      // voxeliza por apartamento
+      const occByApto = voxelizeByApto(l);
 
-  for (const [apto, occ] of occByApto.entries()){
-    const surface = buildSurfaceGeometryFromOcc(occ);
-    if (!surface) continue;
+      for (const [apto, occ] of occByApto.entries()){
+        const surface = buildSurfaceGeometryFromOcc(occ);
+        if (!surface) continue;
 
-    // material neutro (cores virão do FVS; opacidade coerente)
-const faceMat = new THREE.MeshStandardMaterial({
-  color: new THREE.Color(0x6e7681),
-  metalness: 0.05,
-  roughness: 0.9,
-  transparent: faceOpacity < 0.999,
-  opacity: Math.min(1, faceOpacity),
-  depthWrite: faceOpacity >= 0.999,
-  side: THREE.DoubleSide,          // <— chave para colorir as laterais
-  polygonOffset: true,
-  polygonOffsetFactor: 1,
-  polygonOffsetUnits: 1
-});
+        // material neutro (cores virão do FVS; opacidade coerente)
+        const faceMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(0x6e7681),
+          metalness: 0.05,
+          roughness: 0.9,
+          transparent: faceOpacity < 0.999,
+          opacity: Math.min(1, faceOpacity),
+          depthWrite: faceOpacity >= 0.999,
+          side: THREE.DoubleSide,   // preenche laterais
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1
+        });
 
-    const mesh = new THREE.Mesh(surface, faceMat);
-    mesh.renderOrder = 1;
+        const mesh = new THREE.Mesh(surface, faceMat);
+        mesh.renderOrder = 1;
 
-    // contorno limpo
-    const inflated = inflateGeometry(surface, 0.04);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
-    edges.renderOrder = 2;
+        // contorno limpo
+        const inflated = inflateGeometry(surface, 0.04);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
+        edges.renderOrder = 2;
 
-    // pavimento mínimo (explodeY)
-    let minLevel = Infinity;
-    for (const key of occ){
-      const gy = parseInt(key.split(',')[1],10);
-      if (gy < minLevel) minLevel = gy;
+        // pavimento mínimo (explodeY)
+        let minLevel = Infinity;
+        for (const key of occ){
+          const gy = parseInt(key.split(',')[1],10);
+          if (gy < minLevel) minLevel = gy;
+        }
+        if (!Number.isFinite(minLevel)) minLevel = 0;
+
+        const group = new THREE.Group();
+        group.add(mesh); group.add(edges);
+        group.position.set(0,0,0);
+
+        // guardaremos basePos e anchor após centralizar tudo
+        group.userData = {
+          apto: String(apto),
+          mesh, edges,
+          levelIndex: minLevel,
+          basePos: new THREE.Vector3(0,0,0),
+          anchor:  new THREE.Vector3(0,0,0)
+        };
+
+        // centro local do geometry (para anchor depois)
+        surface.computeBoundingBox();
+        const bb = surface.boundingBox;
+        const localCenter = new THREE.Vector3();
+        bb.getCenter(localCenter);
+        group.__localCenter = localCenter;
+
+        torre.add(group);
+      }
+
+      // Centraliza todo o conjunto no (0,0,0)
+      const bbox = new THREE.Box3().setFromObject(torre);
+      const center = new THREE.Vector3(); bbox.getCenter(center);
+      const size   = new THREE.Vector3(); bbox.getSize(size);
+
+      for (const g of torre.children){
+        g.position.sub(center);
+        g.userData.basePos.copy(g.position);
+
+        // anchor = centro do apto em mundo colado
+        const lc = g.__localCenter || new THREE.Vector3();
+        g.userData.anchor.set(
+          g.position.x + lc.x,
+          g.position.y + lc.y,
+          g.position.z + lc.z
+        );
+        delete g.__localCenter;
+      }
+
+      // Câmera inicial baseada no tamanho real
+      const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
+      const idealRadius = Math.max(8, diag * 0.75);
+      radius = clamp(idealRadius, minRadius, maxRadius);
+
+      orbitTarget.set(0, 0, 0);
+      updateCamera();
+
+      // Aplica estado atual do explode (zero → colado)
+      applyExplode();
     }
-    if (!Number.isFinite(minLevel)) minLevel = 0;
-
-    const group = new THREE.Group();
-    group.add(mesh); group.add(edges);
-    group.position.set(0,0,0);
-
-    // guardaremos basePos e anchor após centralizar tudo
-    group.userData = {
-      apto: String(apto),
-      mesh, edges,
-      levelIndex: minLevel,
-      basePos: new THREE.Vector3(0,0,0),
-      anchor:  new THREE.Vector3(0,0,0)
-    };
-
-    // já calcula o centro LOCAL da malha (em coords do geometry)
-    surface.computeBoundingBox();
-    const bb = surface.boundingBox;
-    const localCenter = new THREE.Vector3();
-    bb.getCenter(localCenter);                 // centro no espaço LOCAL do mesh
-    group.__localCenter = localCenter;         // usamos depois para calcular o anchor
-    torre.add(group);
-  }
-
-  // === Centraliza TODO o conjunto no (0,0,0) movendo os grupos
-  const bbox = new THREE.Box3().setFromObject(torre);
-  const center = new THREE.Vector3(); bbox.getCenter(center);
-  const size   = new THREE.Vector3(); bbox.getSize(size);
-
-  for (const g of torre.children){
-    // posição "colada" = antes era (0,0,0), agora deslocamos pelo centro global
-    g.position.sub(center);
-    // basePos = onde o grupo fica quando explode = 0
-    g.userData.basePos.copy(g.position);
-
-    // === ANCHOR: centro do apto em mundo colado
-    // Como o geometry está em "coords globais", seu centro local (.__localCenter)
-    // somado à translation do grupo dá o centro em "mundo colado".
-    const lc = g.__localCenter || new THREE.Vector3();
-    g.userData.anchor.set(
-      g.position.x + lc.x,
-      g.position.y + lc.y,
-      g.position.z + lc.z
-    );
-    delete g.__localCenter; // limpeza
-  }
-
-  // === Câmera inicial baseada no tamanho real
-  const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
-  const idealRadius = Math.max(8, diag * 0.75);
-  radius = clamp(idealRadius, 4, 200);
-
-  // Se quiser mirar pro meio da altura, use size.y*0.5
-  orbitTarget.set(0, 0, 0);
-  updateCamera();
-
-  // Aplica estado atual do explode (zero → colado)
-  applyExplode();
-}
-
 
     function recenterOrbitTarget(){
       const bbox2 = new THREE.Box3().setFromObject(torre);
@@ -597,109 +621,105 @@ const faceMat = new THREE.MeshStandardMaterial({
       }
     });
 
-    // ====== UI ======
+    // ====== HUD / UI ======
+    const hud       = document.getElementById('hud');
+    const hudToggle = document.getElementById('hudToggle');
+    const hudHandle = document.getElementById('hudHandle');
+
+    hudToggle.addEventListener('click', () => {
+      const collapsed = hud.classList.toggle('collapsed');
+      hudToggle.textContent = collapsed ? '▴' : '▾';
+      hudToggle.setAttribute('aria-expanded', String(!collapsed));
+    });
+
+    // Gesto vertical simples: arrastar a alça para recolher/expandir
+    let hudDragId = null, hudStartY = 0, hudDy = 0;
+    function hudPointerDown(e){
+      hudDragId = e.pointerId;
+      hudStartY = e.clientY; hudDy = 0;
+      hudHandle.setPointerCapture(hudDragId);
+      e.preventDefault(); e.stopPropagation();
+    }
+    function hudPointerMove(e){
+      if (e.pointerId !== hudDragId) return;
+      hudDy = e.clientY - hudStartY;
+      e.preventDefault(); e.stopPropagation();
+    }
+    function hudPointerUp(e){
+      if (e.pointerId !== hudDragId) return;
+      if (hudDy > 30) {
+        hud.classList.add('collapsed');
+        hudToggle.textContent = '▴';
+        hudToggle.setAttribute('aria-expanded', 'false');
+      } else if (hudDy < -30) {
+        hud.classList.remove('collapsed');
+        hudToggle.textContent = '▾';
+        hudToggle.setAttribute('aria-expanded', 'true');
+      }
+      try { hudHandle.releasePointerCapture(hudDragId); } catch(_){}
+      hudDragId = null; hudDy = 0;
+      e.preventDefault(); e.stopPropagation();
+    }
+    hudHandle.addEventListener('pointerdown', hudPointerDown, {passive:false});
+    hudHandle.addEventListener('pointermove', hudPointerMove, {passive:false});
+    hudHandle.addEventListener('pointerup',   hudPointerUp,   {passive:false});
+    hudHandle.addEventListener('pointercancel', hudPointerUp, {passive:false});
+
+    // Clique na alça alterna (bom no desktop)
+    hudHandle.addEventListener('click', (e) => {
+      if (e.target === hudToggle) return;
+      hudToggle.click();
+    });
+
     document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
-// ===== HUD: recolher/expandir + gesto na alça (Pointer Events) =====
-const hud       = document.getElementById('hud');
-const hudToggle = document.getElementById('hudToggle');
-const hudHandle = document.getElementById('hudHandle');
 
-hudToggle.addEventListener('click', () => {
-  const collapsed = hud.classList.toggle('collapsed');
-  hudToggle.textContent = collapsed ? '▴' : '▾';
-  hudToggle.setAttribute('aria-expanded', String(!collapsed));
-});
+    const opacity = document.getElementById('opacity');
+    const opacityVal = document.getElementById('opacityVal');
+    opacity.addEventListener('input', () => {
+      const v = Number(opacity.value) / 100;
+      opacityVal.textContent = v.toFixed(2);
+      setFaceOpacity(v);
+    });
 
-// Gesto vertical simples: arrastar a alça para recolher/expandir
-let hudDragId = null, hudStartY = 0, hudDy = 0;
-function hudPointerDown(e){
-  hudDragId = e.pointerId;
-  hudStartY = e.clientY; hudDy = 0;
-  hudHandle.setPointerCapture(hudDragId);
-  e.preventDefault(); e.stopPropagation();
-}
-function hudPointerMove(e){
-  if (e.pointerId !== hudDragId) return;
-  hudDy = e.clientY - hudStartY;
-  // feedback opcional: poderia aplicar transform parcial aqui
-  e.preventDefault(); e.stopPropagation();
-}
-function hudPointerUp(e){
-  if (e.pointerId !== hudDragId) return;
-  // limiares: >30px desce (recolhe), < -30px sobe (expande)
-  if (hudDy > 30) {
-    hud.classList.add('collapsed');
-    hudToggle.textContent = '▴';
-    hudToggle.setAttribute('aria-expanded', 'false');
-  } else if (hudDy < -30) {
-    hud.classList.remove('collapsed');
-    hudToggle.textContent = '▾';
-    hudToggle.setAttribute('aria-expanded', 'true');
-  }
-  try { hudHandle.releasePointerCapture(hudDragId); } catch(_){}
-  hudDragId = null; hudDy = 0;
-  e.preventDefault(); e.stopPropagation();
-}
-hudHandle.addEventListener('pointerdown', hudPointerDown, {passive:false});
-hudHandle.addEventListener('pointermove', hudPointerMove, {passive:false});
-hudHandle.addEventListener('pointerup',   hudPointerUp,   {passive:false});
-hudHandle.addEventListener('pointercancel', hudPointerUp, {passive:false});
+    const explodeXYRange = document.getElementById('explodeXY');
+    const explodeXYVal   = document.getElementById('explodeXYVal');
+    explodeXYRange.addEventListener('input', () => {
+      explodeXY = Number(explodeXYRange.value) || 0;
+      explodeXYVal.textContent = explodeXY.toFixed(2);
+      applyExplode();
+    });
 
-// Clique na alça alterna (bom no desktop)
-hudHandle.addEventListener('click', (e) => {
-  if (e.target === hudToggle) return;
-  hudToggle.click();
-});
-const wireOnly = document.getElementById('wireOnly');
-wireOnly.addEventListener('change', (e) => setFacesVisible(!e.target.checked));
+    const explodeYRange = document.getElementById('explodeY');
+    const explodeYVal   = document.getElementById('explodeYVal');
+    explodeYRange.addEventListener('input', () => {
+      explodeY = Number(explodeYRange.value) || 0;
+      explodeYVal.textContent = explodeY.toFixed(2);
+      applyExplode();
+    });
 
-const opacity = document.getElementById('opacity');
-const opacityVal = document.getElementById('opacityVal');
-opacity.addEventListener('input', () => {
-  const v = Number(opacity.value) / 100;
-  opacityVal.textContent = v.toFixed(2);
-  setFaceOpacity(v);
-});
+    document.getElementById('resetExplode').addEventListener('click', () => {
+      explodeXY = 0; explodeY = 0;
+      explodeXYRange.value = '0'; explodeYRange.value = '0';
+      explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
+      applyExplode();
+    });
 
-const explodeXYRange = document.getElementById('explodeXY');
-const explodeXYVal   = document.getElementById('explodeXYVal');
-explodeXYRange.addEventListener('input', () => {
-  explodeXY = Number(explodeXYRange.value) || 0;
-  explodeXYVal.textContent = explodeXY.toFixed(2);
-  applyExplode();
-});
+    document.getElementById('resetRot').addEventListener('click', () => {
+      pivot.rotation.set(0,0,0);
+      theta = 0;
+      updateCamera();
+    });
 
-const explodeYRange = document.getElementById('explodeY');
-const explodeYVal   = document.getElementById('explodeYVal');
-explodeYRange.addEventListener('input', () => {
-  explodeY = Number(explodeYRange.value) || 0;
-  explodeYVal.textContent = explodeY.toFixed(2);
-  applyExplode();
-});
+    document.getElementById('recenter').addEventListener('click', () => {
+      recenterOrbitTarget();
+      radius = INITIAL_RADIUS; phi = INITIAL_PHI;
+      updateCamera();
+    });
 
-const resetExplodeBtn = document.getElementById('resetExplode');
-resetExplodeBtn.addEventListener('click', () => {
-  explodeXY = 0; explodeY = 0;
-  explodeXYRange.value = '0'; explodeYRange.value = '0';
-  explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
-  applyExplode();
-});
-
-// Rotação e recentrar
-document.getElementById('resetRot').addEventListener('click', () => {
-  pivot.rotation.set(0,0,0);
-  theta = 0;
-  updateCamera();
-});
-document.getElementById('recenter').addEventListener('click', () => {
-  recenterOrbitTarget();
-  radius = INITIAL_RADIUS; phi = INITIAL_PHI;
-  updateCamera();
-});
-
-// Estado inicial
-setFaceOpacity(Number(opacity.value)/100);
-setFacesVisible(true);
+    // Estado inicial
+    opacityVal.textContent = (Number(opacity.value)/100).toFixed(2);
+    setFaceOpacity(Number(opacity.value)/100);
+    setFacesVisible(true);
 
     // ====== Cores herdadas do 2D ======
     function normApto(s){
@@ -710,52 +730,44 @@ setFacesVisible(true);
       t = t.replace(/[\s\-\._\/]/g, '');
       return t;
     }
-function aplicarCoresFVS(payload){
-  if (!payload) return;
+    function aplicarCoresFVS(payload){
+      if (!payload) return;
 
-  // payload esperado:
-  // {
-  //   default: "#RRGGBB",           // opcional
-  //   colors: { "301":"#...", ... },// por apartamento (normalizado ou não)
-  //   byFloor: { "0":"#...", "1":"#...", ... } // opcional: por pavimento (levelIndex)
-  // }
-  const defHex = (payload.default || '#6e7681').trim();
-  const mapApto = payload.colors || {};
-  const mapFloor = payload.byFloor || {};
+      // payload:
+      // { default:"#RRGGBB", colors:{ "301":"#..." }, byFloor:{ "0":"#..." } }
+      const defHex   = (payload.default || '#6e7681').trim();
+      const mapApto  = payload.colors || {};
+      const mapFloor = payload.byFloor || {};
 
-  const pickColor = (aptoId, floorIdx) => {
-    // 1) por apartamento (aceita normalizado ou original)
-    const hexA = mapApto[aptoId] || mapApto[normApto(aptoId)];
-    if (hexA && /^#?[0-9a-f]{6}$/i.test(hexA)) return hexA.startsWith('#') ? hexA : '#'+hexA;
+      const pickColor = (aptoId, floorIdx) => {
+        const hexA = mapApto[aptoId] || mapApto[normApto(aptoId)];
+        if (hexA && /^#?[0-9a-f]{6}$/i.test(hexA)) return hexA.startsWith('#') ? hexA : '#'+hexA;
 
-    // 2) por pavimento (levelIndex)
-    const hexF = mapFloor[String(floorIdx)];
-    if (hexF && /^#?[0-9a-f]{6}$/i.test(hexF)) return hexF.startsWith('#') ? hexF : '#'+hexF;
+        const hexF = mapFloor[String(floorIdx)];
+        if (hexF && /^#?[0-9a-f]{6}$/i.test(hexF)) return hexF.startsWith('#') ? hexF : '#'+hexF;
 
-    // 3) default
-    return defHex.startsWith('#') ? defHex : '#'+defHex;
-  };
+        return defHex.startsWith('#') ? defHex : '#'+defHex;
+      };
 
-  for (const g of torre.children){
-    const apt = g.userData.apto || '';
-    const floor = g.userData.levelIndex ?? 0;
-    const hex = pickColor(apt, floor);
+      for (const g of torre.children){
+        const apt   = g.userData.apto || '';
+        const floor = g.userData.levelIndex ?? 0;
+        const hex   = pickColor(apt, floor);
 
-    const mat = g.userData.mesh.material;
-    mat.color = new THREE.Color(hex);
-    // garante estado sólido/translúcido coerente com a opacidade atual
-    if (faceOpacity >= 0.999){
-      mat.transparent = false;
-      mat.depthWrite = true;
-      mat.opacity = 1.0;
-    } else {
-      mat.transparent = true;
-      mat.depthWrite = false;
-      mat.opacity = faceOpacity;
+        const mat = g.userData.mesh.material;
+        mat.color = new THREE.Color(hex);
+        if (faceOpacity >= 0.999){
+          mat.transparent = false;
+          mat.depthWrite = true;
+          mat.opacity = 1.0;
+        } else {
+          mat.transparent = true;
+          mat.depthWrite = false;
+          mat.opacity = faceOpacity;
+        }
+        mat.needsUpdate = true;
+      }
     }
-    mat.needsUpdate = true;
-  }
-}
     window.addEventListener('message', (e)=>{
       const data = e.data || {};
       if (data.type === 'fvsColorMap') {
@@ -777,7 +789,3 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
-
-
-
-
