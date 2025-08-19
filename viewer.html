@@ -156,32 +156,31 @@
     // ====== Materiais com polygonOffset (linhas limpas, sem z-fighting) ======
     let faceOpacity = 0.30;
     const NEUTRAL_HEX = 0x6e7681;
-const MAT = {
-  face: () => new THREE.MeshStandardMaterial({
-    color: 0x6e7681,
-    metalness: 0.05,
-    roughness: 0.9,
-    transparent: faceOpacity < 0.999,
-    opacity: Math.min(1, faceOpacity),
-    depthWrite: faceOpacity >= 0.999,
-    side: THREE.DoubleSide,          // <— evita “transparência” nas laterais
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1
-  }),
-  line: new THREE.LineBasicMaterial({
-    color: 0xcad7ff,
-    linewidth: 1,
-    depthTest: true,
-    depthWrite: false,
-    transparent: true,
-    opacity: 0.95
-  }),
-  selLine: new THREE.LineBasicMaterial({
-    color: 0xffc107,
-    linewidth: 2
-  })
-};
+    const MAT = {
+      face: ()=> new THREE.MeshStandardMaterial({
+        color: NEUTRAL_HEX,
+        metalness: 0.05,
+        roughness: 0.9,
+        transparent: true,
+        opacity: faceOpacity,
+        depthWrite: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1
+      }),
+      line: new THREE.LineBasicMaterial({
+        color: 0xcad7ff,
+        linewidth: 1,
+        depthTest: true,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95
+      }),
+      selLine: new THREE.LineBasicMaterial({
+        color: 0xffc107,
+        linewidth: 2
+      })
+    };
 
     function setFacesVisible(visible){
       for (const g of torre.children) g.userData.mesh.visible = visible;
@@ -361,17 +360,18 @@ function buildFromLayout(l){
     if (!surface) continue;
 
     // material neutro (cores virão do FVS; opacidade coerente)
-    const faceMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(0x6e7681),
-      metalness: 0.05,
-      roughness: 0.9,
-      transparent: faceOpacity < 0.999,
-      opacity: Math.min(1, faceOpacity),
-      depthWrite: faceOpacity >= 0.999,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1
-    });
+const faceMat = new THREE.MeshStandardMaterial({
+  color: new THREE.Color(0x6e7681),
+  metalness: 0.05,
+  roughness: 0.9,
+  transparent: faceOpacity < 0.999,
+  opacity: Math.min(1, faceOpacity),
+  depthWrite: faceOpacity >= 0.999,
+  side: THREE.DoubleSide,          // <— chave para colorir as laterais
+  polygonOffset: true,
+  polygonOffsetFactor: 1,
+  polygonOffsetUnits: 1
+});
 
     const mesh = new THREE.Mesh(surface, faceMat);
     mesh.renderOrder = 1;
@@ -636,13 +636,3 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
