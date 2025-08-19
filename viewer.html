@@ -24,9 +24,10 @@
   <div id="app"></div>
 
   <div id="hud">
-    <div class="row" id="dragHint"><b>Arraste</b> para <span id="modeText">orbitar</span> • <b>Scroll</b> para zoom</div>
+    <div class="row" id="dragHint">
+      <b>Arraste</b> (esq = orbitar, dir = mover) • <b>Scroll</b> = zoom
+    </div>
     <div class="row">
-      <button id="modeBtn" title="Alternar entre Orbitar e Mover">🖐️ Mover</button>
       <label><input id="wireOnly" type="checkbox" /> Só arame</label>
       <button id="resetRot">🔄 Resetar giro</button>
       <button id="recenter">🎯 Centralizar câmera</button>
@@ -98,23 +99,19 @@
     }
     updateCamera();
 
-    // Modo arraste: 'orbit' ou 'pan'
-    let dragMode = 'orbit';
-    const modeBtn = document.getElementById('modeBtn');
-    const modeText = document.getElementById('modeText');
-    function toggleMode(){
-      dragMode = (dragMode === 'orbit') ? 'pan' : 'orbit';
-      modeBtn.textContent = (dragMode === 'orbit') ? '🖐️ Mover' : '🎯 Orbitar';
-      modeText.textContent = (dragMode === 'orbit') ? 'orbitar' : 'mover';
+    // Controles de mouse:
+    // - esquerdo = orbitar (gira pivot + inclina phi)
+    // - direito  = pan (move o alvo/orbitTarget)
+    let dragging=false,lastX=0,lastY=0, dragMode='orbit';
+    function onDownMouse(e){
+      // 0: esquerdo, 2: direito
+      dragMode = (e.button === 2) ? 'pan' : 'orbit';
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
     }
-    modeBtn.addEventListener('click', toggleMode);
-
-    let dragging=false,lastX=0,lastY=0;
-    const onDown=(x,y)=>{dragging=true;lastX=x;lastY=y;};
-    const onMove=(x,y)=>{
+    function onMoveMouse(e){
       if(!dragging) return;
-      const dx=x-lastX, dy=y-lastY;
-      lastX=x; lastY=y;
+      const dx=e.clientX-lastX, dy=e.clientY-lastY;
+      lastX=e.clientX; lastY=e.clientY;
 
       if (dragMode === 'orbit') {
         pivot.rotation.y += dx * 0.005;
@@ -129,20 +126,27 @@
         orbitTarget.addScaledVector(up,    dy * panScale);
         updateCamera();
       }
-    };
-    const onUp=()=>{dragging=false;};
-    renderer.domElement.addEventListener('mousedown',e=>onDown(e.clientX,e.clientY));
-    window.addEventListener('mousemove',e=>onMove(e.clientX,e.clientY));
-    window.addEventListener('mouseup',onUp);
+    }
+    function onUpMouse(){ dragging=false; }
 
-    // Touch
+    renderer.domElement.addEventListener('mousedown', onDownMouse);
+    window.addEventListener('mousemove', onMoveMouse);
+    window.addEventListener('mouseup', onUpMouse);
+    // bloqueia menu do botão direito (para pan)
+    renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Touch (1 dedo = orbitar)
     renderer.domElement.addEventListener('touchstart',e=>{
-      if(e.touches.length===1) onDown(e.touches[0].clientX,e.touches[0].clientY);
+      if(e.touches.length===1){
+        dragging=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY; dragMode='orbit';
+      }
     },{passive:true});
     renderer.domElement.addEventListener('touchmove',e=>{
-      if(e.touches.length===1) onMove(e.touches[0].clientX,e.touches[0].clientY);
+      if(e.touches.length===1){
+        onMoveMouse({ clientX:e.touches[0].clientX, clientY:e.touches[0].clientY });
+      }
     },{passive:true});
-    window.addEventListener('touchend',onUp);
+    window.addEventListener('touchend',()=>{ dragging=false; });
 
     // Zoom
     renderer.domElement.addEventListener('wheel',e=>{
@@ -154,20 +158,18 @@
 
     // ====== Materiais (base NEUTRA cinza) ======
     let faceOpacity = 0.30;
-    const NEUTRAL_HEX_STR = '#6e7681';
-    const NEUTRAL_HEX_INT = 0x6e7681;
+    const NEUTRAL_HEX = 0x6e7681; // cinza base
     const makeFace = (color)=> new THREE.MeshStandardMaterial({
       color, metalness:0.0, roughness:0.9, transparent:true, opacity:faceOpacity, depthWrite:false
     });
     const makeLine = (color,width=1)=> new THREE.LineBasicMaterial({ color, linewidth:width });
 
     const MAT = {
-      face: ()=>makeFace(NEUTRAL_HEX_INT),
+      face: ()=>makeFace(NEUTRAL_HEX),
       line: makeLine(0x9aa3ab),
       selLine: makeLine(0xffc107, 2)
     };
 
-    // ====== Passos e helpers ======
     const stepX = (layout.meta?.cellW ?? 1.2) + (layout.meta?.gap ?? 0.15);
     const stepZ = (layout.meta?.cellD ?? 1.2) + (layout.meta?.gap ?? 0.15);
     const aptoHeight = 0.5;
@@ -207,29 +209,6 @@
         pos.y += g.userData.levelIndex * explodeY;
         g.position.copy(pos);
       }
-    }
-
-    // ====== Índice por apartamento (para aplicar cores rapidamente) ======
-    let IDX = new Map(); // aptKey -> Array<THREE.Group>
-
-    function aptKey(s){
-      if (s == null) return '';
-      let t = String(s).trim().toUpperCase();
-      t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');  // sem acento
-      t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, ''); // sem prefixos
-      t = t.replace(/[\s\-\._\/]/g, ''); // sem separadores
-      return t;
-    }
-
-    function rebuildIndex(){
-      IDX.clear();
-      for (const g of torre.children){
-        const k = aptKey(g.userData.apto);
-        if (!IDX.has(k)) IDX.set(k, []);
-        IDX.get(k).push(g);
-      }
-      // para debug:
-      // console.debug('Index 3D rebuild:', IDX);
     }
 
     // ====== Construção ======
@@ -272,9 +251,6 @@
       applyExplode();
       recenterOrbitTarget();
       updateCamera();
-
-      // cria/atualiza índice
-      rebuildIndex();
     }
 
     function recenterOrbitTarget(){
@@ -285,38 +261,47 @@
 
     buildFromLayout(layout);
 
-    // ====== Seleção (bordas) ======
+    // ====== Seleção com mira refinada ======
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    let selGroup = null, selLineBackup = null, selFaceBackup = null;
+
     renderer.domElement.addEventListener('click', (e) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-      const edgeObjects = torre.children.map(g => g.userData.edges);
+      // 1) tentar nas FACES (mais preciso para seleção por área)
+      const faceObjects = torre.children.map(g => g.userData.mesh);
       raycaster.setFromCamera(mouse, camera);
-      let inter = raycaster.intersectObjects(edgeObjects, false);
+      let inter = raycaster.intersectObjects(faceObjects, false);
+
+      // 2) fallback: tentar nas ARESTAS com threshold pequeno em unidade de mundo
       if (!inter.length) {
-        const faceObjects = torre.children.map(g => g.userData.mesh);
-        inter = raycaster.intersectObjects(faceObjects, false);
+        const edgeObjects = torre.children.map(g => g.userData.edges);
+        raycaster.params.Line = raycaster.params.Line || {};
+        raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06; // ~6% do passo
+        inter = raycaster.intersectObjects(edgeObjects, false);
       }
 
-      if (selGroup) {
-        selGroup.userData.edges.material = selLineBackup;
-        selGroup.userData.mesh.material = selFaceBackup;
-        selGroup = null;
+      // limpar seleção anterior
+      if (window.__SEL_GROUP__) {
+        const gPrev = window.__SEL_GROUP__;
+        gPrev.userData.edges.material = gPrev.__lineBackup;
+        gPrev.userData.mesh.material = gPrev.__faceBackup;
+        delete gPrev.__lineBackup; delete gPrev.__faceBackup;
+        window.__SEL_GROUP__ = null;
       }
 
       if (inter.length) {
         const hitObj = inter[0].object;
-        selGroup = torre.children.find(g => g.userData.edges === hitObj || g.userData.mesh === hitObj);
-        if (selGroup) {
-          selLineBackup = selGroup.userData.edges.material;
-          selFaceBackup = selGroup.userData.mesh.material.clone();
+        const selGroup = hitObj.parent; // mesh/edges estão diretamente no group
+        if (selGroup && selGroup.userData) {
+          selGroup.__lineBackup = selGroup.userData.edges.material;
+          selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
           selGroup.userData.edges.material = MAT.selLine;
           selGroup.userData.mesh.material = selGroup.userData.mesh.material.clone();
           selGroup.userData.mesh.material.opacity = Math.min(1, faceOpacity + 0.2);
+          window.__SEL_GROUP__ = selGroup;
           console.log('Selecionado:', selGroup.userData);
         }
       }
@@ -360,41 +345,35 @@
     setFaceOpacity(parseInt(opacity.value,10)/100);
     setFacesVisible(true);
 
-    // ====== Aplicação de cores recebidas do 2D ======
-    function applyColorMap(payload){
-      // payload: { mode, colors: { [aptKey]: '#RRGGBB' }, default: '#6e7681' }
+    // ====== Cores herdadas do 2D ======
+    function normApto(s){
+      if (s == null) return '';
+      let t = String(s).trim().toUpperCase();
+      t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, '');
+      t = t.replace(/[\s\-\._\/]/g, '');
+      return t;
+    }
+    function aplicarCoresFVS(payload){
       if (!payload) return;
-      const defHex = (payload.default || NEUTRAL_HEX_STR).trim();
+      const defHex = (payload.default || '#6e7681').trim();
       const map = payload.colors || {};
-
-      // pinta tudo com a cor default primeiro
       for (const g of torre.children){
-        g.userData.mesh.material.color.set(defHex);
+        const id = g.userData.apto;
+        const hex = map[id] || map[normApto(id)] || null;
+        const color = new THREE.Color(hex || defHex);
+        g.userData.mesh.material.color.copy(color);
         g.userData.mesh.material.needsUpdate = true;
       }
-
-      // aplica overrides por unidade (aptKey)
-      for (const [rawKey, hex] of Object.entries(map)){
-        const k = aptKey(rawKey);
-        const arr = IDX.get(k);
-        if (!arr) continue;
-        for (const g of arr){
-          g.userData.mesh.material.color.set(hex);
-          g.userData.mesh.material.needsUpdate = true;
-        }
-      }
     }
-
-    // Recebe mapa do 2D
     window.addEventListener('message', (e)=>{
       const data = e.data || {};
       if (data.type === 'fvsColorMap') {
-        applyColorMap(data.payload);
+        aplicarCoresFVS(data.payload);
       }
     });
-
-    // Handshake: avisa que o 3D está pronto
-    try { window.parent?.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
+    // handshake opcional: pede o mapa ao abrir via iframe
+    try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
 
     // ====== Resize & Loop ======
     addEventListener('resize', () => {
