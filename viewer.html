@@ -207,26 +207,25 @@
     function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
     // ===== Explodir =====
-    let explodeXY = 0.0;
-    let explodeY  = 0.0;
-    function applyExplode(){
-      for (const g of torre.children){
-        const base = g.userData.basePos;
-        const pos = base.clone();
-        if (explodeXY > 0){
-          const dir = new THREE.Vector3(base.x, 0, base.z);
-          const len = dir.length();
-          if (len > 1e-6){
-            dir.multiplyScalar(1/len);
-            const step = Math.max(stepX, stepZ);
-            pos.addScaledVector(dir, explodeXY * step);
-          }
-        }
-        pos.y += g.userData.levelIndex * explodeY;
-        g.position.copy(pos);
+let explodeXY = 0.0;
+let explodeY  = 0.0;
+function applyExplode(){
+  for (const g of torre.children){
+    const base = g.userData.basePos;     // <- agora é a posição "colada" após centralizar
+    const pos = base.clone();
+    if (explodeXY > 0){
+      const dir = new THREE.Vector3(base.x, 0, base.z);
+      const len = dir.length();
+      if (len > 1e-6){
+        dir.multiplyScalar(1/len);
+        const step = Math.max(stepX, stepZ);
+        pos.addScaledVector(dir, explodeXY * step);
       }
     }
-
+    pos.y += g.userData.levelIndex * explodeY;
+    g.position.copy(pos);
+  }
+}
     // ===== Voxelização por APTO =====
     function voxelizeByApto(l){
       const byApto = new Map();
@@ -306,57 +305,75 @@
     }
 
     // ====== Construção ======
-    function buildFromLayout(l){
-      while (torre.children.length) torre.remove(torre.children[0]);
+function buildFromLayout(l){
+  // limpa torre
+  while (torre.children.length) torre.remove(torre.children[0]);
 
-      const occByApto = voxelizeByApto(l);
+  // 1) voxeliza por apartamento
+  const occByApto = voxelizeByApto(l);
 
-      for (const [apto, occ] of occByApto.entries()){
-        const surface = buildSurfaceGeometryFromOcc(occ);
-        if (!surface) continue;
+  // 2) para cada apto, gera superfície única e um grupo (mesh + edges)
+  for (const [apto, occ] of occByApto.entries()){
+    const surface = buildSurfaceGeometryFromOcc(occ);
+    if (!surface) continue;
 
-        const mesh = new THREE.Mesh(surface, MAT.face());
-        mesh.renderOrder = 1;
+    // corpo translúcido
+    const mesh = new THREE.Mesh(surface, MAT.face());
+    mesh.renderOrder = 1;
 
-        const inflated = inflateGeometry(surface, 0.04);
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
-        edges.renderOrder = 2;
+    // contorno (arestas) a partir de malha inflada
+    const inflated = inflateGeometry(surface, 0.04);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
+    edges.renderOrder = 2;
 
-        // centro aproximado (para explode XY) e nível mínimo (explode Y)
-        surface.computeBoundingBox();
-        const bb = surface.boundingBox;
-        const center = new THREE.Vector3(); bb.getCenter(center);
+    // IMPORTANTE: o surface já está em coordenadas de mundo.
+    // Portanto, o grupo NÃO deve ser transladado para o "centro" do próprio apto.
+    const group = new THREE.Group();
+    group.add(mesh);
+    group.add(edges);
+    group.position.set(0, 0, 0);
 
-        let minLevel = Infinity;
-        for (const key of occ){
-          const gy = parseInt(key.split(',')[1],10);
-          if (gy < minLevel) minLevel = gy;
-        }
-        if (!Number.isFinite(minLevel)) minLevel = 0;
-
-        const group = new THREE.Group();
-        group.add(mesh); group.add(edges);
-        group.userData = {
-          apto,
-          mesh, edges,
-          levelIndex: minLevel,
-          basePos: center.clone()
-        };
-        torre.add(group);
-      }
-
-      // Centraliza conjunto
-      const bbox = new THREE.Box3().setFromObject(torre);
-      const center = new THREE.Vector3(); bbox.getCenter(center);
-      for (const g of torre.children){
-        g.position.copy( g.userData.basePos.clone().sub(center) );
-        g.userData.basePos.copy(g.position);
-      }
-
-      applyExplode();
-      recenterOrbitTarget();
-      updateCamera();
+    // levelIndex = menor nível Y presente no apto (para explodeY)
+    let minLevel = Infinity;
+    for (const key of occ){
+      const gy = parseInt(key.split(',')[1],10);
+      if (gy < minLevel) minLevel = gy;
     }
+    if (!Number.isFinite(minLevel)) minLevel = 0;
+
+    // basePos será definido DEPOIS da centralização global
+    group.userData = {
+      apto,
+      mesh, edges,
+      levelIndex: minLevel,
+      basePos: new THREE.Vector3(0,0,0)
+    };
+
+    torre.add(group);
+  }
+
+  // 3) Centraliza o conjunto INTEIRO (torre) no (0,0,0)
+  const bbox = new THREE.Box3().setFromObject(torre);
+  const center = new THREE.Vector3(); bbox.getCenter(center);
+  const size = new THREE.Vector3();  bbox.getSize(size);
+
+  // move todos os grupos igualmente para recentrar
+  for (const g of torre.children){
+    g.position.sub(center);
+    g.userData.basePos.copy(g.position); // <-- agora basePos é a posição "colada"
+  }
+
+  // 4) Ajuste de câmera/zoom inicial conforme tamanho do prédio
+  const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
+  const ideal = Math.max(8, diag * 0.75);        // fator confortável
+  radius = clamp(ideal, minRadius, maxRadius);   // aplica limites
+  // coloca o alvo na altura do centro (para enquadrar verticalmente)
+  const cY = (size.y > 1e-6) ? ( -center.y + size.y/2 ) : 0;
+  orbitTarget.set(0, cY, 0);
+
+  applyExplode();   // explodeXY/Y = 0 no início → fica "colado"
+  updateCamera();
+}
 
     function recenterOrbitTarget(){
       const bbox2 = new THREE.Box3().setFromObject(torre);
@@ -496,3 +513,4 @@
   </script>
 </body>
 </html>
+
