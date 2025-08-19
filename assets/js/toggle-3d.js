@@ -65,3 +65,17 @@
   // util pra debug
   window.toggle3D = { open: open3D, close: close3D, sendColors, isOpen };
 })();
+
+// Se o iframe pedir (handshake), reenvia o mapa atual
+window.addEventListener('message', (e)=>{
+  const t = e.data && e.data.type;
+  if (t === 'ready-3d' || t === 'requestColorMap') {
+    try {
+      const payload = window.__FVS_COLOR_MAP__ || { mode:null, colors:{} };
+      const iframe = document.getElementById('viewer3d-iframe');
+      iframe?.contentWindow?.postMessage({ type:'fvsColorMap', payload }, '*');
+    } catch (err) {
+      console.warn('Falha ao responder ready-3d:', err);
+    }
+  }
+});
