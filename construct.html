@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1478,13 +1479,19 @@ function buildSurfaceGeometryForElement(e){
     if (!surface) continue;
 
     // corpo translúcido
-    const matFace = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(e.color),
-      metalness: 0.05, roughness: 0.9,
-      transparent: true, opacity: FACE_OPACITY,
-      depthWrite: true,
-      polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
-    });
+// corpo translúcido (DUAS FACES para evitar culling por winding invertido)
+const matFace = new THREE.MeshStandardMaterial({
+  color: new THREE.Color(e.color),
+  metalness: 0.05,
+  roughness: 0.9,
+  transparent: FACE_OPACITY < 0.999,
+  opacity: Math.min(1, FACE_OPACITY),
+  depthWrite: FACE_OPACITY >= 0.999,
+  side: THREE.DoubleSide,            // <<<<<<<<<<<<<<
+  polygonOffset: true,
+  polygonOffsetFactor: 1,
+  polygonOffsetUnits: 1
+});
     const mesh = new THREE.Mesh(surface, matFace);
     mesh.renderOrder = 1;
 
