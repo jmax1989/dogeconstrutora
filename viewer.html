@@ -224,35 +224,48 @@ let explodeXY = 0.0;
 let explodeY  = 0.0;
 
 function applyExplode(){
-  if (torre.children.length === 0) return;
+  if (!torre || torre.children.length === 0) return;
 
-  // 1) Centroide das posições base (já centralizadas/“coladas”)
+  // Se está "colado", apenas reseta as posições para basePos
+  if ((explodeXY === 0 || !isFinite(explodeXY)) && (explodeY === 0 || !isFinite(explodeY))) {
+    for (const g of torre.children) {
+      g.position.copy(g.userData.basePos);
+    }
+    return;
+  }
+
+  // Centroide das posições base (já centralizadas/“coladas”)
   let sumX = 0, sumZ = 0, n = 0;
   for (const g of torre.children){
     const b = g.userData.basePos;
     sumX += b.x; sumZ += b.z; n++;
   }
-  const cx = sumX / n, cz = sumZ / n;
+  const cx = (n>0) ? (sumX / n) : 0;
+  const cz = (n>0) ? (sumZ / n) : 0;
 
-  // 2) Aplica explode radial em torno do centroide
-  const step = Math.max(stepX, stepZ); // escala de “passo” horizontal
+  // Passo horizontal (escala da explosão XY)
+  const step = Math.max(stepX, stepZ) || 1;
+
   for (const g of torre.children){
-    const base = g.userData.basePos;         // posição “colada”
+    const base = g.userData.basePos;       // posição “colada”
     const pos  = base.clone();
 
+    // Explode radial no plano XZ a partir do centroide
     if (explodeXY > 0){
       const dir = new THREE.Vector3(base.x - cx, 0, base.z - cz);
       const len = dir.length();
       if (len > 1e-6){
-        dir.multiplyScalar(1/len);           // só direção (mesma distância para todos)
+        dir.multiplyScalar(1/len); // mesma distância para todos
         pos.addScaledVector(dir, explodeXY * step);
-        // Se preferir proporcional à distância, troque a linha acima por:
-        // pos.addScaledVector(dir, explodeXY * step * len/Math.max(1, step));
+        // Se quiser explosão proporcional ao raio, troque a linha acima por:
+        // pos.addScaledVector(dir, explodeXY * step * (len/Math.max(1, step)));
       }
     }
 
-    // explode vertical por pavimento (levelIndex)
-    pos.y += g.userData.levelIndex * explodeY;
+    // Explode vertical por pavimento (levelIndex)
+    if (explodeY !== 0){
+      pos.y += (g.userData.levelIndex || 0) * explodeY;
+    }
 
     g.position.copy(pos);
   }
@@ -402,9 +415,14 @@ function buildFromLayout(l){
   radius = clamp(ideal, 4, 200);
   const cY = (size.y > 1e-6) ? (-center.y + size.y/2) : 0;
   orbitTarget.set(0, cY, 0);
+// depois de calcular bbox e center:
+for (const g of torre.children){
+  g.position.sub(center);          // centraliza
+  g.userData.basePos = g.position.clone(); // << base “colada”
+}
+applyExplode(); // aplica estado atual dos sliders (zero = colado)
+updateCamera();
 
-  applyExplode();
-  updateCamera();
 }
 
     function recenterOrbitTarget(){
@@ -474,26 +492,28 @@ function buildFromLayout(l){
       setFaceOpacity(v);
     });
     document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
-    const explodeXYRange = document.getElementById('explodeXY');
-    const explodeXYVal = document.getElementById('explodeXYVal');
-    explodeXYRange.addEventListener('input', () => {
-      explodeXY = parseFloat(explodeXYRange.value);
-      explodeXYVal.textContent = explodeXY.toFixed(2);
-      applyExplode();
-    });
-    const explodeYRange = document.getElementById('explodeY');
-    const explodeYVal = document.getElementById('explodeYVal');
-    explodeYRange.addEventListener('input', () => {
-      explodeY = parseFloat(explodeYRange.value);
-      explodeYVal.textContent = explodeY.toFixed(2);
-      applyExplode();
-    });
-    document.getElementById('resetExplode').addEventListener('click', () => {
-      explodeXY = 0; explodeY = 0;
-      explodeXYRange.value = '0'; explodeYRange.value = '0';
-      explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
-      applyExplode();
-    });
+const explodeXYRange = document.getElementById('explodeXY');
+const explodeXYVal   = document.getElementById('explodeXYVal');
+explodeXYRange.addEventListener('input', () => {
+  explodeXY = parseFloat(explodeXYRange.value) || 0;
+  explodeXYVal.textContent = explodeXY.toFixed(2);
+  applyExplode();
+});
+
+const explodeYRange = document.getElementById('explodeY');
+const explodeYVal   = document.getElementById('explodeYVal');
+explodeYRange.addEventListener('input', () => {
+  explodeY = parseFloat(explodeYRange.value) || 0;
+  explodeYVal.textContent = explodeY.toFixed(2);
+  applyExplode();
+});
+
+document.getElementById('resetExplode').addEventListener('click', () => {
+  explodeXY = 0; explodeY = 0;
+  explodeXYRange.value = '0'; explodeYRange.value = '0';
+  explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
+  applyExplode();
+});
     document.getElementById('resetRot').addEventListener('click', () => { pivot.rotation.set(0,0,0); theta = 0; });
     document.getElementById('recenter').addEventListener('click', () => {
       recenterOrbitTarget(); radius = INITIAL_RADIUS; phi = INITIAL_PHI; updateCamera();
@@ -579,6 +599,7 @@ function aplicarCoresFVS(payload){
   </script>
 </body>
 </html>
+
 
 
 
