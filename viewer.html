@@ -395,15 +395,154 @@
       }
     }
 
-    // ===== 3D → 2D (explode→flatten→grid) — STUB =====
-function apply2DTransition(){
-  // Nesta etapa inicial, apenas reposiciona elementos na posição base.
-  // No próximo passo implementaremos:
-  // 0..0.5 = explode por Z; 0.5..1 = flatten + deslocamento p/ grid 2D.
-  if (!torre || !torre.children.length) return;
-  for (const g of torre.children){
-    if (g.userData && g.userData.basePos) g.position.copy(g.userData.basePos);
+    /* ===== [DOGE] Alvos 2D (grade por pavimento×coluna, faixas por zIndex) ===== */
+let __doge2DTargetsBuilt = false;
+
+function doge_build2DTargets() {
+  if (!torre || !torre.children) return;
+
+  // 1) Colete todos os meshes "aptos" (com meta) dentro de 'torre'
+  /** @type {Array<THREE.Mesh>} */
+  const apts = [];
+  torre.traverse(o => {
+    if (o && o.isMesh) apts.push(o);
+  });
+
+  if (!apts.length) return;
+
+  // 2) Descubra floors e cols máximos, e agrupe por célula (floor|col)
+  const byCell = new Map();
+  let maxFloor = 0, maxCol = 0;
+
+  for (const m of apts) {
+    const meta = (m.userData && (m.userData.meta || m.userData)) || {};
+    const floor = Number(meta.floor) || 1;
+    const col   = Number(meta.col)   || 1;
+    const zIdx  = Number(meta.zIndex || meta.z || 0) || 0;
+
+    maxFloor = Math.max(maxFloor, floor);
+    maxCol   = Math.max(maxCol,   col);
+
+    const k = `${floor}|${col}`;
+    if (!byCell.has(k)) byCell.set(k, []);
+    byCell.get(k).push({ mesh:m, floor, col, zIndex:zIdx });
   }
+
+  // 3) Ordene cada célula por zIndex e calcule faixas (slots)
+  const cellW = 140, cardW = 100, cardH = 60, cellH = 95;
+  const marginX = -((maxCol - 1) * cellW) / 2;
+  const marginY =  ((maxFloor) * cellH) / 2;
+
+  for (const [k, arr] of byCell.entries()) {
+    arr.sort((a,b)=> a.zIndex - b.zIndex);
+    const [fStr, cStr] = k.split('|');
+    const floor = +fStr, col = +cStr;
+    const slots = arr.length;
+
+    // Posição base da célula (topo/centro no plano Z=0)
+    const baseX = marginX + (col - 1) * cellW;
+    const baseY = marginY - (floor - 1) * cellH;
+    const stripeH = cardH / Math.max(1, slots);
+
+    arr.forEach((it, idx) => {
+      // Centro de cada faixa dentro do card
+      const stripeCenterY = baseY - cardH/2 + idx*stripeH + stripeH/2;
+
+      it.mesh.userData._2dTarget = {
+        x: baseX,            // eixo X do centro do card (grid)
+        y: stripeCenterY,    // eixo Y do centro da faixa
+        z: 0,                // plano frontal (chapado)
+        slots,
+        stripeIndex: idx,
+        w: cardW,
+        h: stripeH
+      };
+
+      // Garanta também uma base (caso falte)
+      if (!it.mesh.userData._base) {
+        it.mesh.userData._base = {
+          pos: it.mesh.position.clone(),
+          rot: it.mesh.rotation.clone(),
+          scale: it.mesh.scale.clone()
+        };
+      }
+    });
+  }
+
+  __doge2DTargetsBuilt = true;
+}
+
+    // ===== 3D → 2D (explode→flatten→grid) — STUB =====
+
+    // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid) =====
+function apply2DTransition() {
+  const t = flatten2D || 0;
+  const phase = (t <= 0.5) ? 0 : 1;
+  const local = (phase === 0) ? (t / 0.5) : ((t - 0.5) / 0.5);
+
+  if (!torre) return;
+
+  // Constrói targets 2D (uma vez ou sempre que necessário)
+  if (!__doge2DTargetsBuilt) doge_build2DTargets();
+
+  // Interação: trava rotação quando em transição para 2D
+  if (typeof controls !== 'undefined' && controls) {
+    controls.enableRotate = (t === 0);
+    controls.enablePan    = true;
+    controls.enableZoom   = true;
+  }
+
+  // Percorra todos os meshes aptos
+  torre.traverse(o => {
+    if (!o || !o.isMesh) return;
+
+    // Bases e metas
+    const base = (o.userData && (o.userData._base || {
+      pos: o.position.clone(),
+      rot: o.rotation.clone(),
+      scale: o.scale.clone()
+    })) || null;
+
+    if (!o.userData._base) o.userData._base = base;
+
+    const meta = (o.userData && (o.userData.meta || o.userData)) || {};
+    const zIndex = Number(meta.zIndex || meta.z || 0) || 0;
+
+    // Explode "B" (afasta por profundidade)
+    const Bpos = base.pos.clone();
+    Bpos.z += (zIndex * -120); // ajuste a distância conforme desejar
+
+    if (phase === 0) {
+      // A (base) → B (explode Z)
+      o.position.lerpVectors(base.pos, Bpos, local);
+
+      // levezinha “chapada” para sugerir camadas (opcional)
+      const sZ = THREE.MathUtils.lerp(base.scale.z, base.scale.z * 0.85, local);
+      o.scale.set(base.scale.x, base.scale.y, sZ);
+
+    } else {
+      // B (explodido) → C (alvo 2D em grid, “card” chapado)
+      const tgt = o.userData._2dTarget;
+      if (!tgt) {
+        // Sem alvo, só mantemos B
+        o.position.copy(Bpos);
+        o.scale.copy(base.scale);
+        return;
+      }
+
+      // C: centro da faixa no plano z=0
+      const Cpos = new THREE.Vector3(tgt.x, tgt.y, 0);
+
+      // Interpolação posição
+      o.position.lerpVectors(Bpos, Cpos, local);
+
+      // Flatten em Z e normalização leve em X/Y (mantemos visual similar a "card")
+      const scaleZ = THREE.MathUtils.lerp(base.scale.z * 0.85, 0.05, local);
+      const scaleX = THREE.MathUtils.lerp(base.scale.x, 1.0, local);
+      const scaleY = THREE.MathUtils.lerp(base.scale.y, 1.0, local);
+      o.scale.set(scaleX, scaleY, scaleZ);
+    }
+  });
 }
     // ===== VoxelizaÃ§Ã£o por APTO =====
     function voxelizeByApto(l){
@@ -722,12 +861,46 @@ if (flatten2DRange && flatten2DVal){
     apply2DTransition();
   });
 }
-    document.getElementById('resetExplode').addEventListener('click', () => {
-      explodeXY = 0; explodeY = 0;
-      explodeXYRange.value = '0'; explodeYRange.value = '0';
-      explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
-      applyExplode();
+    // Reset explode/2D e volta cada mesh à base
+document.getElementById('resetExplode')?.addEventListener('click', () => {
+  explodeXY = 0;
+  explodeY  = 0;
+  flatten2D = 0;
+
+  // sliders (se existirem)
+  const ex = document.getElementById('explodeXY');
+  const ey = document.getElementById('explodeY');
+  const f2 = document.getElementById('flatten2D');
+  const vx = document.getElementById('explodeXYVal');
+  const vy = document.getElementById('explodeYVal');
+  const v2 = document.getElementById('flatten2DVal');
+
+  if (ex) ex.value = '0';
+  if (ey) ey.value = '0';
+  if (f2) f2.value = '0';
+
+  if (vx) vx.textContent = '0.00';
+  if (vy) vy.textContent = '0.00';
+  if (v2) v2.textContent = '0.00';
+
+  // libera rotação
+  if (typeof controls !== 'undefined' && controls) {
+    controls.enableRotate = true;
+  }
+
+  // volta cada mesh para a base
+  if (torre) {
+    torre.traverse(o => {
+      if (!o || !o.isMesh) return;
+      const base = o.userData && o.userData._base;
+      if (base) {
+        o.position.copy(base.pos);
+        o.rotation.copy(base.rot);
+        o.scale.copy(base.scale);
+      }
     });
+  }
+});
 
     document.getElementById('resetRot').addEventListener('click', () => {
       pivot.rotation.set(0,0,0);
@@ -822,6 +995,7 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
 
