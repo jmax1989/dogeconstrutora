@@ -644,7 +644,7 @@ function apply2DTransition(){
 
     hudToggle.addEventListener('click', () => {
       const collapsed = hud.classList.toggle('collapsed');
-      hudToggle.textContent = collapsed ? 'â–´' : 'â–¾';
+      hudToggle.textContent = collapsed ? '▴' : '▾';
       hudToggle.setAttribute('aria-expanded', String(!collapsed));
     });
 
@@ -822,4 +822,5 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
