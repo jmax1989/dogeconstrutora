@@ -73,6 +73,46 @@
     #hudHandle { touch-action: none; }
   </style>
 </head>
+  <!-- [DOGE] RECEPTOR DO MODO 2D: ouve "doge-2d-set" e armazena o valor -->
+<script>
+(function(){
+  // Badge no canto pra você ver que está recebendo (pode remover depois)
+  let badge = document.createElement('div');
+  badge.id = 'doge-2d-badge';
+  badge.style.position = 'absolute';
+  badge.style.left = '12px';
+  badge.style.bottom = '12px';
+  badge.style.zIndex = '99999';
+  badge.style.padding = '6px 10px';
+  badge.style.borderRadius = '10px';
+  badge.style.color = '#fff';
+  badge.style.font = '12px/1 Inter, system-ui, sans-serif';
+  badge.style.background = 'rgba(0,0,0,.55)';
+  badge.style.border = '1px solid rgba(255,255,255,.18)';
+  badge.textContent = '2D: 0%';
+  document.body.appendChild(badge);
+
+  // Estado atual (0..1)
+  window.__DOGE_2D_T__ = 0;
+
+  // Avise o pai que está pronto para receber (handshake)
+  try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch (e) {}
+
+  // Ouvir mensagens do index/toggle-3d
+  window.addEventListener('message', (e) => {
+    const data = e?.data;
+    if (!data || data.type !== 'doge-2d-set') return;
+    const t = Math.max(0, Math.min(1, Number(data.t) || 0));
+    window.__DOGE_2D_T__ = t;
+
+    // Por enquanto, só atualiza o badge (Passo 2 fará a animação)
+    badge.textContent = '2D: ' + Math.round(t*100) + '%';
+
+    // Aqui no Passo 2: chamaremos a função que aplica explode/flatten/grid com base em "t"
+    // apply2DTransition(t);
+  }, false);
+})();
+</script>
 <body>
   <div id="app"></div>
 
@@ -789,3 +829,4 @@
   </script>
 </body>
 </html>
+
