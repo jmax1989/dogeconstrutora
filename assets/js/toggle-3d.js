@@ -92,8 +92,6 @@
       }
     }
   });
-})();
-
 
 /* ==== [DOGE] CONTROLES DO MODO 2D (HUD + MENSAGERIA) ==== */
 (function () {
