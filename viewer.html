@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Prédio 3D — viewer (cores herdadas da FVS)</title>
+  <title>PrÃ©dio 3D â€” viewer (cores herdadas da FVS)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <style>
     html, body { height: 100%; margin: 0; }
@@ -10,7 +10,7 @@
     #app { position: fixed; inset: 0; }
     canvas { display:block; }
 
-    /* === HUD (desktop por padrão) === */
+    /* === HUD (desktop por padrÃ£o) === */
     #hud {
       position: fixed; left: 12px; top: 12px; padding: 10px 12px;
       background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
@@ -22,7 +22,7 @@
     .val { width: 3.6rem; text-align: right; display: inline-block; }
     button, label { user-select: none; }
 
-    /* Alça (handle) e botão de toggle */
+    /* AlÃ§a (handle) e botÃ£o de toggle */
     #hud .handle { display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
     #hud .grabber {
       width: 44px; height: 6px; border-radius: 4px;
@@ -54,13 +54,13 @@
         overflow: auto;
         transform: translateY(0); /* expandido */
       }
-      /* No mobile, recolhido = só a “alça” visível (~40px) */
+      /* No mobile, recolhido = sÃ³ a â€œalÃ§aâ€ visÃ­vel (~40px) */
       #hud.collapsed {
         transform: translateY(calc(100% - 40px));
       }
     }
 
-    /* Respeita usuários com movimento reduzido */
+    /* Respeita usuÃ¡rios com movimento reduzido */
     @media (prefers-reduced-motion: reduce) {
       #hud { transition: none; }
     }
@@ -68,12 +68,11 @@
     /* O canvas deve receber todos os gestos (sem scroll/browser gestures) */
     canvas { touch-action: none; }
 
-    /* O HUD pode rolar verticalmente, mas a alça não */
+    /* O HUD pode rolar verticalmente, mas a alÃ§a nÃ£o */
     #hud { touch-action: pan-y; }
     #hudHandle { touch-action: none; }
   </style>
 </head>
-  
 <body>
   <div id="app"></div>
 
@@ -81,74 +80,41 @@
     <div class="row handle" id="hudHandle">
       <div class="grabber" aria-hidden="true"></div>
       <span style="font-weight:600; flex:1;">Controles</span>
-      <button id="hudToggle" aria-expanded="true" title="Recolher/Expandir">▾</button>
+      <button id="hudToggle" aria-expanded="true" title="Recolher/Expandir">â–¾</button>
     </div>
     <div class="row" id="dragHint">
-      <b>Arraste</b> (esq = orbitar, dir = mover) • <b>Scroll</b> = zoom
+      <b>Arraste</b> (esq = orbitar, dir = mover) â€¢ <b>Scroll</b> = zoom
     </div>
     <div class="row">
-      <label><input id="wireOnly" type="checkbox" /> Só arame</label>
-      <button id="resetRot">🔄 Resetar giro</button>
-      <button id="recenter">🎯 Centralizar câmera</button>
+      <label><input id="wireOnly" type="checkbox" /> SÃ³ arame</label>
+      <button id="resetRot">ðŸ”„ Resetar giro</button>
+      <button id="recenter">ðŸŽ¯ Centralizar cÃ¢mera</button>
     </div>
     <div class="row">
       Opacidade: <input id="opacity" type="range" min="5" max="100" value="30" />
       <span id="opacityVal" class="val">0.30</span>
     </div>
-    <div class="row">
-      Explodir XY: <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
-      <span id="explodeXYVal" class="val">0.00</span>
-    </div>
-    <div class="row">
-      Explodir Y (piso): <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
-      <span id="explodeYVal" class="val">0.00</span>
-      <button id="resetExplode">Reset</button>
-    </div>
+<div class="row">
+  Explodir XY: <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
+  <span id="explodeXYVal" class="val">0.00</span>
+</div>
+<div class="row">
+  Explodir Y (piso): <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
+  <span id="explodeYVal" class="val">0.00</span>
+</div>
+<div class="row">
+  2D (explode→grid): <input id="flatten2D" type="range" min="0" max="1" step="0.01" value="0" />
+  <span id="flatten2DVal" class="val">0.00</span>
+</div>
+<div class="row">
+  <button id="resetExplode">Reset</button>
+</div>
   </div>
 
   <!-- THREE -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
-  <!-- [DOGE] RECEPTOR DO MODO 2D: ouve "doge-2d-set" e armazena o valor -->
-<script>
-(function(){
-  // Badge no canto pra você ver que está recebendo (pode remover depois)
-  let badge = document.createElement('div');
-  badge.id = 'doge-2d-badge';
-  badge.style.position = 'absolute';
-  badge.style.left = '12px';
-  badge.style.bottom = '12px';
-  badge.style.zIndex = '99999';
-  badge.style.padding = '6px 10px';
-  badge.style.borderRadius = '10px';
-  badge.style.color = '#fff';
-  badge.style.font = '12px/1 Inter, system-ui, sans-serif';
-  badge.style.background = 'rgba(0,0,0,.55)';
-  badge.style.border = '1px solid rgba(255,255,255,.18)';
-  badge.textContent = '2D: 0%';
-  document.body.appendChild(badge);
-
-  // Estado atual (0..1)
-  window.__DOGE_2D_T__ = 0;
-
-  // Avise o pai que está pronto para receber (handshake)
-  try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch (e) {}
-
-  // Ouvir mensagens do index/toggle-3d
-  window.addEventListener('message', (e) => {
-    const data = e?.data;
-    if (!data || data.type !== 'doge-2d-set') return;
-    const t = Math.max(0, Math.min(1, Number(data.t) || 0));
-    window.__DOGE_2D_T__ = t;
-
-    // Por enquanto, só atualiza o badge (Passo 2 fará a animação)
-    badge.textContent = '2D: ' + Math.round(t*100) + '%';
-
-    // Aqui no Passo 2: chamaremos a função que aplica explode/flatten/grid com base em "t"
-    // apply2DTransition(t);
-  }, false);
-})(); 
-  
+  <script>
   (async function(){
     // ====== Carrega o layout do repo ======
     const LAYOUT_URL = './data/layout-3d.json';
@@ -178,7 +144,7 @@
     const torre = new THREE.Group();
     pivot.add(torre);
 
-    // ====== Órbita + Pan ======
+    // ====== Ã“rbita + Pan ======
     const INITIAL_RADIUS = 28;
     const INITIAL_PHI = Math.PI * 0.35;
 
@@ -197,7 +163,7 @@
     }
     updateCamera();
 
-    // ===== Órbita + Pan (mouse) + Pinça (zoom) e 2 dedos (pan) — Pointer Events =====
+    // ===== Ã“rbita + Pan (mouse) + PinÃ§a (zoom) e 2 dedos (pan) â€” Pointer Events =====
     let activePointers = new Map();     // pointerId -> {x,y}
     let dragging = false;
     let dragMode = 'orbit';
@@ -216,12 +182,12 @@
 
       const pts = ptsArr();
       if (pts.length === 1){
-        // 1 dedo / 1 mouse: ORBIT (botão direito do mouse = pan)
+        // 1 dedo / 1 mouse: ORBIT (botÃ£o direito do mouse = pan)
         dragMode = (e.button === 2) ? 'pan' : 'orbit';
         dragging = true;
         lastX = e.clientX; lastY = e.clientY;
       } else if (pts.length === 2){
-        // 2 dedos: pinça + pan do centroide
+        // 2 dedos: pinÃ§a + pan do centroide
         const [p1,p2] = pts;
         gesture = {
           startDist:   dist(p1,p2),
@@ -262,13 +228,13 @@
         return;
       }
 
-      // 2 apontadores (pinça para zoom + centroide para pan)
+      // 2 apontadores (pinÃ§a para zoom + centroide para pan)
       if (pts.length === 2 && gesture){
         const c  = centroid(pts);
         const d  = dist(pts[0], pts[1]);
 
         if (gesture.startDist > 0){
-          // afastar dedos afasta a câmera (zoom out)
+          // afastar dedos afasta a cÃ¢mera (zoom out)
           const scale = d / gesture.startDist;
           const newR  = gesture.startRadius / Math.max(0.2, Math.min(5, scale));
           radius = clamp(newR, minRadius, maxRadius);
@@ -308,7 +274,7 @@
     renderer.domElement.addEventListener('pointerup',     pointerUp3D,     {passive:false});
     renderer.domElement.addEventListener('pointercancel', pointerUp3D,     {passive:false});
 
-    // bloqueia menu do botão direito (para pan no desktop)
+    // bloqueia menu do botÃ£o direito (para pan no desktop)
     renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
     // Scroll do mouse (zoom)
@@ -370,12 +336,12 @@
       }
     }
 
-    // ===== Dimensão básica em "mundo" =====
+    // ===== DimensÃ£o bÃ¡sica em "mundo" =====
     const cellW = (layout.meta?.cellW ?? 1.2);
     const cellD = (layout.meta?.cellD ?? 1.2);
     const gap   = (layout.meta?.gap   ?? 0.15);
 
-    const aptoHeight = 0.5;          // altura "unitária" por nível
+    const aptoHeight = 0.5;          // altura "unitÃ¡ria" por nÃ­vel
     const stepX = cellW + gap;
     const stepZ = cellD + gap;
     const stepY = aptoHeight + gap;
@@ -383,10 +349,10 @@
     function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
     function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
-    // ===== Explode (única fonte de verdade) =====
+    // ===== Explode (Ãºnica fonte de verdade) =====
     let explodeXY = 0.0;
     let explodeY  = 0.0;
-
+    let flatten2D = 0.0;   // NOVO
     function applyExplode(){
       if (!torre || torre.children.length === 0) return;
 
@@ -429,7 +395,17 @@
       }
     }
 
-    // ===== Voxelização por APTO =====
+    // ===== 3D → 2D (explode→flatten→grid) — STUB =====
+function apply2DTransition(){
+  // Nesta etapa inicial, apenas reposiciona elementos na posição base.
+  // No próximo passo implementaremos:
+  // 0..0.5 = explode por Z; 0.5..1 = flatten + deslocamento p/ grid 2D.
+  if (!torre || !torre.children.length) return;
+  for (const g of torre.children){
+    if (g.userData && g.userData.basePos) g.position.copy(g.userData.basePos);
+  }
+}
+    // ===== VoxelizaÃ§Ã£o por APTO =====
     function voxelizeByApto(l){
       const byApto = new Map();
       for (const p of l.placements){
@@ -507,7 +483,7 @@
       return g;
     }
 
-    // ====== Construção ======
+    // ====== ConstruÃ§Ã£o ======
     function buildFromLayout(l){
       // limpa torre
       while (torre.children.length) torre.remove(torre.children[0]);
@@ -519,7 +495,7 @@
         const surface = buildSurfaceGeometryFromOcc(occ);
         if (!surface) continue;
 
-        // material neutro (cores virão do FVS; opacidade coerente)
+        // material neutro (cores virÃ£o do FVS; opacidade coerente)
         const faceMat = new THREE.MeshStandardMaterial({
           color: new THREE.Color(0x6e7681),
           metalness: 0.05,
@@ -541,7 +517,7 @@
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
         edges.renderOrder = 2;
 
-        // pavimento mínimo (explodeY)
+        // pavimento mÃ­nimo (explodeY)
         let minLevel = Infinity;
         for (const key of occ){
           const gy = parseInt(key.split(',')[1],10);
@@ -553,7 +529,7 @@
         group.add(mesh); group.add(edges);
         group.position.set(0,0,0);
 
-        // guardaremos basePos e anchor após centralizar tudo
+        // guardaremos basePos e anchor apÃ³s centralizar tudo
         group.userData = {
           apto: String(apto),
           mesh, edges,
@@ -591,7 +567,7 @@
         delete g.__localCenter;
       }
 
-      // Câmera inicial baseada no tamanho real
+      // CÃ¢mera inicial baseada no tamanho real
       const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
       const idealRadius = Math.max(8, diag * 0.75);
       radius = clamp(idealRadius, minRadius, maxRadius);
@@ -599,7 +575,7 @@
       orbitTarget.set(0, 0, 0);
       updateCamera();
 
-      // Aplica estado atual do explode (zero → colado)
+      // Aplica estado atual do explode (zero â†’ colado)
       applyExplode();
     }
 
@@ -611,7 +587,7 @@
 
     buildFromLayout(layout);
 
-    // ====== Seleção com mira refinada ======
+    // ====== SeleÃ§Ã£o com mira refinada ======
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -633,7 +609,7 @@
         inter = raycaster.intersectObjects(edgeObjects, false);
       }
 
-      // limpar seleção anterior
+      // limpar seleÃ§Ã£o anterior
       if (window.__SEL_GROUP__) {
         const gPrev = window.__SEL_GROUP__;
         gPrev.userData.edges.material = gPrev.__lineBackup;
@@ -668,11 +644,11 @@
 
     hudToggle.addEventListener('click', () => {
       const collapsed = hud.classList.toggle('collapsed');
-      hudToggle.textContent = collapsed ? '▴' : '▾';
+      hudToggle.textContent = collapsed ? 'â–´' : 'â–¾';
       hudToggle.setAttribute('aria-expanded', String(!collapsed));
     });
 
-    // Gesto vertical simples: arrastar a alça para recolher/expandir
+    // Gesto vertical simples: arrastar a alÃ§a para recolher/expandir
     let hudDragId = null, hudStartY = 0, hudDy = 0;
     function hudPointerDown(e){
       hudDragId = e.pointerId;
@@ -689,11 +665,11 @@
       if (e.pointerId !== hudDragId) return;
       if (hudDy > 30) {
         hud.classList.add('collapsed');
-        hudToggle.textContent = '▴';
+        hudToggle.textContent = 'â–´';
         hudToggle.setAttribute('aria-expanded', 'false');
       } else if (hudDy < -30) {
         hud.classList.remove('collapsed');
-        hudToggle.textContent = '▾';
+        hudToggle.textContent = 'â–¾';
         hudToggle.setAttribute('aria-expanded', 'true');
       }
       try { hudHandle.releasePointerCapture(hudDragId); } catch(_){}
@@ -705,7 +681,7 @@
     hudHandle.addEventListener('pointerup',   hudPointerUp,   {passive:false});
     hudHandle.addEventListener('pointercancel', hudPointerUp, {passive:false});
 
-    // Clique na alça alterna (bom no desktop)
+    // Clique na alÃ§a alterna (bom no desktop)
     hudHandle.addEventListener('click', (e) => {
       if (e.target === hudToggle) return;
       hudToggle.click();
@@ -736,7 +712,16 @@
       explodeYVal.textContent = explodeY.toFixed(2);
       applyExplode();
     });
-
+    
+const flatten2DRange = document.getElementById('flatten2D');
+const flatten2DVal   = document.getElementById('flatten2DVal');
+if (flatten2DRange && flatten2DVal){
+  flatten2DRange.addEventListener('input', () => {
+    flatten2D = Number(flatten2DRange.value) || 0;
+    flatten2DVal.textContent = flatten2D.toFixed(2);
+    apply2DTransition();
+  });
+}
     document.getElementById('resetExplode').addEventListener('click', () => {
       explodeXY = 0; explodeY = 0;
       explodeXYRange.value = '0'; explodeYRange.value = '0';
@@ -813,9 +798,17 @@
       if (data.type === 'fvsColorMap') {
         aplicarCoresFVS(data.payload);
       }
+      if (data.type === 'doge-2d-set') {
+  flatten2D = Number(data.t) || 0;
+  const r = document.getElementById('flatten2D');
+  const v = document.getElementById('flatten2DVal');
+  if (r) r.value = String(flatten2D);
+  if (v) v.textContent = flatten2D.toFixed(2);
+  apply2DTransition();
+}
     });
     try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
-
+try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
     // ====== Resize & Loop ======
     addEventListener('resize', () => {
       camera.aspect = innerWidth / innerHeight;
@@ -829,5 +822,3 @@
   </script>
 </body>
 </html>
-
-
