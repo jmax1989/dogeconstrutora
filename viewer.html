@@ -71,10 +71,37 @@
     /* O HUD pode rolar verticalmente, mas a alÃ§a nÃ£o */
     #hud { touch-action: pan-y; }
     #hudHandle { touch-action: none; }
+
+/* ==== Camadas: canvas (0) < cards2d (9) < HUD (10) ==== */
+#app canvas { position:absolute; inset:0; z-index:0; display:block; }
+#cards2d .card{
+  position:absolute; width:120px; height:72px;
+  border-radius:10px; border:1px solid rgba(255,255,255,.18);
+  background:rgba(34,40,53,.92); color:#e6eef7;
+  font:12px/1.2 system-ui, -apple-system, Segoe UI, Roboto;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  display:flex; align-items:center; justify-content:center;
+  user-select:none; cursor:pointer;
+  transform:translate(-50%,-50%);
+  opacity:0; transition:opacity .18s ease;
+  pointer-events:auto; /* controlado pelo JS com base no t */
+}
+#cards2d .card .label{
+  padding:.35rem .55rem; border-radius:999px;
+  background:rgba(0,0,0,.25);
+  border:1px solid rgba(255,255,255,.12);
+}
+    
   </style>
 </head>
 <body>
-  <div id="app"></div>
+  <!-- ==== BLOCO DO CONTAINER 3D + OVERLAY 2D (SUBSTITUIR A LINHA 77) ==== -->
+<div id="app" style="position:fixed; inset:0">
+  <!-- O canvas do Three.js será anexado aqui via JS (root.appendChild(renderer.domElement)) -->
+  <!-- Overlay dos cards 2D clicáveis -->
+  <div id="cards2d" style="position:absolute; inset:0; z-index:9; pointer-events:none;"></div>
+</div>
+<!-- ==== FIM DO BLOCO ==== -->
 
   <div id="hud">
     <div class="row handle" id="hudHandle">
@@ -122,6 +149,8 @@
 
     // ====== Setup ======
     const root = document.getElementById('app');
+    // Overlay 2D (cards)
+const cards2dRoot = document.getElementById('cards2d');
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0d1117);
 
@@ -475,6 +504,8 @@ function doge_build2DTargets() {
     // ===== 3D → 2D (explode→flatten→grid) — STUB =====
 
     // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid) =====
+
+// ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid + overlay cards) =====
 function apply2DTransition() {
   const t = flatten2D || 0;
   const phase = (t <= 0.5) ? 0 : 1;
@@ -482,67 +513,128 @@ function apply2DTransition() {
 
   if (!torre) return;
 
-  // Constrói targets 2D (uma vez ou sempre que necessário)
   if (!__doge2DTargetsBuilt) doge_build2DTargets();
+  if (!__dogeCardsBuilt) doge_build2DCards();
 
-  // Interação: trava rotação quando em transição para 2D
   if (typeof controls !== 'undefined' && controls) {
     controls.enableRotate = (t === 0);
     controls.enablePan    = true;
     controls.enableZoom   = true;
   }
 
-  // Percorra todos os meshes aptos
   torre.traverse(o => {
     if (!o || !o.isMesh) return;
 
-    // Bases e metas
     const base = (o.userData && (o.userData._base || {
       pos: o.position.clone(),
       rot: o.rotation.clone(),
       scale: o.scale.clone()
     })) || null;
-
     if (!o.userData._base) o.userData._base = base;
 
     const meta = (o.userData && (o.userData.meta || o.userData)) || {};
     const zIndex = Number(meta.zIndex || meta.z || 0) || 0;
 
-    // Explode "B" (afasta por profundidade)
     const Bpos = base.pos.clone();
-    Bpos.z += (zIndex * -120); // ajuste a distância conforme desejar
+    Bpos.z += (zIndex * -120);
 
     if (phase === 0) {
-      // A (base) → B (explode Z)
       o.position.lerpVectors(base.pos, Bpos, local);
-
-      // levezinha “chapada” para sugerir camadas (opcional)
       const sZ = THREE.MathUtils.lerp(base.scale.z, base.scale.z * 0.85, local);
       o.scale.set(base.scale.x, base.scale.y, sZ);
-
-    } else {
-      // B (explodido) → C (alvo 2D em grid, “card” chapado)
-      const tgt = o.userData._2dTarget;
-      if (!tgt) {
-        // Sem alvo, só mantemos B
-        o.position.copy(Bpos);
-        o.scale.copy(base.scale);
-        return;
+      if (o.material && 'opacity' in o.material) {
+        o.material.transparent = true;
+        o.material.opacity = 1.0;
       }
-
-      // C: centro da faixa no plano z=0
-      const Cpos = new THREE.Vector3(tgt.x, tgt.y, 0);
-
-      // Interpolação posição
+    } else {
+      const tgt = o.userData._2dTarget;
+      const Cpos = tgt ? new THREE.Vector3(tgt.x, tgt.y, 0) : Bpos;
       o.position.lerpVectors(Bpos, Cpos, local);
 
-      // Flatten em Z e normalização leve em X/Y (mantemos visual similar a "card")
       const scaleZ = THREE.MathUtils.lerp(base.scale.z * 0.85, 0.05, local);
       const scaleX = THREE.MathUtils.lerp(base.scale.x, 1.0, local);
       const scaleY = THREE.MathUtils.lerp(base.scale.y, 1.0, local);
       o.scale.set(scaleX, scaleY, scaleZ);
+
+      if (o.material && 'opacity' in o.material) {
+        o.material.transparent = true;
+        o.material.opacity = THREE.MathUtils.lerp(1.0, 0.3, local);
+      }
     }
   });
+
+  if (phase === 1) {
+    doge_render2DCards(local);
+  } else {
+    doge_hide2DCards();
+  }
+
+  if (renderer && renderer.domElement) {
+    renderer.domElement.style.pointerEvents = (t >= 0.95) ? 'none' : 'auto';
+  }
+}
+    /* ===== [DOGE] Overlay 2D: criação/atualização dos cards ===== */
+let __dogeCardsBuilt = false;
+
+function doge_colorFor(meta){
+  if (meta && meta.status && COLOR_MAP?.colors?.[meta.status]) return COLOR_MAP.colors[meta.status];
+  if (meta && meta.color) return meta.color;
+  return COLOR_MAP?.default || '#6e7681';
+}
+
+function doge_build2DCards(){
+  if (!APTS.length) return;
+  cards2dRoot.innerHTML = '';
+  for (const a of APTS){
+    if (!a.target2D) continue;
+
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.id = a.meta?.id || a.meta?.name || '';
+    el.style.background = doge_colorFor(a.meta);
+
+    const lab = document.createElement('div');
+    lab.className = 'label';
+    lab.textContent = a.meta?.name || a.meta?.id || 'apt';
+    el.appendChild(lab);
+
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      openAptModal(a.meta); // usa seu modal existente
+    });
+
+    cards2dRoot.appendChild(el);
+    a._cardEl = el;
+  }
+  __dogeCardsBuilt = true;
+}
+
+function doge_render2DCards(localT){
+  if (!__doge2DTargetsBuilt) doge_build2DTargets();
+  if (!__dogeCardsBuilt) doge_build2DCards();
+
+  const interactive = (flatten2D >= 0.95);
+  cards2dRoot.style.pointerEvents = interactive ? 'auto' : 'none';
+
+  for (const a of APTS){
+    const el = a._cardEl;
+    const tgt = a.target2D;
+    if (!el || !tgt) continue;
+
+    const screen = worldToScreen(new THREE.Vector3(tgt.x, tgt.y, 0));
+    el.style.left = `${screen.x}px`;
+    el.style.top  = `${screen.y}px`;
+
+    el.style.opacity = String(0.1 + 0.9 * localT);
+    el.style.background = doge_colorFor(a.meta);
+  }
+}
+
+function doge_hide2DCards(){
+  for (const a of APTS){
+    if (a._cardEl) a._cardEl.style.opacity = '0';
+  }
+  cards2dRoot.style.pointerEvents = 'none';
 }
     // ===== VoxelizaÃ§Ã£o por APTO =====
     function voxelizeByApto(l){
@@ -987,6 +1079,10 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
+
+      if (flatten2D > 0.5) {
+  doge_render2DCards(Math.min(1, (flatten2D - 0.5) / 0.5));
+}
       updateCamera();
     });
 
@@ -995,6 +1091,7 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
 
