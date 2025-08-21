@@ -191,6 +191,7 @@ const cards2dRoot = document.getElementById('cards2d');
     }
     updateCamera();
 
+
     // ===== Ã“rbita + Pan (mouse) + PinÃ§a (zoom) e 2 dedos (pan) â€” Pointer Events =====
     let activePointers = new Map();     // pointerId -> {x,y}
     let dragging = false;
@@ -297,8 +298,114 @@ const cards2dRoot = document.getElementById('cards2d');
       e.preventDefault();
     }
 
+
+    /* ===== [DOGE] Helper: reparent preservando world transform (sem SceneUtils) ===== */
+function attachPreserveWorld(obj, newParent) {
+  // Guarda a matrixWorld atual do objeto
+  const oldWorld = obj.matrixWorld.clone();
+
+  // Muda o parent
+  newParent.add(obj);
+
+  // newParent.matrixWorld^-1 * oldWorld = nova matrix local do obj
+  const invParentWorld = new THREE.Matrix4().copy(newParent.matrixWorld).invert();
+  const newLocal = new THREE.Matrix4().multiplyMatrices(invParentWorld, oldWorld);
+
+  // Aplica no objeto e atualiza posição/rotação/escala
+  obj.matrix.copy(newLocal);
+  obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
+  obj.updateMatrixWorld(true);
+}
+
+/* ===== [DOGE] Coleta de raízes de apartamentos (mesh + contorno juntos) ===== */
+let __dogeAptRoots = [];      // [{root, meta, base:{pos,rot,scale}}...]
+let __doge2DTargetsBuilt = false;
+
+function doge_collectApartmentRoots() {
+  __dogeAptRoots = [];
+
+  if (!torre) return;
+  const seen = new Set();
+
+  torre.updateMatrixWorld(true);
+
+  torre.traverse(obj => {
+    if (!obj) return;
+    // meta pode estar em obj.userData.meta ou diretamente em userData
+    const meta = (obj.userData && (obj.userData.meta || obj.userData)) || null;
+
+    // consideramos "apartamento" quando encontrar um mesh com meta.floor/col
+    if (obj.isMesh && meta && (meta.floor != null) && (meta.col != null)) {
+      let root = obj;
+
+      // Se o pai não é a torre, prefira mover o pai (inclui contornos/linhas)
+      if (obj.parent && obj.parent !== torre) {
+        root = obj.parent;
+      } else {
+        // Se está diretamente sob 'torre', verifique irmãos de contorno
+        const siblings = obj.parent ? obj.parent.children.slice() : [];
+        const hasContourSibling = siblings.some(
+          c => c !== obj && (c.isLine || c.isLineSegments || c.isPoints)
+        );
+
+        if (hasContourSibling) {
+          // Cria wrapper e reparenta mesh + contornos mantendo world transform
+          const wrap = new THREE.Group();
+          wrap.name = `APT_WRAP_${meta.name || meta.id || ''}`;
+          wrap.updateMatrixWorld(true);
+
+          // Adiciona o wrapper sob a torre, posicionado exatamente no mundo
+          torre.add(wrap);
+          wrap.position.copy(new THREE.Vector3(0,0,0));
+          wrap.quaternion.copy(new THREE.Quaternion());
+          wrap.scale.set(1,1,1);
+          wrap.updateMatrixWorld(true);
+
+          // Move o mesh principal
+          attachPreserveWorld(obj, wrap);
+
+          // Move irmãos de contorno (line/edges/points)
+          siblings.forEach(n => {
+            if (n === obj) return;
+            if (n.isLine || n.isLineSegments || n.isPoints) {
+              attachPreserveWorld(n, wrap);
+            }
+          });
+
+          root = wrap;
+        }
+      }
+
+      // Evita duplicados quando vários filhos trazem a mesma meta/raiz
+      if (seen.has(root.id)) return;
+      seen.add(root.id);
+
+      // Garante meta no root
+      root.userData.meta = root.userData.meta || meta;
+
+      // Base transform (uma vez)
+      if (!root.userData._base) {
+        root.userData._base = {
+          pos: root.position.clone(),
+          rot: root.rotation.clone(),
+          scale: root.scale.clone()
+        };
+      }
+
+      __dogeAptRoots.push({
+        root,
+        meta: root.userData.meta,
+        base: root.userData._base,
+        target2D: null // será preenchido no buildTargets
+      });
+    }
+  });
+}
+
+
 /* ===== [DOGE] Overlay 2D: criação/atualização dos cards ===== */
 /* ===== [DOGE] Overlay 2D: criação/atualização dos cards ===== */
+/* ===== [DOGE] Overlay 2D: cards clicáveis ===== */
 let __dogeCardsBuilt = false;
 
 function doge_colorFor(meta){
@@ -308,33 +415,31 @@ function doge_colorFor(meta){
 }
 
 function doge_build2DCards(){
-  if (!torre || !torre.children) return;
-  cards2dRoot.innerHTML = '';
+  if (!__doge2DTargetsBuilt) doge_build2DTargets();
+  if (!__dogeAptRoots.length) return;
 
-  torre.traverse(o=>{
-    if (!o.isMesh || !o.userData) return;
-    const meta = o.userData.meta || o.userData;
-    if (!o.userData.target2D) return;
+  cards2dRoot.innerHTML = '';
+  for (const A of __dogeAptRoots){
+    if (!A.target2D) continue;
 
     const el = document.createElement('div');
     el.className = 'card';
-    el.dataset.id = meta?.id || meta?.name || '';
-    el.style.background = doge_colorFor(meta);
+    el.dataset.id = A.meta?.id || A.meta?.name || '';
+    el.style.background = doge_colorFor(A.meta);
 
     const lab = document.createElement('div');
     lab.className = 'label';
-    lab.textContent = meta?.name || meta?.id || 'apt';
+    lab.textContent = A.meta?.name || A.meta?.id || 'apt';
     el.appendChild(lab);
 
     el.addEventListener('click', (ev)=>{
       ev.stopPropagation();
-      openAptModal(meta); // usa seu modal existente
+      openAptModal(A.meta);
     });
 
     cards2dRoot.appendChild(el);
-    o.userData._cardEl = el;
-  });
-
+    A.root.userData._cardEl = el;
+  }
   __dogeCardsBuilt = true;
 }
 
@@ -345,28 +450,24 @@ function doge_render2DCards(localT){
   const interactive = (flatten2D >= 0.95);
   cards2dRoot.style.pointerEvents = interactive ? 'auto' : 'none';
 
-  torre.traverse(o=>{
-    if (!o.isMesh || !o.userData) return;
-    const el = o.userData._cardEl;
-    const tgt = o.userData.target2D;
-    if (!el || !tgt) return;
+  for (const A of __dogeAptRoots){
+    const el = A.root.userData._cardEl;
+    const tgt = A.target2D;
+    if (!el || !tgt) continue;
 
     const screen = worldToScreen(new THREE.Vector3(tgt.x, tgt.y, 0));
     el.style.left = `${screen.x}px`;
     el.style.top  = `${screen.y}px`;
 
     el.style.opacity = String(0.1 + 0.9 * localT);
-    el.style.background = doge_colorFor(o.userData.meta || o.userData);
-  });
+    el.style.background = doge_colorFor(A.meta);
+  }
 }
 
 function doge_hide2DCards(){
-  if (!torre || !torre.children) return;
-  torre.traverse(o=>{
-    if (o.isMesh && o.userData._cardEl) {
-      o.userData._cardEl.style.opacity = '0';
-    }
-  });
+  for (const A of __dogeAptRoots){
+    if (A.root.userData._cardEl) A.root.userData._cardEl.style.opacity = '0';
+  }
   cards2dRoot.style.pointerEvents = 'none';
 }
       
@@ -499,24 +600,17 @@ function doge_hide2DCards(){
     /* ===== [DOGE] Alvos 2D (grade por pavimento×coluna, faixas por zIndex) ===== */
 let __doge2DTargetsBuilt = false;
 
+/* ===== [DOGE] Alvos 2D no plano frontal (linhas = pavimentos; colunas = fachadas; faixas = z) ===== */
 function doge_build2DTargets() {
-  if (!torre || !torre.children) return;
+  if (!__dogeAptRoots.length) doge_collectApartmentRoots();
+  if (!__dogeAptRoots.length) return;
 
-  // 1) Colete todos os meshes "aptos" (com meta) dentro de 'torre'
-  /** @type {Array<THREE.Mesh>} */
-  const apts = [];
-  torre.traverse(o => {
-    if (o && o.isMesh) apts.push(o);
-  });
-
-  if (!apts.length) return;
-
-  // 2) Descubra floors e cols máximos, e agrupe por célula (floor|col)
+  // Agrupa por célula (floor|col)
   const byCell = new Map();
   let maxFloor = 0, maxCol = 0;
 
-  for (const m of apts) {
-    const meta = (m.userData && (m.userData.meta || m.userData)) || {};
+  for (const a of __dogeAptRoots) {
+    const meta = a.meta || {};
     const floor = Number(meta.floor) || 1;
     const col   = Number(meta.col)   || 1;
     const zIdx  = Number(meta.zIndex || meta.z || 0) || 0;
@@ -526,47 +620,44 @@ function doge_build2DTargets() {
 
     const k = `${floor}|${col}`;
     if (!byCell.has(k)) byCell.set(k, []);
-    byCell.get(k).push({ mesh:m, floor, col, zIndex:zIdx });
+    byCell.get(k).push({ a, zIdx });
   }
 
-  // 3) Ordene cada célula por zIndex e calcule faixas (slots)
+  // Ordena por profundidade (zIndex)
+  for (const arr of byCell.values()) {
+    arr.sort((x,y)=> x.zIdx - y.zIdx);
+  }
+
+  // Parâmetros visuais do grid
   const cellW = 140, cardW = 100, cardH = 60, cellH = 95;
   const marginX = -((maxCol - 1) * cellW) / 2;
   const marginY =  ((maxFloor) * cellH) / 2;
 
-  for (const [k, arr] of byCell.entries()) {
-    arr.sort((a,b)=> a.zIndex - b.zIndex);
-    const [fStr, cStr] = k.split('|');
+  for (const [key, arr] of byCell) {
+    const [fStr, cStr] = key.split('|');
     const floor = +fStr, col = +cStr;
     const slots = arr.length;
 
-    // Posição base da célula (topo/centro no plano Z=0)
     const baseX = marginX + (col - 1) * cellW;
     const baseY = marginY - (floor - 1) * cellH;
     const stripeH = cardH / Math.max(1, slots);
 
-    arr.forEach((it, idx) => {
-      // Centro de cada faixa dentro do card
+    arr.forEach((entry, idx) => {
+      const A = entry.a;
       const stripeCenterY = baseY - cardH/2 + idx*stripeH + stripeH/2;
 
-      it.mesh.userData._2dTarget = {
-        x: baseX,            // eixo X do centro do card (grid)
-        y: stripeCenterY,    // eixo Y do centro da faixa
-        z: 0,                // plano frontal (chapado)
-        slots,
-        stripeIndex: idx,
+      A.target2D = {
+        x: baseX,
+        y: stripeCenterY,
+        z: 0,
         w: cardW,
-        h: stripeH
+        h: stripeH,
+        slots,
+        stripeIndex: idx
       };
 
-      // Garanta também uma base (caso falte)
-      if (!it.mesh.userData._base) {
-        it.mesh.userData._base = {
-          pos: it.mesh.position.clone(),
-          rot: it.mesh.rotation.clone(),
-          scale: it.mesh.scale.clone()
-        };
-      }
+      // também grava no root para fácil acesso
+      A.root.userData.target2D = A.target2D;
     });
   }
 
@@ -577,6 +668,7 @@ function doge_build2DTargets() {
 
     // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid) =====
  // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid + overlay cards) =====
+// ===== [DOGE] 3D → 2D (explodeZ → flatten/grid) + câmera frontal =====
 function apply2DTransition() {
   const t = flatten2D || 0;
   const phase = (t <= 0.5) ? 0 : 1;
@@ -584,66 +676,138 @@ function apply2DTransition() {
 
   if (!torre) return;
 
+  // Inicializações únicas
+  if (!__dogeAptRoots.length) doge_collectApartmentRoots();
   if (!__doge2DTargetsBuilt) doge_build2DTargets();
-  if (!__dogeCardsBuilt) doge_build2DCards();
 
-  if (typeof controls !== 'undefined' && controls) {
-    controls.enableRotate = (t === 0);
+  // snapshot de câmera no momento que o usuário sai de 0
+  if (t > 0 && !__camSnap) {
+    doge_snapshotCamera();
+    doge_computeFrontPose();
+  }
+  // tween da câmera: 0→frente
+  if (t > 0) {
+    doge_tweenCamera(THREE.MathUtils.smoothstep(t, 0, 1));
+  } else {
+    // t == 0: garante estado original
+    if (__camSnap && camera && controls) {
+      camera.position.copy(__camSnap.pos);
+      controls.target.copy(__camSnap.target);
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
+    __camSnap = null;
+    __camFront = null;
+  }
+
+  // Controles de interação
+  if (controls) {
+    controls.enableRotate = (t === 0);  // trava rotação no 2D
     controls.enablePan    = true;
     controls.enableZoom   = true;
   }
 
-  torre.traverse(o => {
-    if (!o || !o.isMesh) return;
-
-    const base = (o.userData && (o.userData._base || {
-      pos: o.position.clone(),
-      rot: o.rotation.clone(),
-      scale: o.scale.clone()
-    })) || null;
-    if (!o.userData._base) o.userData._base = base;
-
-    const meta = (o.userData && (o.userData.meta || o.userData)) || {};
+  // Movimentação dos apartamentos (mover raiz!)
+  for (const A of __dogeAptRoots) {
+    const root = A.root;
+    const base = A.base;
+    const meta = A.meta || {};
     const zIndex = Number(meta.zIndex || meta.z || 0) || 0;
 
     const Bpos = base.pos.clone();
     Bpos.z += (zIndex * -120);
 
     if (phase === 0) {
-      o.position.lerpVectors(base.pos, Bpos, local);
+      // A → B (explodeZ)
+      root.position.lerpVectors(base.pos, Bpos, local);
       const sZ = THREE.MathUtils.lerp(base.scale.z, base.scale.z * 0.85, local);
-      o.scale.set(base.scale.x, base.scale.y, sZ);
-      if (o.material && 'opacity' in o.material) {
-        o.material.transparent = true;
-        o.material.opacity = 1.0;
-      }
+      root.scale.set(base.scale.x, base.scale.y, sZ);
+
+      // meshes sólidos
+      root.traverse(n=>{
+        if (n.isMesh && n.material && 'opacity' in n.material) {
+          n.material.transparent = true;
+          n.material.opacity = 1.0;
+        }
+      });
+
     } else {
-      const tgt = o.userData._2dTarget;
+      // B → C (grid 2D)
+      const tgt = A.target2D;
       const Cpos = tgt ? new THREE.Vector3(tgt.x, tgt.y, 0) : Bpos;
-      o.position.lerpVectors(Bpos, Cpos, local);
+
+      root.position.lerpVectors(Bpos, Cpos, local);
 
       const scaleZ = THREE.MathUtils.lerp(base.scale.z * 0.85, 0.05, local);
       const scaleX = THREE.MathUtils.lerp(base.scale.x, 1.0, local);
       const scaleY = THREE.MathUtils.lerp(base.scale.y, 1.0, local);
-      o.scale.set(scaleX, scaleY, scaleZ);
+      root.scale.set(scaleX, scaleY, scaleZ);
 
-      if (o.material && 'opacity' in o.material) {
-        o.material.transparent = true;
-        o.material.opacity = THREE.MathUtils.lerp(1.0, 0.3, local);
-      }
+      // crossfade leve nos meshes
+      root.traverse(n=>{
+        if (n.isMesh && n.material && 'opacity' in n.material) {
+          n.material.transparent = true;
+          n.material.opacity = THREE.MathUtils.lerp(1.0, 0.35, local);
+        }
+      });
     }
-  });
+  }
 
+  // Overlay de cards
   if (phase === 1) {
+    if (!__dogeCardsBuilt) doge_build2DCards();
     doge_render2DCards(local);
   } else {
     doge_hide2DCards();
   }
 
+  // Pointer events (canvas x overlay)
   if (renderer && renderer.domElement) {
     renderer.domElement.style.pointerEvents = (t >= 0.95) ? 'none' : 'auto';
   }
 }
+
+
+
+    /* ===== [DOGE] Tween de câmera: snapshot ↔ frente ===== */
+let __camSnap = null;   // {pos, target}
+let __camFront = null;  // {pos, target}
+
+function doge_snapshotCamera(){
+  if (!camera || !controls) return;
+  __camSnap = {
+    pos: camera.position.clone(),
+    target: controls.target.clone()
+  };
+}
+
+function doge_computeFrontPose(){
+  if (!torre || !controls) return;
+  // calcula o bounding box do prédio para centralizar
+  const box = new THREE.Box3().setFromObject(torre);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+
+  // distância para caber na tela (aproximação)
+  const fitWidth = size.x * 0.6;
+  const dist = fitWidth / Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  const pos = new THREE.Vector3(center.x, center.y, center.z + dist + size.z*0.5);
+
+  __camFront = {
+    pos, target: center.clone()
+  };
+}
+
+function doge_tweenCamera(t01){
+  // t01: 0 = snapshot original; 1 = frontal
+  if (!__camSnap || !__camFront || !camera || !controls) return;
+
+  camera.position.lerpVectors(__camSnap.pos, __camFront.pos, t01);
+  controls.target.lerpVectors(__camSnap.target, __camFront.target, t01);
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
     // ===== VoxelizaÃ§Ã£o por APTO =====
     function voxelizeByApto(l){
       const byApto = new Map();
@@ -962,44 +1126,55 @@ if (flatten2DRange && flatten2DVal){
   });
 }
     // Reset explode/2D e volta cada mesh à base
+// Reset explode + 2D + câmera
 document.getElementById('resetExplode')?.addEventListener('click', () => {
   explodeXY = 0;
   explodeY  = 0;
   flatten2D = 0;
 
   // sliders (se existirem)
-  const ex = document.getElementById('explodeXY');
-  const ey = document.getElementById('explodeY');
-  const f2 = document.getElementById('flatten2D');
-  const vx = document.getElementById('explodeXYVal');
-  const vy = document.getElementById('explodeYVal');
-  const v2 = document.getElementById('flatten2DVal');
+  document.getElementById('explodeXY')?.value = '0';
+  document.getElementById('explodeY') ?.value = '0';
+  document.getElementById('flatten2D')?.value = '0';
+  document.getElementById('explodeXYVal')?.textContent = '0.00';
+  document.getElementById('explodeYVal') ?.textContent = '0.00';
+  document.getElementById('flatten2DVal')?.textContent = '0.00';
 
-  if (ex) ex.value = '0';
-  if (ey) ey.value = '0';
-  if (f2) f2.value = '0';
-
-  if (vx) vx.textContent = '0.00';
-  if (vy) vy.textContent = '0.00';
-  if (v2) v2.textContent = '0.00';
-
-  // libera rotação
-  if (typeof controls !== 'undefined' && controls) {
-    controls.enableRotate = true;
+  // restaurar transform dos apt roots
+  if (__dogeAptRoots.length) {
+    for (const A of __dogeAptRoots){
+      const base = A.base;
+      A.root.position.copy(base.pos);
+      A.root.rotation.copy(base.rot);
+      A.root.scale.copy(base.scale);
+      // restaurar materiais
+      A.root.traverse(n=>{
+        if (n.isMesh && n.material && 'opacity' in n.material) {
+          n.material.transparent = false;
+          n.material.opacity = 1.0;
+        }
+      });
+    }
   }
 
-  // volta cada mesh para a base
-  if (torre) {
-    torre.traverse(o => {
-      if (!o || !o.isMesh) return;
-      const base = o.userData && o.userData._base;
-      if (base) {
-        o.position.copy(base.pos);
-        o.rotation.copy(base.rot);
-        o.scale.copy(base.scale);
-      }
-    });
+  // esconder overlay e liberar canvas
+  doge_hide2DCards();
+  if (renderer && renderer.domElement) {
+    renderer.domElement.style.pointerEvents = 'auto';
   }
+
+  // restaurar câmera
+  if (__camSnap && camera && controls) {
+    camera.position.copy(__camSnap.pos);
+    controls.target.copy(__camSnap.target);
+    camera.updateProjectionMatrix();
+    controls.update();
+  }
+  __camSnap = null;
+  __camFront = null;
+
+  // liberar rotação
+  if (controls) controls.enableRotate = true;
 });
 
     document.getElementById('resetRot').addEventListener('click', () => {
@@ -1099,6 +1274,7 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
 
