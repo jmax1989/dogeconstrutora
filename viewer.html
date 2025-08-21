@@ -298,6 +298,7 @@ const cards2dRoot = document.getElementById('cards2d');
     }
 
 /* ===== [DOGE] Overlay 2D: criação/atualização dos cards ===== */
+/* ===== [DOGE] Overlay 2D: criação/atualização dos cards ===== */
 let __dogeCardsBuilt = false;
 
 function doge_colorFor(meta){
@@ -307,29 +308,33 @@ function doge_colorFor(meta){
 }
 
 function doge_build2DCards(){
-  if (!APTS.length) return;
+  if (!torre || !torre.children) return;
   cards2dRoot.innerHTML = '';
-  for (const a of APTS){
-    if (!a.target2D) continue;
+
+  torre.traverse(o=>{
+    if (!o.isMesh || !o.userData) return;
+    const meta = o.userData.meta || o.userData;
+    if (!o.userData.target2D) return;
 
     const el = document.createElement('div');
     el.className = 'card';
-    el.dataset.id = a.meta?.id || a.meta?.name || '';
-    el.style.background = doge_colorFor(a.meta);
+    el.dataset.id = meta?.id || meta?.name || '';
+    el.style.background = doge_colorFor(meta);
 
     const lab = document.createElement('div');
     lab.className = 'label';
-    lab.textContent = a.meta?.name || a.meta?.id || 'apt';
+    lab.textContent = meta?.name || meta?.id || 'apt';
     el.appendChild(lab);
 
     el.addEventListener('click', (ev)=>{
       ev.stopPropagation();
-      openAptModal(a.meta); // usa seu modal existente
+      openAptModal(meta); // usa seu modal existente
     });
 
     cards2dRoot.appendChild(el);
-    a._cardEl = el;
-  }
+    o.userData._cardEl = el;
+  });
+
   __dogeCardsBuilt = true;
 }
 
@@ -340,24 +345,28 @@ function doge_render2DCards(localT){
   const interactive = (flatten2D >= 0.95);
   cards2dRoot.style.pointerEvents = interactive ? 'auto' : 'none';
 
-  for (const a of APTS){
-    const el = a._cardEl;
-    const tgt = a.target2D;
-    if (!el || !tgt) continue;
+  torre.traverse(o=>{
+    if (!o.isMesh || !o.userData) return;
+    const el = o.userData._cardEl;
+    const tgt = o.userData.target2D;
+    if (!el || !tgt) return;
 
     const screen = worldToScreen(new THREE.Vector3(tgt.x, tgt.y, 0));
     el.style.left = `${screen.x}px`;
     el.style.top  = `${screen.y}px`;
 
     el.style.opacity = String(0.1 + 0.9 * localT);
-    el.style.background = doge_colorFor(a.meta);
-  }
+    el.style.background = doge_colorFor(o.userData.meta || o.userData);
+  });
 }
 
 function doge_hide2DCards(){
-  for (const a of APTS){
-    if (a._cardEl) a._cardEl.style.opacity = '0';
-  }
+  if (!torre || !torre.children) return;
+  torre.traverse(o=>{
+    if (o.isMesh && o.userData._cardEl) {
+      o.userData._cardEl.style.opacity = '0';
+    }
+  });
   cards2dRoot.style.pointerEvents = 'none';
 }
       
@@ -1090,6 +1099,7 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
 
