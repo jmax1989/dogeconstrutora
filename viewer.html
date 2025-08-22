@@ -1127,56 +1127,67 @@ if (flatten2DRange && flatten2DVal){
 }
     // Reset explode/2D e volta cada mesh à base
 // Reset explode + 2D + câmera
-document.getElementById('resetExplode')?.addEventListener('click', () => {
-  explodeXY = 0;
-  explodeY  = 0;
-  flatten2D = 0;
+// Reset explode + 2D + câmera  (SUBSTITUA O BLOCO INTEIRO)
+const btnReset = document.getElementById('resetExplode');
+if (btnReset) {
+  btnReset.addEventListener('click', () => {
+    explodeXY = 0;
+    explodeY  = 0;
+    flatten2D = 0;
 
-  // sliders (se existirem)
-  document.getElementById('explodeXY')?.value = '0';
-  document.getElementById('explodeY') ?.value = '0';
-  document.getElementById('flatten2D')?.value = '0';
-  document.getElementById('explodeXYVal')?.textContent = '0.00';
-  document.getElementById('explodeYVal') ?.textContent = '0.00';
-  document.getElementById('flatten2DVal')?.textContent = '0.00';
+    // sliders
+    const ex = document.getElementById('explodeXY');
+    const ey = document.getElementById('explodeY');
+    const f2 = document.getElementById('flatten2D');
+    if (ex) ex.value = '0';
+    if (ey) ey.value = '0';
+    if (f2) f2.value = '0';
 
-  // restaurar transform dos apt roots
-  if (__dogeAptRoots.length) {
-    for (const A of __dogeAptRoots){
-      const base = A.base;
-      A.root.position.copy(base.pos);
-      A.root.rotation.copy(base.rot);
-      A.root.scale.copy(base.scale);
-      // restaurar materiais
-      A.root.traverse(n=>{
-        if (n.isMesh && n.material && 'opacity' in n.material) {
-          n.material.transparent = false;
-          n.material.opacity = 1.0;
-        }
-      });
+    // labels
+    const vx = document.getElementById('explodeXYVal');
+    const vy = document.getElementById('explodeYVal');
+    const v2 = document.getElementById('flatten2DVal');
+    if (vx) vx.textContent = '0.00';
+    if (vy) vy.textContent = '0.00';
+    if (v2) v2.textContent = '0.00';
+
+    // restaurar transform dos apt roots
+    if (typeof __dogeAptRoots !== 'undefined' && __dogeAptRoots.length) {
+      for (const A of __dogeAptRoots){
+        const base = A.base;
+        A.root.position.copy(base.pos);
+        A.root.rotation.copy(base.rot);
+        A.root.scale.copy(base.scale);
+        // restaurar materiais
+        A.root.traverse(n=>{
+          if (n.isMesh && n.material && 'opacity' in n.material) {
+            n.material.transparent = false;
+            n.material.opacity = 1.0;
+          }
+        });
+      }
     }
-  }
 
-  // esconder overlay e liberar canvas
-  doge_hide2DCards();
-  if (renderer && renderer.domElement) {
-    renderer.domElement.style.pointerEvents = 'auto';
-  }
+    // esconder overlay e liberar canvas
+    if (typeof doge_hide2DCards === 'function') doge_hide2DCards();
+    if (renderer && renderer.domElement) {
+      renderer.domElement.style.pointerEvents = 'auto';
+    }
 
-  // restaurar câmera
-  if (__camSnap && camera && controls) {
-    camera.position.copy(__camSnap.pos);
-    controls.target.copy(__camSnap.target);
-    camera.updateProjectionMatrix();
-    controls.update();
-  }
-  __camSnap = null;
-  __camFront = null;
+    // restaurar câmera
+    if (typeof __camSnap !== 'undefined' && __camSnap && camera && controls) {
+      camera.position.copy(__camSnap.pos);
+      controls.target.copy(__camSnap.target);
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
+    if (typeof __camSnap !== 'undefined') __camSnap = null;
+    if (typeof __camFront !== 'undefined') __camFront = null;
 
-  // liberar rotação
-  if (controls) controls.enableRotate = true;
-});
-
+    // liberar rotação
+    if (controls) controls.enableRotate = true;
+  });
+}
     document.getElementById('resetRot').addEventListener('click', () => {
       pivot.rotation.set(0,0,0);
       theta = 0;
@@ -1274,6 +1285,7 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
 
