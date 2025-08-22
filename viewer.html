@@ -669,6 +669,7 @@ function doge_build2DTargets() {
     // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid) =====
  // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid + overlay cards) =====
 // ===== [DOGE] 3D → 2D (explodeZ → flatten/grid) + câmera frontal =====
+// ===== [DOGE] 3D → 2D (explodeZ → flatten/grid) + câmera frontal (com ORBITCONTROLS) =====
 function apply2DTransition() {
   const t = flatten2D || 0;
   const phase = (t <= 0.5) ? 0 : 1;
@@ -682,29 +683,29 @@ function apply2DTransition() {
 
   // snapshot de câmera no momento que o usuário sai de 0
   if (t > 0 && !__camSnap) {
-    doge_snapshotCamera();
+    doge_snapshotCamera();   // usa orbitControls internamente
     doge_computeFrontPose();
   }
   // tween da câmera: 0→frente
   if (t > 0) {
-    doge_tweenCamera(THREE.MathUtils.smoothstep(t, 0, 1));
+    doge_tweenCamera(THREE.MathUtils.smoothstep(t, 0, 1)); // usa orbitControls internamente
   } else {
     // t == 0: garante estado original
-    if (__camSnap && camera && controls) {
+    if (__camSnap && camera && typeof orbitControls !== 'undefined' && orbitControls) {
       camera.position.copy(__camSnap.pos);
-      controls.target.copy(__camSnap.target);
+      orbitControls.target.copy(__camSnap.target);
       camera.updateProjectionMatrix();
-      controls.update();
+      orbitControls.update();
     }
     __camSnap = null;
     __camFront = null;
   }
 
-  // Controles de interação
-  if (controls) {
-    controls.enableRotate = (t === 0);  // trava rotação no 2D
-    controls.enablePan    = true;
-    controls.enableZoom   = true;
+  // Controles de interação (usar orbitControls)
+  if (typeof orbitControls !== 'undefined' && orbitControls) {
+    orbitControls.enableRotate = (t === 0);  // trava rotação no 2D
+    orbitControls.enablePan    = true;
+    orbitControls.enableZoom   = true;
   }
 
   // Movimentação dos apartamentos (mover raiz!)
@@ -773,13 +774,13 @@ function apply2DTransition() {
 let __camSnap = null;   // {pos, target}
 let __camFront = null;  // {pos, target}
 
-function doge_snapshotCamera(){
-  if (!camera || !controls) return;
+function doge_snapshotCamera() {
   __camSnap = {
     pos: camera.position.clone(),
-    target: controls.target.clone()
+    target: orbitControls.target.clone()
   };
 }
+
 
 function doge_computeFrontPose(){
   if (!torre || !controls) return;
@@ -1285,6 +1286,7 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
 
