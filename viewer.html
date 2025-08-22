@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Prédio 3D viewer</title>
+  <title>Prédio 3D — viewer (cores herdadas da FVS)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <style>
     html, body { height: 100%; margin: 0; }
@@ -10,7 +10,7 @@
     #app { position: fixed; inset: 0; }
     canvas { display:block; }
 
-    /* === HUD (desktop por padrÃ£o) === */
+    /* === HUD (desktop por padrão) === */
     #hud {
       position: fixed; left: 12px; top: 12px; padding: 10px 12px;
       background: rgba(0,0,0,.45); backdrop-filter: blur(6px);
@@ -22,7 +22,7 @@
     .val { width: 3.6rem; text-align: right; display: inline-block; }
     button, label { user-select: none; }
 
-    /* AlÃ§a (handle) e botÃ£o de toggle */
+    /* Alça (handle) e botão de toggle */
     #hud .handle { display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
     #hud .grabber {
       width: 44px; height: 6px; border-radius: 4px;
@@ -54,13 +54,13 @@
         overflow: auto;
         transform: translateY(0); /* expandido */
       }
-      /* No mobile, recolhido = sÃ³ a â€œalÃ§aâ€ visÃ­vel (~40px) */
+      /* No mobile, recolhido = só a “alça” visível (~40px) */
       #hud.collapsed {
         transform: translateY(calc(100% - 40px));
       }
     }
 
-    /* Respeita usuÃ¡rios com movimento reduzido */
+    /* Respeita usuários com movimento reduzido */
     @media (prefers-reduced-motion: reduce) {
       #hud { transition: none; }
     }
@@ -68,39 +68,13 @@
     /* O canvas deve receber todos os gestos (sem scroll/browser gestures) */
     canvas { touch-action: none; }
 
-    /* O HUD pode rolar verticalmente, mas a alÃ§a nÃ£o */
+    /* O HUD pode rolar verticalmente, mas a alça não */
     #hud { touch-action: pan-y; }
     #hudHandle { touch-action: none; }
-
-    /* ==== Camadas: canvas (0) < cards2d (9) < HUD (10) ==== */
-#app canvas { position:absolute; inset:0; z-index:0; display:block; }
-#cards2d .card{
-  position:absolute; width:120px; height:72px;
-  border-radius:10px; border:1px solid rgba(255,255,255,.18);
-  background:rgba(34,40,53,.92); color:#e6eef7;
-  font:12px/1.2 system-ui, -apple-system, Segoe UI, Roboto;
-  box-shadow:0 8px 24px rgba(0,0,0,.35);
-  display:flex; align-items:center; justify-content:center;
-  user-select:none; cursor:pointer;
-  transform:translate(-50%,-50%);
-  opacity:0; transition:opacity .18s ease;
-  pointer-events:auto; /* controlado pelo JS com base no t */
-}
-#cards2d .card .label{
-  padding:.35rem .55rem; border-radius:999px;
-  background:rgba(0,0,0,.25);
-  border:1px solid rgba(255,255,255,.12);
-}
   </style>
 </head>
 <body>
-  <!-- ==== BLOCO DO CONTAINER 3D + OVERLAY 2D (SUBSTITUIR A LINHA 77) ==== -->
-<div id="app" style="position:fixed; inset:0">
-  <!-- O canvas do Three.js será anexado aqui via JS (root.appendChild(renderer.domElement)) -->
-  <!-- Overlay dos cards 2D clicáveis -->
-  <div id="cards2d" style="position:absolute; inset:0; z-index:9; pointer-events:none;"></div>
-</div>
-<!-- ==== FIM DO BLOCO ==== -->
+  <div id="app"></div>
 
   <div id="hud">
     <div class="row handle" id="hudHandle">
@@ -120,21 +94,15 @@
       Opacidade: <input id="opacity" type="range" min="5" max="100" value="30" />
       <span id="opacityVal" class="val">0.30</span>
     </div>
-<div class="row">
-  Explodir XY: <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
-  <span id="explodeXYVal" class="val">0.00</span>
-</div>
-<div class="row">
-  Explodir Y (piso): <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
-  <span id="explodeYVal" class="val">0.00</span>
-</div>
-<div class="row">
-  2D (explode→grid): <input id="flatten2D" type="range" min="0" max="1" step="0.01" value="0" />
-  <span id="flatten2DVal" class="val">0.00</span>
-</div>
-<div class="row">
-  <button id="resetExplode">Reset</button>
-</div>
+    <div class="row">
+      Explodir XY: <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
+      <span id="explodeXYVal" class="val">0.00</span>
+    </div>
+    <div class="row">
+      Explodir Y (piso): <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
+      <span id="explodeYVal" class="val">0.00</span>
+      <button id="resetExplode">Reset</button>
+    </div>
   </div>
 
   <!-- THREE -->
@@ -148,8 +116,6 @@
 
     // ====== Setup ======
     const root = document.getElementById('app');
-   // Overlay 2D (cards)
-const cards2dRoot = document.getElementById('cards2d'); 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0d1117);
 
@@ -172,7 +138,7 @@ const cards2dRoot = document.getElementById('cards2d');
     const torre = new THREE.Group();
     pivot.add(torre);
 
-    // ====== Ã“rbita + Pan ======
+    // ====== Órbita + Pan ======
     const INITIAL_RADIUS = 28;
     const INITIAL_PHI = Math.PI * 0.35;
 
@@ -191,8 +157,7 @@ const cards2dRoot = document.getElementById('cards2d');
     }
     updateCamera();
 
-
-    // ===== Ã“rbita + Pan (mouse) + PinÃ§a (zoom) e 2 dedos (pan) â€” Pointer Events =====
+    // ===== Órbita + Pan (mouse) + Pinça (zoom) e 2 dedos (pan) — Pointer Events =====
     let activePointers = new Map();     // pointerId -> {x,y}
     let dragging = false;
     let dragMode = 'orbit';
@@ -211,12 +176,12 @@ const cards2dRoot = document.getElementById('cards2d');
 
       const pts = ptsArr();
       if (pts.length === 1){
-        // 1 dedo / 1 mouse: ORBIT (botÃ£o direito do mouse = pan)
+        // 1 dedo / 1 mouse: ORBIT (botão direito do mouse = pan)
         dragMode = (e.button === 2) ? 'pan' : 'orbit';
         dragging = true;
         lastX = e.clientX; lastY = e.clientY;
       } else if (pts.length === 2){
-        // 2 dedos: pinÃ§a + pan do centroide
+        // 2 dedos: pinça + pan do centroide
         const [p1,p2] = pts;
         gesture = {
           startDist:   dist(p1,p2),
@@ -257,13 +222,13 @@ const cards2dRoot = document.getElementById('cards2d');
         return;
       }
 
-      // 2 apontadores (pinÃ§a para zoom + centroide para pan)
+      // 2 apontadores (pinça para zoom + centroide para pan)
       if (pts.length === 2 && gesture){
         const c  = centroid(pts);
         const d  = dist(pts[0], pts[1]);
 
         if (gesture.startDist > 0){
-          // afastar dedos afasta a cÃ¢mera (zoom out)
+          // afastar dedos afasta a câmera (zoom out)
           const scale = d / gesture.startDist;
           const newR  = gesture.startRadius / Math.max(0.2, Math.min(5, scale));
           radius = clamp(newR, minRadius, maxRadius);
@@ -298,185 +263,12 @@ const cards2dRoot = document.getElementById('cards2d');
       e.preventDefault();
     }
 
-
-    /* ===== [DOGE] Helper: reparent preservando world transform (sem SceneUtils) ===== */
-function attachPreserveWorld(obj, newParent) {
-  // Guarda a matrixWorld atual do objeto
-  const oldWorld = obj.matrixWorld.clone();
-
-  // Muda o parent
-  newParent.add(obj);
-
-  // newParent.matrixWorld^-1 * oldWorld = nova matrix local do obj
-  const invParentWorld = new THREE.Matrix4().copy(newParent.matrixWorld).invert();
-  const newLocal = new THREE.Matrix4().multiplyMatrices(invParentWorld, oldWorld);
-
-  // Aplica no objeto e atualiza posição/rotação/escala
-  obj.matrix.copy(newLocal);
-  obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
-  obj.updateMatrixWorld(true);
-}
-
-/* ===== [DOGE] Coleta de raízes de apartamentos (mesh + contorno juntos) ===== */
-let __dogeAptRoots = [];      // [{root, meta, base:{pos,rot,scale}}...]
-let __doge2DTargetsBuilt = false;
-
-function doge_collectApartmentRoots() {
-  __dogeAptRoots = [];
-
-  if (!torre) return;
-  const seen = new Set();
-
-  torre.updateMatrixWorld(true);
-
-  torre.traverse(obj => {
-    if (!obj) return;
-    // meta pode estar em obj.userData.meta ou diretamente em userData
-    const meta = (obj.userData && (obj.userData.meta || obj.userData)) || null;
-
-    // consideramos "apartamento" quando encontrar um mesh com meta.floor/col
-    if (obj.isMesh && meta && (meta.floor != null) && (meta.col != null)) {
-      let root = obj;
-
-      // Se o pai não é a torre, prefira mover o pai (inclui contornos/linhas)
-      if (obj.parent && obj.parent !== torre) {
-        root = obj.parent;
-      } else {
-        // Se está diretamente sob 'torre', verifique irmãos de contorno
-        const siblings = obj.parent ? obj.parent.children.slice() : [];
-        const hasContourSibling = siblings.some(
-          c => c !== obj && (c.isLine || c.isLineSegments || c.isPoints)
-        );
-
-        if (hasContourSibling) {
-          // Cria wrapper e reparenta mesh + contornos mantendo world transform
-          const wrap = new THREE.Group();
-          wrap.name = `APT_WRAP_${meta.name || meta.id || ''}`;
-          wrap.updateMatrixWorld(true);
-
-          // Adiciona o wrapper sob a torre, posicionado exatamente no mundo
-          torre.add(wrap);
-          wrap.position.copy(new THREE.Vector3(0,0,0));
-          wrap.quaternion.copy(new THREE.Quaternion());
-          wrap.scale.set(1,1,1);
-          wrap.updateMatrixWorld(true);
-
-          // Move o mesh principal
-          attachPreserveWorld(obj, wrap);
-
-          // Move irmãos de contorno (line/edges/points)
-          siblings.forEach(n => {
-            if (n === obj) return;
-            if (n.isLine || n.isLineSegments || n.isPoints) {
-              attachPreserveWorld(n, wrap);
-            }
-          });
-
-          root = wrap;
-        }
-      }
-
-      // Evita duplicados quando vários filhos trazem a mesma meta/raiz
-      if (seen.has(root.id)) return;
-      seen.add(root.id);
-
-      // Garante meta no root
-      root.userData.meta = root.userData.meta || meta;
-
-      // Base transform (uma vez)
-      if (!root.userData._base) {
-        root.userData._base = {
-          pos: root.position.clone(),
-          rot: root.rotation.clone(),
-          scale: root.scale.clone()
-        };
-      }
-
-      __dogeAptRoots.push({
-        root,
-        meta: root.userData.meta,
-        base: root.userData._base,
-        target2D: null // será preenchido no buildTargets
-      });
-    }
-  });
-}
-
-
-/* ===== [DOGE] Overlay 2D: criação/atualização dos cards ===== */
-/* ===== [DOGE] Overlay 2D: criação/atualização dos cards ===== */
-/* ===== [DOGE] Overlay 2D: cards clicáveis ===== */
-let __dogeCardsBuilt = false;
-
-function doge_colorFor(meta){
-  if (meta && meta.status && COLOR_MAP?.colors?.[meta.status]) return COLOR_MAP.colors[meta.status];
-  if (meta && meta.color) return meta.color;
-  return COLOR_MAP?.default || '#6e7681';
-}
-
-function doge_build2DCards(){
-  if (!__doge2DTargetsBuilt) doge_build2DTargets();
-  if (!__dogeAptRoots.length) return;
-
-  cards2dRoot.innerHTML = '';
-  for (const A of __dogeAptRoots){
-    if (!A.target2D) continue;
-
-    const el = document.createElement('div');
-    el.className = 'card';
-    el.dataset.id = A.meta?.id || A.meta?.name || '';
-    el.style.background = doge_colorFor(A.meta);
-
-    const lab = document.createElement('div');
-    lab.className = 'label';
-    lab.textContent = A.meta?.name || A.meta?.id || 'apt';
-    el.appendChild(lab);
-
-    el.addEventListener('click', (ev)=>{
-      ev.stopPropagation();
-      openAptModal(A.meta);
-    });
-
-    cards2dRoot.appendChild(el);
-    A.root.userData._cardEl = el;
-  }
-  __dogeCardsBuilt = true;
-}
-
-function doge_render2DCards(localT){
-  if (!__doge2DTargetsBuilt) doge_build2DTargets();
-  if (!__dogeCardsBuilt) doge_build2DCards();
-
-  const interactive = (flatten2D >= 0.95);
-  cards2dRoot.style.pointerEvents = interactive ? 'auto' : 'none';
-
-  for (const A of __dogeAptRoots){
-    const el = A.root.userData._cardEl;
-    const tgt = A.target2D;
-    if (!el || !tgt) continue;
-
-    const screen = worldToScreen(new THREE.Vector3(tgt.x, tgt.y, 0));
-    el.style.left = `${screen.x}px`;
-    el.style.top  = `${screen.y}px`;
-
-    el.style.opacity = String(0.1 + 0.9 * localT);
-    el.style.background = doge_colorFor(A.meta);
-  }
-}
-
-function doge_hide2DCards(){
-  for (const A of __dogeAptRoots){
-    if (A.root.userData._cardEl) A.root.userData._cardEl.style.opacity = '0';
-  }
-  cards2dRoot.style.pointerEvents = 'none';
-}
-      
     renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
     renderer.domElement.addEventListener('pointermove',   pointerMove3D,   {passive:false});
     renderer.domElement.addEventListener('pointerup',     pointerUp3D,     {passive:false});
     renderer.domElement.addEventListener('pointercancel', pointerUp3D,     {passive:false});
 
-    // bloqueia menu do botÃ£o direito (para pan no desktop)
+    // bloqueia menu do botão direito (para pan no desktop)
     renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
     // Scroll do mouse (zoom)
@@ -538,12 +330,12 @@ function doge_hide2DCards(){
       }
     }
 
-    // ===== DimensÃ£o bÃ¡sica em "mundo" =====
+    // ===== Dimensão básica em "mundo" =====
     const cellW = (layout.meta?.cellW ?? 1.2);
     const cellD = (layout.meta?.cellD ?? 1.2);
     const gap   = (layout.meta?.gap   ?? 0.15);
 
-    const aptoHeight = 0.5;          // altura "unitÃ¡ria" por nÃ­vel
+    const aptoHeight = 0.5;          // altura "unitária" por nível
     const stepX = cellW + gap;
     const stepZ = cellD + gap;
     const stepY = aptoHeight + gap;
@@ -551,10 +343,10 @@ function doge_hide2DCards(){
     function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
     function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
-    // ===== Explode (Ãºnica fonte de verdade) =====
+    // ===== Explode (única fonte de verdade) =====
     let explodeXY = 0.0;
     let explodeY  = 0.0;
-    let flatten2D = 0.0;   // NOVO
+
     function applyExplode(){
       if (!torre || torre.children.length === 0) return;
 
@@ -597,219 +389,7 @@ function doge_hide2DCards(){
       }
     }
 
-    /* ===== [DOGE] Alvos 2D (grade por pavimento×coluna, faixas por zIndex) ===== */
-//let __doge2DTargetsBuilt = false;
-
-/* ===== [DOGE] Alvos 2D no plano frontal (linhas = pavimentos; colunas = fachadas; faixas = z) ===== */
-function doge_build2DTargets() {
-  if (!__dogeAptRoots.length) doge_collectApartmentRoots();
-  if (!__dogeAptRoots.length) return;
-
-  // Agrupa por célula (floor|col)
-  const byCell = new Map();
-  let maxFloor = 0, maxCol = 0;
-
-  for (const a of __dogeAptRoots) {
-    const meta = a.meta || {};
-    const floor = Number(meta.floor) || 1;
-    const col   = Number(meta.col)   || 1;
-    const zIdx  = Number(meta.zIndex || meta.z || 0) || 0;
-
-    maxFloor = Math.max(maxFloor, floor);
-    maxCol   = Math.max(maxCol,   col);
-
-    const k = `${floor}|${col}`;
-    if (!byCell.has(k)) byCell.set(k, []);
-    byCell.get(k).push({ a, zIdx });
-  }
-
-  // Ordena por profundidade (zIndex)
-  for (const arr of byCell.values()) {
-    arr.sort((x,y)=> x.zIdx - y.zIdx);
-  }
-
-  // Parâmetros visuais do grid
-  const cellW = 140, cardW = 100, cardH = 60, cellH = 95;
-  const marginX = -((maxCol - 1) * cellW) / 2;
-  const marginY =  ((maxFloor) * cellH) / 2;
-
-  for (const [key, arr] of byCell) {
-    const [fStr, cStr] = key.split('|');
-    const floor = +fStr, col = +cStr;
-    const slots = arr.length;
-
-    const baseX = marginX + (col - 1) * cellW;
-    const baseY = marginY - (floor - 1) * cellH;
-    const stripeH = cardH / Math.max(1, slots);
-
-    arr.forEach((entry, idx) => {
-      const A = entry.a;
-      const stripeCenterY = baseY - cardH/2 + idx*stripeH + stripeH/2;
-
-      A.target2D = {
-        x: baseX,
-        y: stripeCenterY,
-        z: 0,
-        w: cardW,
-        h: stripeH,
-        slots,
-        stripeIndex: idx
-      };
-
-      // também grava no root para fácil acesso
-      A.root.userData.target2D = A.target2D;
-    });
-  }
-
-  __doge2DTargetsBuilt = true;
-}
-
-    // ===== 3D → 2D (explode→flatten→grid) — STUB =====
-
-    // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid) =====
- // ===== [DOGE] 3D → 2D (0..0.5 explodeZ ; 0.5..1 flatten+grid + overlay cards) =====
-// ===== [DOGE] 3D → 2D (explodeZ → flatten/grid) + câmera frontal =====
-// ===== [DOGE] 3D → 2D (explodeZ → flatten/grid) + câmera frontal (com ORBITCONTROLS) =====
-function apply2DTransition() {
-  const t = flatten2D || 0;
-  const phase = (t <= 0.5) ? 0 : 1;
-  const local = (phase === 0) ? (t / 0.5) : ((t - 0.5) / 0.5);
-
-  if (!torre) return;
-
-  // Inicializações únicas
-  if (!__dogeAptRoots.length) doge_collectApartmentRoots();
-  if (!__doge2DTargetsBuilt) doge_build2DTargets();
-
-  // snapshot de câmera no momento que o usuário sai de 0
-  if (t > 0 && !__camSnap) {
-    doge_snapshotCamera();   // usa orbitControls internamente
-    doge_computeFrontPose();
-  }
-  // tween da câmera: 0→frente
-  if (t > 0) {
-    doge_tweenCamera(THREE.MathUtils.smoothstep(t, 0, 1)); // usa orbitControls internamente
-  } else {
-    // t == 0: garante estado original
-    if (__camSnap && camera && typeof orbitControls !== 'undefined' && orbitControls) {
-      camera.position.copy(__camSnap.pos);
-      orbitControls.target.copy(__camSnap.target);
-      camera.updateProjectionMatrix();
-      orbitControls.update();
-    }
-    __camSnap = null;
-    __camFront = null;
-  }
-
-  // Controles de interação (usar orbitControls)
-  if (typeof orbitControls !== 'undefined' && orbitControls) {
-    orbitControls.enableRotate = (t === 0);  // trava rotação no 2D
-    orbitControls.enablePan    = true;
-    orbitControls.enableZoom   = true;
-  }
-
-  // Movimentação dos apartamentos (mover raiz!)
-  for (const A of __dogeAptRoots) {
-    const root = A.root;
-    const base = A.base;
-    const meta = A.meta || {};
-    const zIndex = Number(meta.zIndex || meta.z || 0) || 0;
-
-    const Bpos = base.pos.clone();
-    Bpos.z += (zIndex * -120);
-
-    if (phase === 0) {
-      // A → B (explodeZ)
-      root.position.lerpVectors(base.pos, Bpos, local);
-      const sZ = THREE.MathUtils.lerp(base.scale.z, base.scale.z * 0.85, local);
-      root.scale.set(base.scale.x, base.scale.y, sZ);
-
-      // meshes sólidos
-      root.traverse(n=>{
-        if (n.isMesh && n.material && 'opacity' in n.material) {
-          n.material.transparent = true;
-          n.material.opacity = 1.0;
-        }
-      });
-
-    } else {
-      // B → C (grid 2D)
-      const tgt = A.target2D;
-      const Cpos = tgt ? new THREE.Vector3(tgt.x, tgt.y, 0) : Bpos;
-
-      root.position.lerpVectors(Bpos, Cpos, local);
-
-      const scaleZ = THREE.MathUtils.lerp(base.scale.z * 0.85, 0.05, local);
-      const scaleX = THREE.MathUtils.lerp(base.scale.x, 1.0, local);
-      const scaleY = THREE.MathUtils.lerp(base.scale.y, 1.0, local);
-      root.scale.set(scaleX, scaleY, scaleZ);
-
-      // crossfade leve nos meshes
-      root.traverse(n=>{
-        if (n.isMesh && n.material && 'opacity' in n.material) {
-          n.material.transparent = true;
-          n.material.opacity = THREE.MathUtils.lerp(1.0, 0.35, local);
-        }
-      });
-    }
-  }
-
-  // Overlay de cards
-  if (phase === 1) {
-    if (!__dogeCardsBuilt) doge_build2DCards();
-    doge_render2DCards(local);
-  } else {
-    doge_hide2DCards();
-  }
-
-  // Pointer events (canvas x overlay)
-  if (renderer && renderer.domElement) {
-    renderer.domElement.style.pointerEvents = (t >= 0.95) ? 'none' : 'auto';
-  }
-}
-
-
-
-    /* ===== [DOGE] Tween de câmera: snapshot ↔ frente ===== */
-let __camSnap = null;   // {pos, target}
-let __camFront = null;  // {pos, target}
-
-function doge_snapshotCamera() {
-  __camSnap = {
-    pos: camera.position.clone(),
-    target: orbitControls.target.clone()
-  };
-}
-
-
-function doge_computeFrontPose(){
-  if (!torre || !controls) return;
-  // calcula o bounding box do prédio para centralizar
-  const box = new THREE.Box3().setFromObject(torre);
-  const size = new THREE.Vector3(); box.getSize(size);
-  const center = new THREE.Vector3(); box.getCenter(center);
-
-  // distância para caber na tela (aproximação)
-  const fitWidth = size.x * 0.6;
-  const dist = fitWidth / Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
-  const pos = new THREE.Vector3(center.x, center.y, center.z + dist + size.z*0.5);
-
-  __camFront = {
-    pos, target: center.clone()
-  };
-}
-
-function doge_tweenCamera(t01){
-  // t01: 0 = snapshot original; 1 = frontal
-  if (!__camSnap || !__camFront || !camera || !controls) return;
-
-  camera.position.lerpVectors(__camSnap.pos, __camFront.pos, t01);
-  controls.target.lerpVectors(__camSnap.target, __camFront.target, t01);
-  camera.updateProjectionMatrix();
-  controls.update();
-}
-
-    // ===== VoxelizaÃ§Ã£o por APTO =====
+    // ===== Voxelização por APTO =====
     function voxelizeByApto(l){
       const byApto = new Map();
       for (const p of l.placements){
@@ -887,7 +467,7 @@ function doge_tweenCamera(t01){
       return g;
     }
 
-    // ====== ConstruÃ§Ã£o ======
+    // ====== Construção ======
     function buildFromLayout(l){
       // limpa torre
       while (torre.children.length) torre.remove(torre.children[0]);
@@ -899,7 +479,7 @@ function doge_tweenCamera(t01){
         const surface = buildSurfaceGeometryFromOcc(occ);
         if (!surface) continue;
 
-        // material neutro (cores virÃ£o do FVS; opacidade coerente)
+        // material neutro (cores virão do FVS; opacidade coerente)
         const faceMat = new THREE.MeshStandardMaterial({
           color: new THREE.Color(0x6e7681),
           metalness: 0.05,
@@ -921,7 +501,7 @@ function doge_tweenCamera(t01){
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
         edges.renderOrder = 2;
 
-        // pavimento mÃ­nimo (explodeY)
+        // pavimento mínimo (explodeY)
         let minLevel = Infinity;
         for (const key of occ){
           const gy = parseInt(key.split(',')[1],10);
@@ -933,7 +513,7 @@ function doge_tweenCamera(t01){
         group.add(mesh); group.add(edges);
         group.position.set(0,0,0);
 
-        // guardaremos basePos e anchor apÃ³s centralizar tudo
+        // guardaremos basePos e anchor após centralizar tudo
         group.userData = {
           apto: String(apto),
           mesh, edges,
@@ -971,7 +551,7 @@ function doge_tweenCamera(t01){
         delete g.__localCenter;
       }
 
-      // CÃ¢mera inicial baseada no tamanho real
+      // Câmera inicial baseada no tamanho real
       const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
       const idealRadius = Math.max(8, diag * 0.75);
       radius = clamp(idealRadius, minRadius, maxRadius);
@@ -979,7 +559,7 @@ function doge_tweenCamera(t01){
       orbitTarget.set(0, 0, 0);
       updateCamera();
 
-      // Aplica estado atual do explode (zero â†’ colado)
+      // Aplica estado atual do explode (zero → colado)
       applyExplode();
     }
 
@@ -991,7 +571,7 @@ function doge_tweenCamera(t01){
 
     buildFromLayout(layout);
 
-    // ====== SeleÃ§Ã£o com mira refinada ======
+    // ====== Seleção com mira refinada ======
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -1013,7 +593,7 @@ function doge_tweenCamera(t01){
         inter = raycaster.intersectObjects(edgeObjects, false);
       }
 
-      // limpar seleÃ§Ã£o anterior
+      // limpar seleção anterior
       if (window.__SEL_GROUP__) {
         const gPrev = window.__SEL_GROUP__;
         gPrev.userData.edges.material = gPrev.__lineBackup;
@@ -1052,7 +632,7 @@ function doge_tweenCamera(t01){
       hudToggle.setAttribute('aria-expanded', String(!collapsed));
     });
 
-    // Gesto vertical simples: arrastar a alÃ§a para recolher/expandir
+    // Gesto vertical simples: arrastar a alça para recolher/expandir
     let hudDragId = null, hudStartY = 0, hudDy = 0;
     function hudPointerDown(e){
       hudDragId = e.pointerId;
@@ -1069,11 +649,11 @@ function doge_tweenCamera(t01){
       if (e.pointerId !== hudDragId) return;
       if (hudDy > 30) {
         hud.classList.add('collapsed');
-        hudToggle.textContent = 'â–´';
+        hudToggle.textContent = '▴';
         hudToggle.setAttribute('aria-expanded', 'false');
       } else if (hudDy < -30) {
         hud.classList.remove('collapsed');
-        hudToggle.textContent = 'â–¾';
+        hudToggle.textContent = '▾';
         hudToggle.setAttribute('aria-expanded', 'true');
       }
       try { hudHandle.releasePointerCapture(hudDragId); } catch(_){}
@@ -1085,7 +665,7 @@ function doge_tweenCamera(t01){
     hudHandle.addEventListener('pointerup',   hudPointerUp,   {passive:false});
     hudHandle.addEventListener('pointercancel', hudPointerUp, {passive:false});
 
-    // Clique na alÃ§a alterna (bom no desktop)
+    // Clique na alça alterna (bom no desktop)
     hudHandle.addEventListener('click', (e) => {
       if (e.target === hudToggle) return;
       hudToggle.click();
@@ -1116,79 +696,14 @@ function doge_tweenCamera(t01){
       explodeYVal.textContent = explodeY.toFixed(2);
       applyExplode();
     });
-    
-const flatten2DRange = document.getElementById('flatten2D');
-const flatten2DVal   = document.getElementById('flatten2DVal');
-if (flatten2DRange && flatten2DVal){
-  flatten2DRange.addEventListener('input', () => {
-    flatten2D = Number(flatten2DRange.value) || 0;
-    flatten2DVal.textContent = flatten2D.toFixed(2);
-    apply2DTransition();
-  });
-}
-    // Reset explode/2D e volta cada mesh à base
-// Reset explode + 2D + câmera
-// Reset explode + 2D + câmera  (SUBSTITUA O BLOCO INTEIRO)
-const btnReset = document.getElementById('resetExplode');
-if (btnReset) {
-  btnReset.addEventListener('click', () => {
-    explodeXY = 0;
-    explodeY  = 0;
-    flatten2D = 0;
 
-    // sliders
-    const ex = document.getElementById('explodeXY');
-    const ey = document.getElementById('explodeY');
-    const f2 = document.getElementById('flatten2D');
-    if (ex) ex.value = '0';
-    if (ey) ey.value = '0';
-    if (f2) f2.value = '0';
+    document.getElementById('resetExplode').addEventListener('click', () => {
+      explodeXY = 0; explodeY = 0;
+      explodeXYRange.value = '0'; explodeYRange.value = '0';
+      explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
+      applyExplode();
+    });
 
-    // labels
-    const vx = document.getElementById('explodeXYVal');
-    const vy = document.getElementById('explodeYVal');
-    const v2 = document.getElementById('flatten2DVal');
-    if (vx) vx.textContent = '0.00';
-    if (vy) vy.textContent = '0.00';
-    if (v2) v2.textContent = '0.00';
-
-    // restaurar transform dos apt roots
-    if (typeof __dogeAptRoots !== 'undefined' && __dogeAptRoots.length) {
-      for (const A of __dogeAptRoots){
-        const base = A.base;
-        A.root.position.copy(base.pos);
-        A.root.rotation.copy(base.rot);
-        A.root.scale.copy(base.scale);
-        // restaurar materiais
-        A.root.traverse(n=>{
-          if (n.isMesh && n.material && 'opacity' in n.material) {
-            n.material.transparent = false;
-            n.material.opacity = 1.0;
-          }
-        });
-      }
-    }
-
-    // esconder overlay e liberar canvas
-    if (typeof doge_hide2DCards === 'function') doge_hide2DCards();
-    if (renderer && renderer.domElement) {
-      renderer.domElement.style.pointerEvents = 'auto';
-    }
-
-    // restaurar câmera
-    if (typeof __camSnap !== 'undefined' && __camSnap && camera && controls) {
-      camera.position.copy(__camSnap.pos);
-      controls.target.copy(__camSnap.target);
-      camera.updateProjectionMatrix();
-      controls.update();
-    }
-    if (typeof __camSnap !== 'undefined') __camSnap = null;
-    if (typeof __camFront !== 'undefined') __camFront = null;
-
-    // liberar rotação
-    if (controls) controls.enableRotate = true;
-  });
-}
     document.getElementById('resetRot').addEventListener('click', () => {
       pivot.rotation.set(0,0,0);
       theta = 0;
@@ -1258,26 +773,14 @@ if (btnReset) {
       if (data.type === 'fvsColorMap') {
         aplicarCoresFVS(data.payload);
       }
-      if (data.type === 'doge-2d-set') {
-  flatten2D = Number(data.t) || 0;
-  const r = document.getElementById('flatten2D');
-  const v = document.getElementById('flatten2DVal');
-  if (r) r.value = String(flatten2D);
-  if (v) v.textContent = flatten2D.toFixed(2);
-  apply2DTransition();
-}
     });
     try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
-try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
+
     // ====== Resize & Loop ======
     addEventListener('resize', () => {
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-
-      if (flatten2D > 0.5) {
-  doge_render2DCards(Math.min(1, (flatten2D - 0.5) / 0.5));
-}
       updateCamera();
     });
 
@@ -1286,11 +789,3 @@ try { parent.postMessage({ type: 'doge-2d-ready' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
