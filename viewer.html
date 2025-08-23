@@ -237,6 +237,7 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
         lastX = e.clientX; lastY = e.clientY;
       } else if (pts.length === 2){
         // 2 dedos: pinça + pan do centroide
+        dragging = false;
         const [p1,p2] = pts;
         gesture = {
           startDist:   dist(p1,p2),
@@ -289,6 +290,10 @@ renderer.domElement.style.touchAction = 'none';
           radius = clamp(newR, minRadius, maxRadius);
         }
 
+          if (gesture && pts.length < 2) { e.preventDefault(); return; }
+           if (gesture && pts.length < 2) { e.preventDefault(); return; }
+
+  // ... resto do seu código de move ...
         const dx = c.x - gesture.lastCentroid.x;
         const dy = c.y - gesture.lastCentroid.y;
         if (dx || dy){
@@ -318,13 +323,29 @@ renderer.domElement.style.touchAction = 'none';
       e.preventDefault();
     }
 
+    
+     if (gesture && pts.length === 1){
+    const p = pts[0];
+    lastX = p.x; lastY = p.y;  // ressincroniza para evitar salto
+    dragging = false;          // exige um novo down para orbitar
+    gesture = null;
+    dragMode = 'orbit';
+    e.preventDefault();
+    return;
+  }
+
+  if (pts.length === 0){ dragging = false; gesture = null; }
+  if (pts.length < 2){ gesture = null; }
+  e.preventDefault();
+}
     renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
     renderer.domElement.addEventListener('pointermove',   pointerMove3D,   {passive:false});
     renderer.domElement.addEventListener('pointerup',     pointerUp3D,     {passive:false});
     renderer.domElement.addEventListener('pointercancel', pointerUp3D,     {passive:false});
 
     // bloqueia menu do botão direito (para pan no desktop)
-    renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+    renderer.domElement.ad
+      dEventListener('contextmenu', e => e.preventDefault());
 
     // Scroll do mouse (zoom)
     renderer.domElement.addEventListener('wheel', e=>{
@@ -399,7 +420,8 @@ renderer.domElement.style.touchAction = 'none';
     function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
     // ===== Explode (única fonte de verdade) =====
-    let explodeXY = 0.0;
+    let explodeXY = 0
+      .0;
     let explodeY  = 0.0;
 
     function applyExplode(){
@@ -1572,5 +1594,6 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
