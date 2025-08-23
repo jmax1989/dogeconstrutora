@@ -43,6 +43,8 @@ button, label { user-select: none; }
   border-radius: 8px; padding: 4px 8px; font-size: 13px; line-height: 1;
 }
 
+#hud { touch-action: pan-y; }      /* já está */
+#hud button, #hud input, #hud label { touch-action: manipulation; }    
 /* === Botão 2D (SVG) === */
 :root{
   --c-2d-off: #8b949e;   /* esmaecido no modo 3D */
@@ -114,13 +116,14 @@ button, label { user-select: none; }
   background: rgba(0,0,0,.25);
   border: 1px solid rgba(255,255,255,.12);
 }
+canvas { touch-action: none; }
+html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */   
     
   </style>
 </head>
 <body>
   <div id="app"><div id="cards2d"></div>
-</div>
-
+  </div>
   <div id="hud">
     <div class="row handle" id="hudHandle">
       <div class="grabber" aria-hidden="true"></div>
@@ -243,7 +246,7 @@ button, label { user-select: none; }
       }
       e.preventDefault();
     }
-
+renderer.domElement.style.touchAction = 'none';
     function pointerMove3D(e){
       if (!activePointers.has(e.pointerId)) return;
       activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
@@ -1523,3 +1526,4 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
