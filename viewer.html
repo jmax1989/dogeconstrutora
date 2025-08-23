@@ -10,38 +10,44 @@
     #app { position: fixed; inset: 0; }
     canvas { display:block; }
 
-/* === HUD fixo no rodapé (todas as telas) === */
-#hud {
+/* === HUD compacto no rodapé === */
+#hud{
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 20;
-  display: flex;
-  flex-wrap: wrap;            /* pode quebrar linha em telas estreitas */
-  gap: 8px;
-  align-items: center;
-  justify-content: center;    /* desktop: centraliza numa linha */
-  padding: 10px 12px;
+  display: flex; flex-wrap: wrap;
+  gap: 6px;
+  align-items: center; justify-content: center;
+  padding: 6px 8px;
   background: rgba(0,0,0,.45);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   color: #fff;
   border-top: 1px solid #30363d;
   border-radius: 10px 10px 0 0;
-  font-size: 14px;
+  font-size: 13px;
+}
+#hud .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+#hud .handle{ display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
+#hud .grabber{ width:40px; height:5px; border-radius:4px; background:#58606b; opacity:.85; margin-right:4px; }
+#hudToggle{
+  border: 1px solid #30363d; background:#0d1117; color:#c9d1d9;
+  border-radius: 8px; padding: 3px 6px; font-size: 12px; line-height:1;
 }
 
-/* Controles no HUD */
-#hud .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.val { width: 3.6rem; text-align: right; display: inline-block; }
-button, label { user-select: none; }
-
-/* Alça / botão */
-#hud .handle { display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
-#hud .grabber { width:44px; height:6px; border-radius:4px; background:#58606b; opacity:.85; margin-right:4px; }
-#hudToggle {
-  border: 1px solid #30363d; background: #0d1117; color: #c9d1d9;
-  border-radius: 8px; padding: 4px 8px; font-size: 13px; line-height: 1;
+/* sliders menores */
+#hud input[type="range"]{
+  width: 120px;           /* desktop largo: 160–180 se quiser */
+  height: 4px;
 }
+@media (min-width: 900px){
+  #hud{ flex-wrap:nowrap; padding:6px 8px; gap:8px; }
+  #hud input[type="range"]{ width: 150px; }
+  #hud button, #hud select, #hud label{ white-space:nowrap; }
+}
+
+/* colapsar: mostra só a linha de handle */
+#hud.collapsed .row:not(.handle){ display:none; }
 
 #hud { touch-action: pan-y; }      /* já está */
 #hud button, #hud input, #hud label { touch-action: manipulation; }    
@@ -132,23 +138,22 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
     </div>
 
     <div class="row">
-      <label><input id="wireOnly" type="checkbox" /> Só arame</label>
-      <button id="resetRot">🔄 Resetar giro</button>
-      <button id="recenter">🎯 Centralizar</button>
+      <button id="resetRot">🔄</button>
+      <button id="recenter">🎯</button>
     </div>
-    <div class="row">
-      Opacidade: <input id="opacity" type="range" min="0" max="100" value="100" />
-      <span id="opacityVal" class="val">1</span>
-    </div>
-    <div class="row">
-      Explodir XY: <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
-      <span id="explodeXYVal" class="val">0.00</span>
-    </div>
-    <div class="row">
-      Explodir Y (piso): <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
-      <span id="explodeYVal" class="val">0.00</span>
-      <button id="resetExplode">Reset</button>
-    </div>
+  <div class="row">
+    <label for="opacity" title="Opacidade">🌫️</label>
+    <input id="opacity" type="range" min="0" max="100" value="100" />
+  </div>
+  <div class="row">
+    <label for="explodeXY" title="Explodir XY">⤢</label>
+    <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
+  </div>
+  <div class="row">
+    <label for="explodeY" title="Explodir por piso (Y)">⬆️</label>
+    <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
+    <button id="resetExplode">Reset</button>
+  </div>
     <!-- [DOGE] Slider 2D (fade/zoom do prédio) -->
 <div class="row">
   <button id="btn2D" class="mode2d" title="Alternar visualização 2D">
@@ -750,7 +755,7 @@ renderer.domElement.addEventListener('click', (e) => {
 
 
     // ====== HUD / UI ======
-    const hud       = document.getElementById('hud');
+    const hud  = document.getElementById('hud');
     const hudToggle = document.getElementById('hudToggle');
     const hudHandle = document.getElementById('hudHandle');
 
@@ -799,50 +804,54 @@ renderer.domElement.addEventListener('click', (e) => {
       hudToggle.click();
     });
 
-    document.getElementById('wireOnly').addEventListener('change', (e) => setFacesVisible(!e.target.checked));
+  
+// Opacidade
+const opacity = document.getElementById('opacity');
+opacity.addEventListener('input', () => {
+  const v = Number(opacity.value) / 100;
+  setFaceOpacity(v);
+});
 
-    const opacity = document.getElementById('opacity');
-    const opacityVal = document.getElementById('opacityVal');
-    opacity.addEventListener('input', () => {
-      const v = Number(opacity.value) / 100;
-      opacityVal.textContent = v.toFixed(2);
-      setFaceOpacity(v);
-    });
+// Explodir XY
+const explodeXYRange = document.getElementById('explodeXY');
+explodeXYRange.addEventListener('input', () => {
+  explodeXY = Number(explodeXYRange.value) || 0;
+  applyExplode();
+});
 
-    const explodeXYRange = document.getElementById('explodeXY');
-    const explodeXYVal   = document.getElementById('explodeXYVal');
-    explodeXYRange.addEventListener('input', () => {
-      explodeXY = Number(explodeXYRange.value) || 0;
-      explodeXYVal.textContent = explodeXY.toFixed(2);
-      applyExplode();
-    });
+// Explodir Y (piso)
+const explodeYRange = document.getElementById('explodeY');
+explodeYRange.addEventListener('input', () => {
+  explodeY = Number(explodeYRange.value) || 0;
+  applyExplode();
+});
 
-    const explodeYRange = document.getElementById('explodeY');
-    const explodeYVal   = document.getElementById('explodeYVal');
-    explodeYRange.addEventListener('input', () => {
-      explodeY = Number(explodeYRange.value) || 0;
-      explodeYVal.textContent = explodeY.toFixed(2);
-      applyExplode();
-    });
+// Reset explode
+document.getElementById('resetExplode').addEventListener('click', () => {
+  explodeXY = 0; explodeY = 0;
+  explodeXYRange.value = '0';
+  explodeYRange.value  = '0';
+  applyExplode();
+});
 
-    document.getElementById('resetExplode').addEventListener('click', () => {
-      explodeXY = 0; explodeY = 0;
-      explodeXYRange.value = '0'; explodeYRange.value = '0';
-      explodeXYVal.textContent = '0.00'; explodeYVal.textContent = '0.00';
-      applyExplode();
-    });
+// Reset rotação
+document.getElementById('resetRot').addEventListener('click', () => {
+  pivot.rotation.set(0,0,0);
+  theta = 0;
+  updateCamera();
+});
 
-    document.getElementById('resetRot').addEventListener('click', () => {
-      pivot.rotation.set(0,0,0);
-      theta = 0;
-      updateCamera();
-    });
+// Recentrar
+document.getElementById('recenter').addEventListener('click', () => {
+  recenterOrbitTarget();
+  radius = INITIAL_RADIUS; 
+  phi = INITIAL_PHI;
+  updateCamera();
+});
 
-    document.getElementById('recenter').addEventListener('click', () => {
-      recenterOrbitTarget();
-      radius = INITIAL_RADIUS; phi = INITIAL_PHI;
-      updateCamera();
-    });
+// Inicializa opacidade sem usar opacityVal
+setFaceOpacity(Number(opacity.value)/100);
+
     // ================== [DOGE] Fade/Zoom do prédio (Etapa 1) ==================
     let flatten2D = 0;
 
@@ -1010,7 +1019,7 @@ update2DButtonVisual();
 
 
     // Integração com o botão Reset (substitui somente o trecho que seta valores)
- // === Reset Explode + volta ao 3D e oculta cards ===
+
 const resetBtn = document.getElementById('resetExplode');
 if (resetBtn){
   resetBtn.addEventListener('click', ()=>{
@@ -1018,12 +1027,10 @@ if (resetBtn){
     explodeXY = 0; explodeY = 0;
     const elExplodeXY = document.getElementById('explodeXY');
     const elExplodeY  = document.getElementById('explodeY');
-    const elExplodeXYVal = document.getElementById('explodeXYVal');
-    const elExplodeYVal  = document.getElementById('explodeYVal');
+
     if (elExplodeXY)    elExplodeXY.value = '0';
     if (elExplodeY)     elExplodeY.value  = '0';
-    if (elExplodeXYVal) elExplodeXYVal.textContent = '0.00';
-    if (elExplodeYVal)  elExplodeYVal.textContent  = '0.00';
+
     if (typeof applyExplode === 'function') applyExplode();
 
     // 2) sai do 2D com animação curta
@@ -1445,7 +1452,7 @@ function render2DCardsToScreen(tFade){
     }
 
     // Estado inicial
-    opacityVal.textContent = (Number(opacity.value)/100).toFixed(2);
+    //opacityVal.textContent = (Number(opacity.value)/100).toFixed(2);
     setFaceOpacity(Number(opacity.value)/100);
     setFacesVisible(true);
 
