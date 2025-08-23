@@ -10,126 +10,116 @@
     #app { position: fixed; inset: 0; }
     canvas { display:block; }
 
-/* === HUD compacto no rodapé === */
-#hud{
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
-  z-index: 20;
-  display: flex; flex-wrap: wrap;
-  gap: 6px;
-  align-items: center; justify-content: center;
-  padding: 6px 8px;
-  background: rgba(0,0,0,.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  color: #fff;
-  border-top: 1px solid #30363d;
-  border-radius: 10px 10px 0 0;
-  font-size: 13px;
-}
-#hud .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-#hud .handle{ display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
-#hud .grabber{ width:40px; height:5px; border-radius:4px; background:#58606b; opacity:.85; margin-right:4px; }
-#hudToggle{
-  border: 1px solid #30363d; background:#0d1117; color:#c9d1d9;
-  border-radius: 8px; padding: 3px 6px; font-size: 12px; line-height:1;
-}
+    /* === HUD compacto no rodapé === */
+    #hud{
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 20;
+      display: flex; flex-wrap: wrap;
+      gap: 6px;
+      align-items: center; justify-content: center;
+      padding: 6px 8px;
+      background: rgba(0,0,0,.45);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #fff;
+      border-top: 1px solid #30363d;
+      border-radius: 10px 10px 0 0;
+      font-size: 13px;
+    }
+    #hud .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    #hud .handle{ display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
+    #hud .grabber{ width:40px; height:5px; border-radius:4px; background:#58606b; opacity:.85; margin-right:4px; }
+    #hudToggle{
+      border: 1px solid #30363d; background:#0d1117; color:#c9d1d9;
+      border-radius: 8px; padding: 3px 6px; font-size: 12px; line-height:1;
+    }
 
-/* sliders menores */
-#hud input[type="range"]{
-  width: 120px;           /* desktop largo: 160–180 se quiser */
-  height: 4px;
-}
-@media (min-width: 900px){
-  #hud{ flex-wrap:nowrap; padding:6px 8px; gap:8px; }
-  #hud input[type="range"]{ width: 150px; }
-  #hud button, #hud select, #hud label{ white-space:nowrap; }
-}
+    /* sliders menores */
+    #hud input[type="range"]{
+      width: 120px;
+      height: 4px;
+    }
+    @media (min-width: 900px){
+      #hud{ flex-wrap:nowrap; padding:6px 8px; gap:8px; }
+      #hud input[type="range"]{ width: 150px; }
+      #hud button, #hud select, #hud label{ white-space:nowrap; }
+    }
 
-/* colapsar: mostra só a linha de handle */
-#hud.collapsed .row:not(.handle){ display:none; }
+    /* colapsar: mostra só a linha de handle */
+    #hud.collapsed .row:not(.handle){ display:none; }
 
-#hud { touch-action: pan-y; }      /* já está */
-#hud button, #hud input, #hud label { touch-action: manipulation; }    
-/* === Botão 2D (SVG) === */
-:root{
-  --c-2d-off: #8b949e;   /* esmaecido no modo 3D */
-  --c-2d-on:  #ff3b30;   /* vermelho no modo 2D */
-}
-#btn2D.mode2d{
-  display:inline-flex; align-items:center; justify-content:center;
-  width:40px; height:40px;
-  border:1px solid #30363d; border-radius:10px;
-  background:#0d1117; color:var(--c-2d-off);
-  cursor:pointer; user-select:none;
-  transition: color .18s ease, box-shadow .18s ease, border-color .18s ease;
-}
-#btn2D.mode2d:hover{ border-color:#3a3f46; }
-#btn2D.mode2d.active{
-  color:var(--c-2d-on);
-  box-shadow: 0 0 0 2px rgba(255,59,48,.18), 0 4px 16px rgba(255,59,48,.25);
-  border-color: rgba(255,59,48,.55);
-}
-#btn2D.mode2d svg{ width:28px; height:28px; }
-#btn2D.mode2d .badge{ fill:none; stroke:currentColor; stroke-width:2; opacity:.38; }
-#btn2D.mode2d .label{ fill:currentColor; font: 700 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial; }
+    #hud { touch-action: pan-y; }
+    #hud button, #hud input, #hud label { touch-action: manipulation; }
 
-/* Desktop largo: força tudo numa linha estreita */
-@media (min-width: 900px) {
-  #hud { flex-wrap: nowrap; padding: 8px 10px; gap: 10px; }
-  #hud input[type="range"] { width: 180px; }
-  #hud button, #hud select, #hud label { white-space: nowrap; }
-}
+    /* === Botão 2D (SVG) === */
+    :root{
+      --c-2d-off: #8b949e;
+      --c-2d-on:  #ff3b30;
+    }
+    #btn2D.mode2d{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:40px; height:40px;
+      border:1px solid #30363d; border-radius:10px;
+      background:#0d1117; color:var(--c-2d-off);
+      cursor:pointer; user-select:none;
+      transition: color .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    #btn2D.mode2d:hover{ border-color:#3a3f46; }
+    #btn2D.mode2d.active{
+      color:var(--c-2d-on);
+      box-shadow: 0 0 0 2px rgba(255,59,48,.18), 0 4px 16px rgba(255,59,48,.25);
+      border-color: rgba(255,59,48,.55);
+    }
+    #btn2D.mode2d svg{ width:28px; height:28px; }
+    #btn2D.mode2d .badge{ fill:none; stroke:currentColor; stroke-width:2; opacity:.38; }
+    #btn2D.mode2d .label{ fill:currentColor; font: 700 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial; }
 
-/* Respeito a movimento reduzido */
-@media (prefers-reduced-motion: reduce) { #hud { transition: none; } }
+    @media (min-width: 900px) {
+      #hud { flex-wrap: nowrap; padding: 8px 10px; gap: 10px; }
+      #hud input[type="range"] { width: 180px; }
+      #hud button, #hud select, #hud label { white-space: nowrap; }
+    }
 
-/* O HUD rola verticalmente se lotar (mobile), mas a alça não */
-#hud { touch-action: pan-y; }
-#hudHandle { touch-action: none; }
+    @media (prefers-reduced-motion: reduce) { #hud { transition: none; } }
+    #hud { touch-action: pan-y; }
+    #hudHandle { touch-action: none; }
 
-/* === Overlay 2D (sem inset no CSS; JS define top/bottom) === */
-/* === Overlay 2D ocupando o #app inteiro (não sai do #app) === */
-  /* ...seu CSS anterior... */
+    /* === Overlay 2D ocupando a tela toda === */
+    #cards2d{
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 9;
+      pointer-events: none;
+      opacity: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
 
-  /* === Overlay 2D (um único contêiner fixo) === */
-  /* === Overlay 2D ocupando a tela toda (ajuste do bottom via JS) === */
-#cards2d{
-  position: fixed;        /* sempre fixo, independente do #app */
-  top: 0; left: 0; right: 0; bottom: 0;   /* JS vai ajustar o bottom p/ não ficar sob o HUD */
-  z-index: 9;
-  pointer-events: none;   /* liberado via JS quando t≈1 */
-  opacity: 0;             /* fade controlado no JS */
-  overflow-x: hidden;
-  overflow-y: auto;       /* permite scroll quando necessário */
-}
-
-/* Cada cartão é posicionado por top/left absolutos (sem translate) */
-#cards2d .card{
-  position: absolute;
-  width: 120px; height: 72px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 12px; border: 1px solid rgba(255,255,255,.18);
-  background: rgba(34,40,53,.92); color: #e6eef7;
-  box-shadow: 0 8px 24px rgba(0,0,0,.35);
-  font: 12px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
-  user-select: none; cursor: pointer; pointer-events: auto;
-  transform: translate(-50%, -50%);   /* <<< troquei: REMOVA o !important e volte o translate */
-}
-
-#cards2d .card .label{
-  padding: .35rem .55rem; border-radius: 999px;
-  background: rgba(0,0,0,.25);
-  border: 1px solid rgba(255,255,255,.12);
-}
-canvas { touch-action: none; }
-html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */   
-    
+    /* Cada cartão posicionado por top/left absolutos */
+    #cards2d .card{
+      position: absolute;
+      width: 120px; height: 72px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 12px; border: 1px solid rgba(255,255,255,.18);
+      background: rgba(34,40,53,.92); color: #e6eef7;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35);
+      font: 12px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+      user-select: none; cursor: pointer; pointer-events: auto;
+      transform: translate(-50%, -50%);
+    }
+    #cards2d .card .label{
+      padding: .35rem .55rem; border-radius: 999px;
+      background: rgba(0,0,0,.25);
+      border: 1px solid rgba(255,255,255,.12);
+    }
+    canvas { touch-action: none; }
+    html, body { overscroll-behavior: none; }
   </style>
 </head>
 <body>
-  <div id="app"><div id="cards2d"></div>
-  </div>
+  <div id="app"><div id="cards2d"></div></div>
+
   <div id="hud">
     <div class="row handle" id="hudHandle">
       <div class="grabber" aria-hidden="true"></div>
@@ -141,28 +131,27 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
       <button id="resetRot">🔄</button>
       <button id="recenter">🎯</button>
     </div>
-  <div class="row">
-    <label for="opacity" title="Opacidade">🌫️</label>
-    <input id="opacity" type="range" min="0" max="100" value="100" />
-  </div>
-  <div class="row">
-    <label for="explodeXY" title="Explodir XY">⤢</label>
-    <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
-  </div>
-  <div class="row">
-    <label for="explodeY" title="Explodir por piso (Y)">⬆️</label>
-    <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
-    <button id="resetExplode">Reset</button>
-  </div>
-    <!-- [DOGE] Slider 2D (fade/zoom do prédio) -->
-<div class="row">
-  <button id="btn2D" class="mode2d" title="Alternar visualização 2D">
-    <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-      <circle class="badge" cx="24" cy="24" r="20"></circle>
-      <text class="label" x="24" y="29" text-anchor="middle">2D</text>
-    </svg>
-  </button>
-</div>
+    <div class="row">
+      <label for="opacity" title="Opacidade">🌫️</label>
+      <input id="opacity" type="range" min="0" max="100" value="100" />
+    </div>
+    <div class="row">
+      <label for="explodeXY" title="Explodir XY">⤢</label>
+      <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
+    </div>
+    <div class="row">
+      <label for="explodeY" title="Explodir por piso (Y)">⬆️</label>
+      <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
+      <button id="resetExplode">Reset</button>
+    </div>
+    <div class="row">
+      <button id="btn2D" class="mode2d" title="Alternar visualização 2D">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <circle class="badge" cx="24" cy="24" r="20"></circle>
+          <text class="label" x="24" y="29" text-anchor="middle">2D</text>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <!-- THREE -->
@@ -170,7 +159,7 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
 
   <script>
   (async function(){
-    // ====== Carrega o layout do repo ======
+    // ====== Carrega o layout ======
     const LAYOUT_URL = './data/layout-3d.json';
     const layout = await fetch(LAYOUT_URL, { cache: 'no-store' }).then(r=>r.json());
 
@@ -217,22 +206,16 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
     }
     updateCamera();
 
-    // ===== Órbita + Pan (mouse) + Pinça (zoom) e 2 dedos (pan) — Pointer Events =====
-    let activePointers = new Map();     // pointerId -> {x,y}
+    // ===== Gestos (pointer + tap detector) =====
+    let activePointers = new Map();
     let dragging = false;
     let dragMode = 'orbit';
     let lastX = 0, lastY = 0;
-// depois de: let activePointers = new Map(); …
-let tapState = {
-  isDown: false,
-  startX: 0,
-  startY: 0,
-  moved: false,
-  multi: false,
-  downAt: 0
-};
-const TAP_MOVE_THRESH = 6;     // px
-const TAP_TIME_MAX   = 600;    // ms
+
+    // Tap detector
+    let tapState = { isDown:false, startX:0, startY:0, moved:false, multi:false, downAt:0 };
+    const TAP_MOVE_THRESH = 6;   // px
+    const TAP_TIME_MAX   = 600;  // ms
 
     const ptsArr   = () => Array.from(activePointers.values());
     const centroid = (pts)=>({ x: pts.reduce((a,p)=>a+p.x,0)/pts.length,
@@ -244,17 +227,13 @@ const TAP_TIME_MAX   = 600;    // ms
     function pointerDown3D(e){
       activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
       renderer.domElement.setPointerCapture(e.pointerId);
-// --- tap tracking ---
-if (activePointers.size <= 1) tapState.multi = false;
-if (activePointers.size === 0) tapState.isDown = false;
+
       const pts = ptsArr();
       if (pts.length === 1){
-        // 1 dedo / 1 mouse: ORBIT (botão direito do mouse = pan)
         dragMode = (e.button === 2) ? 'pan' : 'orbit';
         dragging = true;
         lastX = e.clientX; lastY = e.clientY;
       } else if (pts.length === 2){
-        // 2 dedos: pinça + pan do centroide
         dragging = false;
         const [p1,p2] = pts;
         gesture = {
@@ -264,27 +243,31 @@ if (activePointers.size === 0) tapState.isDown = false;
         };
       }
       e.preventDefault();
-      // --- tap tracking ---
-tapState.isDown = true;
-tapState.startX = e.clientX;
-tapState.startY = e.clientY;
-tapState.moved  = false;
-tapState.multi  = (pts.length >= 2);
-tapState.downAt = performance.now();
+
+      // tap tracking
+      tapState.isDown = true;
+      tapState.startX = e.clientX;
+      tapState.startY = e.clientY;
+      tapState.moved  = false;
+      tapState.multi  = (pts.length >= 2);
+      tapState.downAt = performance.now();
     }
-renderer.domElement.style.touchAction = 'none';
+    renderer.domElement.style.touchAction = 'none';
+
     function pointerMove3D(e){
       if (!activePointers.has(e.pointerId)) return;
       activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
-// --- tap tracking ---
-if (tapState.isDown) {
-  const dx = e.clientX - tapState.startX;
-  const dy = e.clientY - tapState.startY;
-  if (Math.hypot(dx, dy) > TAP_MOVE_THRESH) tapState.moved = true;
-}
+
+      // tap tracking
+      if (tapState.isDown) {
+        const dx = e.clientX - tapState.startX;
+        const dy = e.clientY - tapState.startY;
+        if (Math.hypot(dx, dy) > TAP_MOVE_THRESH) tapState.moved = true;
+      }
+
       const pts = ptsArr();
 
-      // 1 apontador (mouse/1 dedo)
+      // 1 apontador
       if (pts.length === 1 && dragging){
         const dx = e.clientX - lastX;
         const dy = e.clientY - lastY;
@@ -308,22 +291,17 @@ if (tapState.isDown) {
         return;
       }
 
-      // 2 apontadores (pinça para zoom + centroide para pan)
+      // 2 apontadores (pinça + pan do centroide)
       if (pts.length === 2 && gesture){
         const c  = centroid(pts);
         const d  = dist(pts[0], pts[1]);
 
         if (gesture.startDist > 0){
-          // afastar dedos afasta a câmera (zoom out)
           const scale = d / gesture.startDist;
           const newR  = gesture.startRadius / Math.max(0.2, Math.min(5, scale));
           radius = clamp(newR, minRadius, maxRadius);
         }
 
-          if (gesture && pts.length < 2) { e.preventDefault(); return; }
-           if (gesture && pts.length < 2) { e.preventDefault(); return; }
-
-  // ... resto do seu código de move ...
         const dx = c.x - gesture.lastCentroid.x;
         const dy = c.y - gesture.lastCentroid.y;
         if (dx || dy){
@@ -351,25 +329,9 @@ if (tapState.isDown) {
       if (pts.length === 0){ dragging = false; gesture = null; }
       if (pts.length < 2){ gesture = null; }
       e.preventDefault();
-    
-     if (gesture && pts.length === 1){
-    const p = pts[0];
-    lastX = p.x; lastY = p.y;  // ressincroniza para evitar salto
-    dragging = false;          // exige um novo down para orbitar
-    gesture = null;
-    dragMode = 'orbit';
-    e.preventDefault();
-    return;
-  }
+    }
 
-  if (pts.length === 0){ dragging = false; gesture = null; }
-  if (pts.length < 2){ gesture = null; }
-  e.preventDefault();
-  }
- 
- 
- 
-  renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
+    renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
     renderer.domElement.addEventListener('pointermove',   pointerMove3D,   {passive:false});
     renderer.domElement.addEventListener('pointerup',     pointerUp3D,     {passive:false});
     renderer.domElement.addEventListener('pointercancel', pointerUp3D,     {passive:false});
@@ -384,8 +346,7 @@ if (tapState.isDown) {
       radius = clamp(radius*f, minRadius, maxRadius);
       updateCamera();
     }, {passive:false});
-
-    // ====== Materiais com polygonOffset (linhas limpas, sem z-fighting) ======
+    // ====== Materiais ======
     let faceOpacity = 0.30;
     const NEUTRAL_HEX = 0x6e7681;
     const MAT = {
@@ -418,22 +379,41 @@ if (tapState.isDown) {
       for (const g of torre.children) g.userData.mesh.visible = visible;
     }
 
-    function setFaceOpacity(op){
-      faceOpacity = op;
-      for (const g of torre.children){
-        const m = g.userData.mesh.material;
-        m.opacity = faceOpacity;
+    // ===== Helpers de Opacidade (NOVOS) =====
+    const MIN_OPACITY_2D = 0.03;
 
-        if (faceOpacity >= 0.999) {
-          m.transparent = false;
-          m.depthWrite = true;
-          m.opacity = 1.0;
+    function computeEffectiveOpacity(baseOpacity, t2d){
+      return THREE.MathUtils.lerp(baseOpacity, MIN_OPACITY_2D, t2d || 0);
+    }
+
+    function applyOpacityToAllMeshes(effective){
+      if (!torre) return;
+      const isOpaque = effective >= 0.999;
+
+      torre.traverse(n=>{
+        if (!n.material || !n.isMesh) return;
+        n.material.opacity = effective;
+        if (isOpaque){
+          n.material.transparent = false;
+          n.material.depthWrite  = true;
         } else {
-          m.transparent = true;
-          m.depthWrite = false;
+          n.material.transparent = true;
+          n.material.depthWrite  = false;
         }
-        m.needsUpdate = true;
-      }
+        n.material.needsUpdate = true;
+      });
+    }
+
+    function applyEdgesFade(t2d){
+      const lineEff = THREE.MathUtils.lerp(0.95, 0.08, t2d || 0);
+      if (!torre) return;
+      torre.traverse(n=>{
+        if (!(n.isLine || n.isLineSegments) || !n.material) return;
+        n.material.opacity     = lineEff;
+        n.material.transparent = lineEff < 1;
+        n.material.depthWrite  = !n.material.transparent;
+        n.material.needsUpdate = true;
+      });
     }
 
     // ===== Dimensão básica em "mundo" =====
@@ -441,7 +421,7 @@ if (tapState.isDown) {
     const cellD = (layout.meta?.cellD ?? 1.2);
     const gap   = (layout.meta?.gap   ?? 0.15);
 
-    const aptoHeight = 0.5;          // altura "unitária" por nível
+    const aptoHeight = 0.5;
     const stepX = cellW + gap;
     const stepZ = cellD + gap;
     const stepY = aptoHeight + gap;
@@ -449,9 +429,8 @@ if (tapState.isDown) {
     function rectCenterX(x, w){ return x*stepX + (w*cellW + (w-1)*gap)/2; }
     function rectCenterZ(z, d){ return z*stepZ + (d*cellD + (d-1)*gap)/2; }
 
-    // ===== Explode (única fonte de verdade) =====
-    let explodeXY = 0
-      .0;
+    // ===== Explode =====
+    let explodeXY = 0.0;
     let explodeY  = 0.0;
 
     function applyExplode(){
@@ -496,29 +475,26 @@ if (tapState.isDown) {
       }
     }
 
-    // ===== Voxelização por APTO =====
-// ===== Voxelização por NOME =====
-function voxelizeByNome(l){
-  const byNome = new Map();
-  for (const p of (l.placements || [])){
-    const nome = String(p.nome);
-    if (!byNome.has(nome)) byNome.set(nome, new Set());
-    const set = byNome.get(nome);
-    const baseY = (typeof p.andar === 'number') ? p.andar : 0;
-    for (let gx = p.x; gx < p.x + p.w; gx++){
-      for (let gz = p.z; gz < p.z + p.d; gz++){
-        for (let gy = baseY; gy < baseY + p.h; gy++){
-          set.add(`${gx},${gy},${gz}`);
+    // ===== Voxelização por NOME =====
+    function voxelizeByNome(l){
+      const byNome = new Map();
+      for (const p of (l.placements || [])){
+        const nome = String(p.nome);
+        if (!byNome.has(nome)) byNome.set(nome, new Set());
+        const set = byNome.get(nome);
+        const baseY = (typeof p.andar === 'number') ? p.andar : 0;
+        for (let gx = p.x; gx < p.x + p.w; gx++){
+          for (let gz = p.z; gz < p.z + p.d; gz++){
+            for (let gy = baseY; gy < baseY + p.h; gy++){
+              set.add(`${gx},${gy},${gz}`);
+            }
+          }
         }
       }
+      return byNome;
     }
-  }
-  return byNome;
-}
 
-
-
-    // ===== Meshing de fronteira (sem faces internas) =====
+    // ===== Meshing de fronteira =====
     function buildSurfaceGeometryFromOcc(occSet){
       if (!occSet || occSet.size===0) return null;
       const has = (x,y,z)=> occSet.has(`${x},${y},${z}`);
@@ -578,223 +554,207 @@ function voxelizeByNome(l){
     }
 
     // ====== Construção ======
-// ====== Construção ======
-function buildFromLayout(l){
-  // --- 1) Colete metadados por apartamento (nome, ordemcol, zIndex, etc.)
-  //     Se houver mais de um placement para o mesmo apto, o último "vence".
-const aptMeta = new Map();
-if (l && Array.isArray(l.placements)){
-  for (const p of l.placements){
-    const id = String(p.nome);            // <- chave é NOME
-    const m  = aptMeta.get(id) || {};
-    m.name       = String(p.nome);
-    if (p.ordemcol != null) m.ordemcol = Number(p.ordemcol);
-    if (p.zindex  != null)  m.zIndex   = Number(p.zindex);
-    if (p.floor   != null)  m.floor    = Number(p.floor);
-    aptMeta.set(id, m);
-  }
-}
+    function buildFromLayout(l){
+      // 1) Metadados por NOME
+      const aptMeta = new Map();
+      if (l && Array.isArray(l.placements)){
+        for (const p of l.placements){
+          const id = String(p.nome);
+          const m  = aptMeta.get(id) || {};
+          m.name       = String(p.nome);
+          if (p.ordemcol != null) m.ordemcol = Number(p.ordemcol);
+          if (p.zindex  != null)  m.zIndex   = Number(p.zindex);
+          if (p.floor   != null)  m.floor    = Number(p.floor);
+          aptMeta.set(id, m);
+        }
+      }
 
+      // limpa torre
+      while (torre.children.length) torre.remove(torre.children[0]);
 
-  // limpa torre
-  while (torre.children.length) torre.remove(torre.children[0]);
+      // voxeliza por nome
+      const occByNome = voxelizeByNome(l);
+      for (const [nome, occ] of occByNome.entries()){
+        const surface = buildSurfaceGeometryFromOcc(occ);
+        if (!surface) continue;
 
-  // voxeliza por apartamento
-  const occByNome = voxelizeByNome(l);
-for (const [nome, occ] of occByNome.entries()){
-  const surface = buildSurfaceGeometryFromOcc(occ);
-  if (!surface) continue;
+        const faceMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(0x6e7681),
+          metalness: 0.05,
+          roughness: 0.9,
+          transparent: faceOpacity < 0.999,
+          opacity: Math.min(1, faceOpacity),
+          depthWrite: faceOpacity >= 0.999,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1
+        });
 
-  // material neutro
-  const faceMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x6e7681),
-    metalness: 0.05,
-    roughness: 0.9,
-    transparent: faceOpacity < 0.999,
-    opacity: Math.min(1, faceOpacity),
-    depthWrite: faceOpacity >= 0.999,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1
-  });
+        const mesh = new THREE.Mesh(surface, faceMat);
+        mesh.renderOrder = 1;
 
-  const mesh = new THREE.Mesh(surface, faceMat);
-  mesh.renderOrder = 1;
+        const inflated = inflateGeometry(surface, 0.04);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
+        edges.renderOrder = 2;
 
-  const inflated = inflateGeometry(surface, 0.04);
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
-  edges.renderOrder = 2;
+        // pavimento mínimo
+        let minLevel = Infinity;
+        for (const key of occ){
+          const gy = parseInt(key.split(',')[1],10);
+          if (gy < minLevel) minLevel = gy;
+        }
+        if (!Number.isFinite(minLevel)) minLevel = 0;
 
-  // pavimento mínimo
-  let minLevel = Infinity;
-  for (const key of occ){
-    const gy = parseInt(key.split(',')[1],10);
-    if (gy < minLevel) minLevel = gy;
-  }
-  if (!Number.isFinite(minLevel)) minLevel = 0;
+        const group = new THREE.Group();
+        group.add(mesh); group.add(edges);
 
-  const group = new THREE.Group();
-  group.add(mesh); group.add(edges);
+        const metaFromJson = aptMeta.get(String(nome)) || {};
+        const idStr   = String(nome);
+        const nameStr = metaFromJson.name || idStr;
 
-  const metaFromJson = aptMeta.get(String(nome)) || {};
-  const idStr   = String(nome);
-  const nameStr = metaFromJson.name || idStr;
+        group.userData = {
+          nome: idStr,
+          mesh, edges,
+          levelIndex: minLevel,
+          basePos: new THREE.Vector3(0,0,0),
+          anchor:  new THREE.Vector3(0,0,0),
+          meta: {
+            id: idStr,
+            name: nameStr,
+            ordemcol: (typeof metaFromJson.ordemcol === 'number') ? metaFromJson.ordemcol : undefined,
+            zIndex:   (typeof metaFromJson.zIndex   === 'number') ? metaFromJson.zIndex   : undefined
+          }
+        };
 
-  group.userData = {
-    nome: idStr,                 // agora usamos `nome`
-    mesh, edges,
-    levelIndex: minLevel,
-    basePos: new THREE.Vector3(0,0,0),
-    anchor:  new THREE.Vector3(0,0,0),
-    meta: {
-      id: idStr,
-      name: nameStr,
-      ordemcol: (typeof metaFromJson.ordemcol === 'number') ? metaFromJson.ordemcol : undefined,
-      zIndex:   (typeof metaFromJson.zIndex   === 'number') ? metaFromJson.zIndex   : undefined
+        // centro local → anchor
+        surface.computeBoundingBox();
+        const bb = surface.boundingBox;
+        const localCenter = new THREE.Vector3();
+        bb.getCenter(localCenter);
+        group.__localCenter = localCenter;
+
+        torre.add(group);
+      }
+
+      // Centraliza torre
+      const bbox = new THREE.Box3().setFromObject(torre);
+      const center = new THREE.Vector3(); bbox.getCenter(center);
+      const size   = new THREE.Vector3(); bbox.getSize(size);
+
+      for (const g of torre.children){
+        g.position.sub(center);
+        g.userData.basePos.copy(g.position);
+
+        const lc = g.__localCenter || new THREE.Vector3();
+        g.userData.anchor.set(
+          g.position.x + lc.x,
+          g.position.y + lc.y,
+          g.position.z + lc.z
+        );
+        delete g.__localCenter;
+      }
+
+      // Câmera inicial
+      const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
+      const idealRadius = Math.max(8, diag * 0.75);
+      radius = clamp(idealRadius, minRadius, maxRadius);
+      orbitTarget.set(0, 0, 0);
+      updateCamera();
+
+      applyExplode();
     }
-  };
-
-  // resto do código para calcular centro, anchor, adicionar no torre...
-
-
-    // centro local do geometry (para anchor depois)
-    surface.computeBoundingBox();
-    const bb = surface.boundingBox;
-    const localCenter = new THREE.Vector3();
-    bb.getCenter(localCenter);
-    group.__localCenter = localCenter;
-
-    torre.add(group);
-  }
-
-  // Centraliza todo o conjunto no (0,0,0)
-  const bbox = new THREE.Box3().setFromObject(torre);
-  const center = new THREE.Vector3(); bbox.getCenter(center);
-  const size   = new THREE.Vector3(); bbox.getSize(size);
-
-  for (const g of torre.children){
-    g.position.sub(center);
-    g.userData.basePos.copy(g.position);
-
-    // anchor = centro do apto em mundo colado
-    const lc = g.__localCenter || new THREE.Vector3();
-    g.userData.anchor.set(
-      g.position.x + lc.x,
-      g.position.y + lc.y,
-      g.position.z + lc.z
-    );
-    delete g.__localCenter;
-  }
-
-  // Câmera inicial baseada no tamanho real
-  const diag = Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
-  const idealRadius = Math.max(8, diag * 0.75);
-  radius = clamp(idealRadius, minRadius, maxRadius);
-
-  orbitTarget.set(0, 0, 0);
-  updateCamera();
-
-  // Aplica estado atual do explode (zero → colado)
-  applyExplode();
-}
-
 
     function recenterOrbitTarget(){
       const bbox2 = new THREE.Box3().setFromObject(torre);
       const c2 = new THREE.Vector3(); bbox2.getCenter(c2);
       orbitTarget.set(0, c2.y, 0);
     }
-// Mapa de metadados por apto (nome, ordemcol) vindo do JSON
-const metaByNome = new Map();
-for (const p of (layout.placements||[])){
-  const key = String(p.nome);
-  if (!metaByNome.has(key)){
-    metaByNome.set(key, { ordemcol: (p.ordemcol|0) });
-  }
-}
 
+    // metaByNome (se precisar no futuro)
+    const metaByNome = new Map();
+    for (const p of (layout.placements||[])){
+      const key = String(p.nome);
+      if (!metaByNome.has(key)){
+        metaByNome.set(key, { ordemcol: (p.ordemcol|0) });
+      }
+    }
 
     buildFromLayout(layout);
 
-    // ====== Seleção com mira refinada ======
+    // ===== Seleção com mira (tap real) =====
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-function pickAtClientXY(clientX, clientY){
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    function pickAtClientXY(clientX, clientY){
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
-  // 1) faces
-  const faceObjects = torre.children.map(g => g.userData.mesh);
-  raycaster.setFromCamera(mouse, camera);
-  let inter = raycaster.intersectObjects(faceObjects, false);
+      // faces
+      const faceObjects = torre.children.map(g => g.userData.mesh);
+      raycaster.setFromCamera(mouse, camera);
+      let inter = raycaster.intersectObjects(faceObjects, false);
 
-  // 2) fallback em arestas
-  if (!inter.length) {
-    const edgeObjects = torre.children.map(g => g.userData.edges);
-    raycaster.params.Line = raycaster.params.Line || {};
-    raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06;
-    inter = raycaster.intersectObjects(edgeObjects, false);
-  }
+      // fallback em arestas
+      if (!inter.length) {
+        const edgeObjects = torre.children.map(g => g.userData.edges);
+        raycaster.params.Line = raycaster.params.Line || {};
+        raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06;
+        inter = raycaster.intersectObjects(edgeObjects, false);
+      }
 
-  // limpar seleção anterior
-  if (window.__SEL_GROUP__) {
-    const gPrev = window.__SEL_GROUP__;
-    gPrev.userData.edges.material = gPrev.__lineBackup;
-    gPrev.userData.mesh.material = gPrev.__faceBackup;
-    delete gPrev.__lineBackup; delete gPrev.__faceBackup;
-    window.__SEL_GROUP__ = null;
-  }
+      // limpar seleção anterior
+      if (window.__SEL_GROUP__) {
+        const gPrev = window.__SEL_GROUP__;
+        gPrev.userData.edges.material = gPrev.__lineBackup;
+        gPrev.userData.mesh.material = gPrev.__faceBackup;
+        delete gPrev.__lineBackup; delete gPrev.__faceBackup;
+        window.__SEL_GROUP__ = null;
+      }
 
-  if (!inter.length) return;
+      if (!inter.length) return;
 
-  const hitObj   = inter[0].object;
-  const selGroup = hitObj.parent;
-  if (!selGroup || !selGroup.userData) return;
+      const hitObj   = inter[0].object;
+      const selGroup = hitObj.parent;
+      if (!selGroup || !selGroup.userData) return;
 
-  // Destaque visual
-  selGroup.__lineBackup = selGroup.userData.edges.material;
-  selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
-  selGroup.userData.edges.material = MAT.selLine;
-  const faceClone = selGroup.userData.mesh.material.clone();
-  faceClone.opacity = Math.min(1, faceOpacity + 0.2);
-  selGroup.userData.mesh.material = faceClone;
-  window.__SEL_GROUP__ = selGroup;
+      // Destaque visual
+      selGroup.__lineBackup = selGroup.userData.edges.material;
+      selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
+      selGroup.userData.edges.material = MAT.selLine;
+      const faceClone = selGroup.userData.mesh.material.clone();
+      faceClone.opacity = Math.min(1, faceOpacity + 0.2);
+      selGroup.userData.mesh.material = faceClone;
+      window.__SEL_GROUP__ = selGroup;
 
-  // Mensagem para o parent (usa 'nome' como id)
-  const nomeId = String(selGroup.userData.nome || selGroup.userData?.meta?.id || '').trim();
-  let hex = null;
-  try { const c = selGroup.userData.mesh.material.color; if (c) hex = '#' + c.getHexString(); } catch(_){}
-  try { parent.postMessage({ type: 'viewer:open-apt', apt: nomeId, color: hex }, '*'); } catch(_){}
+      // Mensagem para o parent
+      const nomeId = String(selGroup.userData.nome || selGroup.userData?.meta?.id || '').trim();
+      let hex = null;
+      try { const c = selGroup.userData.mesh.material.color; if (c) hex = '#' + c.getHexString(); } catch(_){}
+      try { parent.postMessage({ type: 'viewer:open-apt', apt: nomeId, color: hex }, '*'); } catch(_){}
 
-  console.log('[viewer] tap nome:', nomeId);
-}
+      console.log('[viewer] tap nome:', nomeId);
+    }
 
-// Tap “real” só dispara se não houve gesto/pan/pinch
-renderer.domElement.addEventListener('pointerup', (e) => {
-  // ignora botão direito
-  if (e.pointerType === 'mouse' && e.button === 2) return;
+    // Tap “real” (bloqueia click fantasma)
+    renderer.domElement.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'mouse' && e.button === 2) return;
 
-  const dt = performance.now() - tapState.downAt;
-  const dx = e.clientX - tapState.startX;
-  const dy = e.clientY - tapState.startY;
-  const moved = Math.hypot(dx, dy) > TAP_MOVE_THRESH;
+      const dt = performance.now() - tapState.downAt;
+      const dx = e.clientX - tapState.startX;
+      const dy = e.clientY - tapState.startY;
+      const moved = Math.hypot(dx, dy) > TAP_MOVE_THRESH;
 
-  const isTap = !tapState.multi && !moved && dt <= TAP_TIME_MAX;
+      const isTap = !tapState.multi && !moved && dt <= TAP_TIME_MAX;
 
-  // zera estado de tap
-  tapState.isDown = false;
-  tapState.multi  = false;
+      tapState.isDown = false;
+      tapState.multi  = false;
 
-  if (!isTap) return;        // <- bloqueia o "click fantasma"
-  pickAtClientXY(e.clientX, e.clientY);
-}, { passive:false });
-
-
-
-    // ====== HUD / UI ======
+      if (!isTap) return;
+      pickAtClientXY(e.clientX, e.clientY);
+    }, { passive:false });
+    // ===== HUD / UI =====
     const hud  = document.getElementById('hud');
     const hudToggle = document.getElementById('hudToggle');
     const hudHandle = document.getElementById('hudHandle');
@@ -838,71 +798,66 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     hudHandle.addEventListener('pointerup',   hudPointerUp,   {passive:false});
     hudHandle.addEventListener('pointercancel', hudPointerUp, {passive:false});
 
-    // Clique na alça alterna (bom no desktop)
     hudHandle.addEventListener('click', (e) => {
       if (e.target === hudToggle) return;
       hudToggle.click();
     });
 
-  
-// Opacidade
-const opacity = document.getElementById('opacity');
-opacity.addEventListener('input', () => {
-  const v = Number(opacity.value) / 100;
-  setFaceOpacity(v);
-});
+    // Opacidade (slider)
+    const opacity = document.getElementById('opacity');
+    opacity.addEventListener('input', () => {
+      const v = Number(opacity.value) / 100;
+      setFaceOpacity(v);
+    });
 
-// Explodir XY
-const explodeXYRange = document.getElementById('explodeXY');
-explodeXYRange.addEventListener('input', () => {
-  explodeXY = Number(explodeXYRange.value) || 0;
-  applyExplode();
-});
+    // Explodir XY
+    const explodeXYRange = document.getElementById('explodeXY');
+    explodeXYRange.addEventListener('input', () => {
+      explodeXY = Number(explodeXYRange.value) || 0;
+      applyExplode();
+    });
 
-// Explodir Y (piso)
-const explodeYRange = document.getElementById('explodeY');
-explodeYRange.addEventListener('input', () => {
-  explodeY = Number(explodeYRange.value) || 0;
-  applyExplode();
-});
+    // Explodir Y (piso)
+    const explodeYRange = document.getElementById('explodeY');
+    explodeYRange.addEventListener('input', () => {
+      explodeY = Number(explodeYRange.value) || 0;
+      applyExplode();
+    });
 
-// Reset explode
-document.getElementById('resetExplode').addEventListener('click', () => {
-  explodeXY = 0; explodeY = 0;
-  explodeXYRange.value = '0';
-  explodeYRange.value  = '0';
-  applyExplode();
-});
+    // Reset explode (e 2D)
+    document.getElementById('resetExplode').addEventListener('click', () => {
+      explodeXY = 0; explodeY = 0;
+      explodeXYRange.value = '0';
+      explodeYRange.value  = '0';
+      applyExplode();
+    });
 
-// Reset rotação
-document.getElementById('resetRot').addEventListener('click', () => {
-  pivot.rotation.set(0,0,0);
-  theta = 0;
-  updateCamera();
-});
+    // Reset rotação
+    document.getElementById('resetRot').addEventListener('click', () => {
+      pivot.rotation.set(0,0,0);
+      theta = 0;
+      updateCamera();
+    });
 
-// Recentrar
-document.getElementById('recenter').addEventListener('click', () => {
-  recenterOrbitTarget();
-  radius = INITIAL_RADIUS; 
-  phi = INITIAL_PHI;
-  updateCamera();
-});
+    // Recentrar
+    document.getElementById('recenter').addEventListener('click', () => {
+      recenterOrbitTarget();
+      radius = INITIAL_RADIUS;
+      phi = INITIAL_PHI;
+      updateCamera();
+    });
 
-// Inicializa opacidade sem usar opacityVal
-setFaceOpacity(Number(opacity.value)/100);
+    // ===== Correção de Opacidade — funções NOVAS/ALTERADAS =====
+    function setFaceOpacity(op){
+      faceOpacity = Math.max(0, Math.min(1, op));
+      const eff = computeEffectiveOpacity(faceOpacity, flatten2D || 0);
+      applyOpacityToAllMeshes(eff);
+    }
 
-    // ================== [DOGE] Fade/Zoom do prédio (Etapa 1) ==================
+    // ===== 2D Toggle / Transição =====
     let flatten2D = 0;
-
-    // Aponta elementos do HUD
-    //const flatten2DRange = document.getElementById('flatten2D');
-    //const flatten2DVal   = document.getElementById('flatten2DVal');
-
-    // Container da futura grade 2D (na Etapa 2 popularemos)
-    //const cards2d = document.getElementById('cards2d');
     const cards2d = document.getElementById('cards2d');
-    // Guarda opacidades base para conseguir restaurar no reset
+
     function cacheBaseVisualsIfNeeded(){
       if (!torre || torre.userData.__dogeBaseCached) return;
       torre.userData.__dogeBaseCached = true;
@@ -921,705 +876,550 @@ setFaceOpacity(Number(opacity.value)/100);
       });
     }
 
-    // Aplica o efeito conforme t∈[0..1]
-    // ================== [DOGE] Transição 3D→2D (fade/zoom + grade overlay) ==================
-function apply2DTransition(){
-  if (!torre) return;
-   cacheBaseVisualsIfNeeded();
-  // Garante coleta/construção da grade na 1ª vez que o slider mexe
-  if (!__aptRoots || __aptRoots.length === 0) collectApartmentRoots();
-  if (!__gridModel) prepareGridModel();
-  if (!__cardsBuilt) build2DCards();
+    function apply2DTransition(){
+      if (!torre) return;
+      cacheBaseVisualsIfNeeded();
 
-  const t = flatten2D;
+      if (!__aptRoots || __aptRoots.length === 0) collectApartmentRoots();
+      if (!__gridModel) prepareGridModel();
+      if (!__cardsBuilt) build2DCards();
 
-  // 1) Torre: escala e opacidade (fade-out/zoom-out suave)
-  const baseScale = torre.userData.__baseScale || new THREE.Vector3(1,1,1);
-  const s = THREE.MathUtils.lerp(1.0, 0.50, t);  // 1 → 0.5
-  torre.scale.set(baseScale.x * s, baseScale.y * s, baseScale.z * s);
+      const t = flatten2D;
 
-torre.traverse(n=>{
-  if (!n.material) return;
+      // 1) Escala
+      const baseScale = torre.userData.__baseScale || new THREE.Vector3(1,1,1);
+      const s = THREE.MathUtils.lerp(1.0, 0.50, t);
+      torre.scale.set(baseScale.x * s, baseScale.y * s, baseScale.z * s);
 
-  if (n.isMesh) {
-    const base = (typeof n.userData.__baseOpacityMesh === 'number')
-                  ? n.userData.__baseOpacityMesh
-                  : (typeof faceOpacity==='number' ? faceOpacity : 1.0);
+      // 2) Opacidade unificada (sem disputar com slider)
+      const eff = computeEffectiveOpacity(faceOpacity, t);
+      applyOpacityToAllMeshes(eff);
+      applyEdgesFade(t);
 
-    const op = THREE.MathUtils.lerp(base, 0.03, t);
-    n.material.opacity = op;
+      // 3) Overlay 2D
+      render2DCardsToScreen(t);
 
-    // quando estamos “no 3D” (t ~ 0), volte aos flags originais
-    if (t <= 0.001) {
-      const opaque = base >= 0.999;
-      n.material.transparent = !opaque;
-      n.material.depthWrite  = opaque;
-    } else {
-      n.material.transparent = true;
-      n.material.depthWrite  = false;
-    }
-    n.material.needsUpdate = true;
-  }
-
-  if (n.isLine || n.isLineSegments) {
-    const base = (typeof n.userData.__baseOpacityLine === 'number')
-                  ? n.userData.__baseOpacityLine : 0.95;
-
-    const op = THREE.MathUtils.lerp(base, 0.08, t);
-    n.material.opacity = op;
-
-    if (t <= 0.001) {
-      const opaque = base >= 0.999;
-      n.material.transparent = !opaque;
-      n.material.depthWrite  = opaque;
-    } else {
-      n.material.transparent = true;
-      n.material.depthWrite  = false;
-    }
-    n.material.needsUpdate = true;
-  }
-});
-
-  // 2) Overlay 2D: posiciona e controla visibilidade
-  render2DCardsToScreen(t);
-
-  // Canvas 3D só para de receber eventos quando o t está no fim
-  if (renderer && renderer.domElement) {
-    renderer.domElement.style.pointerEvents = (t >= 0.95) ? 'none' : 'auto';
-  }
-}
-
-
-    // Listener do slider 2D
-// ================== [DOGE] Toggle 2D por botão ==================
-//let flatten2D = (typeof flatten2D === 'number') ? flatten2D : 0; // mantém se já existir
-const btn2D = document.getElementById('btn2D');
-
-// Atualiza a aparência do botão conforme estado
-function update2DButtonVisual(){
-  if (!btn2D) return;
-  btn2D.classList.toggle('active', flatten2D >= 0.999);
-}
-
-// Anima suavemente 3D⇄2D (0→1 ou 1→0)
-function tweenFlatten2D(target, ms=280){
-  const from = flatten2D;
-  const to   = Math.max(0, Math.min(1, target));
-  if (Math.abs(from - to) < 1e-4){ update2DButtonVisual(); return; }
-
-  const start = performance.now();
-  function step(now){
-    const k = Math.min(1, (now - start) / ms);
-    const eased = k < 0.5 ? 2*k*k : 1 - Math.pow(-2*k + 2, 2)/2;
-    flatten2D = from + (to - from) * eased;
-    apply2DTransition();
-
-    if (k < 1) {
-      requestAnimationFrame(step);
-    } else {
-      flatten2D = to;
-      apply2DTransition();
-      update2DButtonVisual();
-
-      // se voltamos ao 3D, restaura exatamente a base
-      if (to === 0 && torre) {
-        torre.traverse(n=>{
-          if (!n.material) return;
-          if (n.isMesh && typeof n.userData.__baseOpacityMesh === 'number') {
-            const base = n.userData.__baseOpacityMesh;
-            n.material.opacity     = base;
-            const opaque           = base >= 0.999;
-            n.material.transparent = !opaque;
-            n.material.depthWrite  = opaque;
-            n.material.needsUpdate = true;
-          }
-          if ((n.isLine || n.isLineSegments) && typeof n.userData.__baseOpacityLine === 'number') {
-            const base = n.userData.__baseOpacityLine;
-            n.material.opacity     = base;
-            const opaque           = base >= 0.999;
-            n.material.transparent = !opaque;
-            n.material.depthWrite  = opaque;
-            n.material.needsUpdate = true;
-          }
-        });
+      // 4) Eventos
+      if (renderer && renderer.domElement) {
+        renderer.domElement.style.pointerEvents = (t >= 0.95) ? 'none' : 'auto';
       }
     }
-  }
-  requestAnimationFrame(step);
-}
 
-if (btn2D){
-  btn2D.addEventListener('click', ()=>{
-    const going2D = flatten2D < 0.5;
-    tweenFlatten2D(going2D ? 1 : 0);
-  });
-}
-// estado inicial
-update2DButtonVisual();
-
-
-    // Integração com o botão Reset (substitui somente o trecho que seta valores)
-
-const resetBtn = document.getElementById('resetExplode');
-if (resetBtn){
-  resetBtn.addEventListener('click', ()=>{
-    // 1) explode volta ao zero
-    explodeXY = 0; explodeY = 0;
-    const elExplodeXY = document.getElementById('explodeXY');
-    const elExplodeY  = document.getElementById('explodeY');
-
-    if (elExplodeXY)    elExplodeXY.value = '0';
-    if (elExplodeY)     elExplodeY.value  = '0';
-
-    if (typeof applyExplode === 'function') applyExplode();
-
-    // 2) sai do 2D com animação curta
-    tweenFlatten2D(0, 220);
-
-    // 3) restaura escala/opacidades
-    if (torre && torre.userData.__baseScale){
-      torre.scale.copy(torre.userData.__baseScale);
+    const btn2D = document.getElementById('btn2D');
+    function update2DButtonVisual(){
+      if (!btn2D) return;
+      btn2D.classList.toggle('active', flatten2D >= 0.999);
     }
-    if (torre){
-      torre.traverse(n=>{
-        if (!n.material) return;
-        if (n.isMesh && typeof n.userData.__baseOpacityMesh === 'number'){
-          n.material.transparent = (n.userData.__baseOpacityMesh < 1.0);
-          n.material.depthWrite  = !n.material.transparent;
-          n.material.opacity     = n.userData.__baseOpacityMesh;
-          n.material.needsUpdate = true;
+
+    function tweenFlatten2D(target, ms=280){
+      const from = flatten2D;
+      const to   = Math.max(0, Math.min(1, target));
+      if (Math.abs(from - to) < 1e-4){ update2DButtonVisual(); return; }
+
+      const start = performance.now();
+      function step(now){
+        const k = Math.min(1, (now - start) / ms);
+        const eased = k < 0.5 ? 2*k*k : 1 - Math.pow(-2*k + 2, 2)/2;
+        flatten2D = from + (to - from) * eased;
+        apply2DTransition();
+
+        if (k < 1) {
+          requestAnimationFrame(step);
+        } else {
+          flatten2D = to;
+          apply2DTransition();
+          update2DButtonVisual();
+
+          // Se voltou ao 3D, não precisamos reescrever opacidades manualmente;
+          // computeEffectiveOpacity já resolve com t=0.
         }
-        if ((n.isLine || n.isLineSegments) && typeof n.userData.__baseOpacityLine === 'number'){
-          n.material.transparent = (n.userData.__baseOpacityLine < 1.0);
-          n.material.depthWrite  = !n.material.transparent;
-          n.material.opacity     = n.userData.__baseOpacityLine;
-          n.material.needsUpdate = true;
-        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    if (btn2D){
+      btn2D.addEventListener('click', ()=>{
+        const going2D = flatten2D < 0.5;
+        tweenFlatten2D(going2D ? 1 : 0);
       });
-      delete torre.userData.__dogeBaseCached;
     }
-
-    // 4) oculta overlay 2D
-    if (typeof cards2d !== 'undefined' && cards2d){
-      cards2d.style.opacity = '0';
-      cards2d.style.pointerEvents = 'none';
-    }
-    // 5) canvas 3D volta a receber eventos
-    if (renderer && renderer.domElement) {
-      renderer.domElement.style.pointerEvents = 'auto';
-    }
-
-    // atualiza visual do botão
     update2DButtonVisual();
-  });
-}
 
+    // Reset geral (explode + sair do 2D + opacidade consistente)
+    const resetBtn = document.getElementById('resetExplode');
+    if (resetBtn){
+      resetBtn.addEventListener('click', ()=>{
+        // 1) explode volta ao zero
+        explodeXY = 0; explodeY = 0;
+        const elExplodeXY = document.getElementById('explodeXY');
+        const elExplodeY  = document.getElementById('explodeY');
+        if (elExplodeXY) elExplodeXY.value = '0';
+        if (elExplodeY)  elExplodeY.value  = '0';
+        if (typeof applyExplode === 'function') applyExplode();
 
+        // 2) sai do 2D com animação curta
+        tweenFlatten2D(0, 220);
+
+        // 3) restaura escala e re-aplica opacidade via helpers
+        if (torre && torre.userData.__baseScale){
+          torre.scale.copy(torre.userData.__baseScale);
+        }
+        const eff = computeEffectiveOpacity(faceOpacity, 0);
+        applyOpacityToAllMeshes(eff);
+        applyEdgesFade(0);
+        delete torre.userData.__dogeBaseCached;
+
+        // 4) oculta overlay 2D
+        if (cards2d){
+          cards2d.style.opacity = '0';
+          cards2d.style.pointerEvents = 'none';
+        }
+        // 5) canvas 3D volta a receber eventos
+        if (renderer && renderer.domElement) {
+          renderer.domElement.style.pointerEvents = 'auto';
+        }
+        // 6) botão
+        update2DButtonVisual();
+      });
+    }
+
+    // Inicializa opacidade conforme slider
+    setFaceOpacity(Number(opacity.value)/100);
+    setFacesVisible(true);
     // ================== [DOGE] Globais da grade 2D ==================
-    let __aptRoots   = [];   // [{root, meta, base:{pos,rot,scale}}]
-    let __gridModel  = null; // { floors:[], cols:[], map: Map("f|c" -> [aptos]) }
+    let __aptRoots   = [];
+    let __gridModel  = null;
     let __cardsBuilt = false;
 
-    // ================== [DOGE] Coleta de apartamentos (deriva floor/col) ==================
-// ================== [DOGE] Coleta de apartamentos (deriva floor e guarda anchorX) ==================
-// ================== [DOGE] Coleta de apartamentos (deriva floor e guarda anchorX/ordemcol) ==================
-function collectApartmentRoots(){
-  __aptRoots = [];
-  if (!torre) return;
+    // Coleta de apartamentos
+    function collectApartmentRoots(){
+      __aptRoots = [];
+      if (!torre) return;
 
-  const seen = new Set();
-  torre.updateMatrixWorld(true);
+      const seen = new Set();
+      torre.updateMatrixWorld(true);
 
-  // Preferimos grupos (cada apto como um Group com levelIndex)
-  const candidates = [];
-  torre.traverse(n=>{
-    if (n.type === 'Group' && typeof n.userData.levelIndex === 'number') candidates.push(n);
-  });
-  // Fallback: filhos diretos do 'torre' que sejam Group
-  if (candidates.length === 0){
-    for (const child of torre.children){
-      if (child.isGroup) candidates.push(child);
-    }
-  }
+      const candidates = [];
+      torre.traverse(n=>{
+        if (n.type === 'Group' && typeof n.userData.levelIndex === 'number') candidates.push(n);
+      });
+      if (candidates.length === 0){
+        for (const child of torre.children){
+          if (child.isGroup) candidates.push(child);
+        }
+      }
 
-  for (const root of candidates){
-    if (seen.has(root.id)) continue;
-    seen.add(root.id);
+      for (const root of candidates){
+        if (seen.has(root.id)) continue;
+        seen.add(root.id);
 
-    // Pega meta do buildFromLayout (se foi populado lá)
-    const meta = root.userData.meta || (root.userData.meta = {});
+        const meta = root.userData.meta || (root.userData.meta = {});
+        if (meta.floor == null){
+          meta.floor = (typeof root.userData.levelIndex === 'number') ? root.userData.levelIndex : 0;
+        }
 
-    // floor: usa meta.floor; senão levelIndex; fallback 0
-    if (meta.floor == null){
-      meta.floor = (typeof root.userData.levelIndex === 'number') ? root.userData.levelIndex : 0;
-    }
+        const ax = (root.userData.anchor && typeof root.userData.anchor.x === 'number')
+                    ? root.userData.anchor.x : 0;
+        meta.__anchorX = ax;
 
-    // guarda o anchor.x bruto (fallback para cluster por X se não houver ordemcol)
-    const ax = (root.userData.anchor && typeof root.userData.anchor.x === 'number')
-                ? root.userData.anchor.x : 0;
-    meta.__anchorX = ax;
+        if (!meta.id && root.userData.nome) meta.id = String(root.userData.nome);
+        if (!meta.name) meta.name = meta.id || `apt-${root.id}`;
 
-    // id/nome básicos
-    if (!meta.id && root.userData.apto) meta.id = String(root.userData.apto);
-    if (!meta.name) meta.name = meta.id || `apt-${root.id}`;
+        if (!root.userData._base){
+          root.userData._base = {
+            pos: root.position.clone(),
+            rot: root.rotation.clone(),
+            scale: root.scale.clone()
+          };
+        }
 
-    // base transform
-    if (!root.userData._base){
-      root.userData._base = {
-        pos: root.position.clone(),
-        rot: root.rotation.clone(),
-        scale: root.scale.clone()
-      };
+        __aptRoots.push({ root, meta, base: root.userData._base });
+      }
     }
 
-    __aptRoots.push({ root, meta, base: root.userData._base });
-  }
-}
-
-
-    // ================== [DOGE] Modelo da grade + cards ==================
+    // Modelo da grade + cards
     function colorFor(meta){
-      // respeita seu mapa de cores existente (status → cor) se houver
       if (meta && meta.status && window.COLOR_MAP?.colors?.[meta.status]) return window.COLOR_MAP.colors[meta.status];
       if (meta && meta.color) return meta.color;
       return '#6e7681';
     }
 
-// ================== [DOGE] Modelo da grade (colunas por cluster de anchorX) ==================
-// ================== [DOGE] Modelo da grade (prioriza ordemcol, senão cluster por anchorX) ==================
-function prepareGridModel(){
-  if (!__aptRoots || !__aptRoots.length) return;
+    function prepareGridModel(){
+      if (!__aptRoots || !__aptRoots.length) return;
 
-  // Se a maioria tiver ordemcol numérica, usamos isso.
-  const hasOrdem = __aptRoots.some(A => Number.isFinite(Number(A.meta?.ordemcol)));
-  if (hasOrdem){
-    for (const A of __aptRoots){
-      const col1 = Number(A.meta?.ordemcol);   // 1-based
-      A.meta.__colIdx = Number.isFinite(col1) ? Math.max(0, Math.floor(col1 - 1)) : 0;
-    }
-  } else {
-    // Fallback antigo: agrupa por X (anchor)
-    const xs = __aptRoots.map(A => (typeof A.meta?.__anchorX === 'number') ? A.meta.__anchorX : 0);
-    xs.sort((a,b)=>a-b);
-    const COL_EPS = 0.001;
-    const groups = [];
-    for (const x of xs){
-      const g = groups[groups.length-1];
-      if (!g || Math.abs(x - g.center) > COL_EPS){
-        groups.push({ center:x, values:[x] });
+      const hasOrdem = __aptRoots.some(A => Number.isFinite(Number(A.meta?.ordemcol)));
+      if (hasOrdem){
+        for (const A of __aptRoots){
+          const col1 = Number(A.meta?.ordemcol);
+          A.meta.__colIdx = Number.isFinite(col1) ? Math.max(0, Math.floor(col1 - 1)) : 0;
+        }
       } else {
-        g.values.push(x);
-        g.center = g.values.reduce((s,v)=>s+v,0)/g.values.length;
+        const xs = __aptRoots.map(A => (typeof A.meta?.__anchorX === 'number') ? A.meta.__anchorX : 0);
+        xs.sort((a,b)=>a-b);
+        const COL_EPS = 0.001;
+        const groups = [];
+        for (const x of xs){
+          const g = groups[groups.length-1];
+          if (!g || Math.abs(x - g.center) > COL_EPS){
+            groups.push({ center:x, values:[x] });
+          } else {
+            g.values.push(x);
+            g.center = g.values.reduce((s,v)=>s+v,0)/g.values.length;
+          }
+        }
+        function colIndexFor(x){
+          if (groups.length === 0) return 0;
+          let best = 0, bestD = Math.abs(x - groups[0].center);
+          for (let i=1;i<groups.length;i++){
+            const d = Math.abs(x - groups[i].center);
+            if (d < bestD){ bestD = d; best = i; }
+          }
+          return best;
+        }
+        for (const A of __aptRoots){
+          const x = (typeof A.meta?.__anchorX === 'number') ? A.meta.__anchorX : 0;
+          A.meta.__colIdx = colIndexFor(x);
+        }
       }
-    }
-    function colIndexFor(x){
-      if (groups.length === 0) return 0;
-      let best = 0, bestD = Math.abs(x - groups[0].center);
-      for (let i=1;i<groups.length;i++){
-        const d = Math.abs(x - groups[i].center);
-        if (d < bestD){ bestD = d; best = i; }
+
+      const floors = new Set();
+      const cols   = new Set();
+      const map    = new Map();
+      for (const A of __aptRoots){
+        const f = Number(A.meta?.floor)   || 0;
+        const c = Number(A.meta?.__colIdx)|| 0;
+        floors.add(f); cols.add(c);
+        const k = `${f}|${c}`;
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(A);
       }
-      return best;
+
+      const floorsArr = Array.from(floors).sort((a,b)=>b-a);
+      const colsArr   = Array.from(cols).sort((a,b)=>a-b);
+
+      for (const arr of map.values()){
+        arr.sort((a,b)=>{
+          const za = Number(a.meta?.zIndex || a.meta?.z || 0) || 0;
+          const zb = Number(b.meta?.zIndex || b.meta?.z || 0) || 0;
+          return za - zb;
+        });
+      }
+
+      __gridModel = { floors: floorsArr, cols: colsArr, map };
     }
-    for (const A of __aptRoots){
-      const x = (typeof A.meta?.__anchorX === 'number') ? A.meta.__anchorX : 0;
-      A.meta.__colIdx = colIndexFor(x);
+
+    function build2DCards(){
+      if (!__aptRoots || !__aptRoots.length) return;
+      if (!__gridModel) prepareGridModel();
+      if (!__gridModel) return;
+
+      cards2d.innerHTML = '';
+
+      for (const A of __aptRoots){
+        const el = document.createElement('div');
+        el.className  = 'card';
+        const idStr = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
+        el.dataset.id = idStr;
+
+        // cor pela FVS (igual ao 3D)
+        const piso = (A.meta?.floor ?? A.root.userData.levelIndex ?? 0);
+        el.style.background = pickFVSColor(idStr, piso);
+
+        const lab = document.createElement('div');
+        lab.className = 'label';
+        lab.textContent = A.meta?.name || A.meta?.id || 'apt';
+        el.appendChild(lab);
+
+        el.addEventListener('click', (ev)=>{
+          ev.stopPropagation();
+          const aptId = String(A.meta?.id || A.meta?.name || '').trim();
+          let hex = null;
+          try {
+            const c = (A.root?.userData?.mesh?.material?.color);
+            if (c) hex = '#' + c.getHexString();
+          } catch(_) {}
+          try {
+            parent.postMessage({ type: 'viewer:open-apt', apt: aptId, color: hex }, '*');
+          } catch(_) {}
+        });
+
+        cards2d.appendChild(el);
+        A.root.userData._cardEl = el;
+      }
+      __cardsBuilt = true;
     }
-  }
 
-  // floors/cols/map
-  const floors = new Set();
-  const cols   = new Set();
-  const map    = new Map();
-  for (const A of __aptRoots){
-    const f = Number(A.meta?.floor)   || 0;
-    const c = Number(A.meta?.__colIdx)|| 0;
-    floors.add(f); cols.add(c);
-    const k = `${f}|${c}`;
-    if (!map.has(k)) map.set(k, []);
-    map.get(k).push(A);
-  }
+    function layout2D_computeMetrics(){
+      const pad = 16;
+      const W = window.innerWidth, H = window.innerHeight;
+      const usableW = Math.max(320, W - pad*2);
+      const usableH = Math.max(260, H - pad*2);
 
-  const floorsArr = Array.from(floors).sort((a,b)=>b-a); // topo → base
-  const colsArr   = Array.from(cols).sort((a,b)=>a-b);   // 0..N-1
+      const floorsCount = (__gridModel?.floors?.length || 1);
+      const colsCount   = (__gridModel?.cols?.length   || 1);
 
-  // ordenar cada célula por profundidade (zIndex/z): frente → fundo
-  for (const arr of map.values()){
-    arr.sort((a,b)=>{
-      const za = Number(a.meta?.zIndex || a.meta?.z || 0) || 0;
-      const zb = Number(b.meta?.zIndex || b.meta?.z || 0) || 0;
-      return za - zb;
-    });
-  }
+      const CARD_RATIO = 120/72;
+      const MIN_H = 40, MAX_H = 120;
+      const V_GAP_MIN = 6, V_GAP_MAX = 14;
+      const H_GAP_MIN = 10, H_GAP_MAX = 22;
 
-  __gridModel = { floors: floorsArr, cols: colsArr, map };
-}
+      let cardH = Math.min(MAX_H, Math.floor(usableH / Math.max(1, floorsCount*0.9)));
+      cardH = Math.max(MIN_H, cardH);
+      let vGap = Math.min(V_GAP_MAX, Math.max(V_GAP_MIN, Math.floor(cardH*0.12)));
 
+      const totalH = (h, gap) => floorsCount*h + Math.max(0, floorsCount-1)*gap;
+      while (totalH(cardH, vGap) > usableH && cardH > MIN_H) cardH -= 1;
+      while (totalH(cardH, vGap) > usableH && vGap  > V_GAP_MIN) vGap -= 1;
 
+      const cardW = Math.floor(cardH * CARD_RATIO);
+      let hGap = Math.min(H_GAP_MAX, Math.max(H_GAP_MIN, Math.floor(cardW*0.15)));
 
-function build2DCards(){
-  if (!__aptRoots || !__aptRoots.length) return;
-  if (!__gridModel) prepareGridModel();
-  if (!__gridModel) return;
+      const totalW = colsCount*cardW + Math.max(0, colsCount-1)*hGap;
+      const originX = Math.floor((W - totalW)/2) + Math.floor(cardW/2);
+      const totalHpx = totalH(cardH, vGap);
+      const originY = Math.floor((H - totalHpx)/2) + Math.floor(cardH/2);
 
-  cards2d.innerHTML = '';
-
-  for (const A of __aptRoots){
-    const el = document.createElement('div');
-    el.className  = 'card';
-    const idStr = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
-    el.dataset.id = idStr;
-
-    // cor pela FVS (igual ao 3D)
-    const piso = (A.meta?.floor ?? A.root.userData.levelIndex ?? 0);
-    el.style.background = pickFVSColor(idStr, piso);
-
-    const lab = document.createElement('div');
-    lab.className = 'label';
-    lab.textContent = A.meta?.name || A.meta?.id || 'apt';
-    el.appendChild(lab);
-
-el.addEventListener('click', (ev)=>{
-  ev.stopPropagation();
-  const aptId = String(A.meta?.id || A.meta?.name || '').trim();
-  let hex = null;
-  try {
-    const c = (A.root?.userData?.mesh?.material?.color);
-    if (c) hex = '#' + c.getHexString();
-  } catch(_) {}
-  try {
-    parent.postMessage({ type: 'viewer:open-apt', apt: aptId, color: hex }, '*');
-  } catch(_) {}
-});
-
-
-    cards2d.appendChild(el);
-    A.root.userData._cardEl = el;
-  }
-  __cardsBuilt = true;
-}
-
-
-// === [DOGE] Métricas responsivas da grade 2D (faz caber na tela) ===
-function layout2D_computeMetrics(){
-  const pad = 16;                         // margem interna do overlay
-  const W = window.innerWidth, H = window.innerHeight;
-  const usableW = Math.max(320, W - pad*2);
-  const usableH = Math.max(260, H - pad*2);
-
-  const floorsCount = (__gridModel?.floors?.length || 1);
-  const colsCount   = (__gridModel?.cols?.length   || 1);
-
-  // proporção do card (w:h) – ajuste se quiser outra “silhueta”
-  const CARD_RATIO = 120/72;              // ~1.67
-  const MIN_H = 40, MAX_H = 120;          // limites de altura do card
-  const V_GAP_MIN = 6, V_GAP_MAX = 14;    // gap vertical
-  const H_GAP_MIN = 10, H_GAP_MAX = 22;   // gap horizontal
-
-  // começa “grande” e reduz até caber a pilha inteira de pavimentos
-  let cardH = Math.min(MAX_H, Math.floor(usableH / Math.max(1, floorsCount*0.9)));
-  cardH = Math.max(MIN_H, cardH);
-  let vGap = Math.min(V_GAP_MAX, Math.max(V_GAP_MIN, Math.floor(cardH*0.12)));
-
-  const totalH = (h, gap) => floorsCount*h + Math.max(0, floorsCount-1)*gap;
-  while (totalH(cardH, vGap) > usableH && cardH > MIN_H) cardH -= 1;
-  while (totalH(cardH, vGap) > usableH && vGap  > V_GAP_MIN) vGap -= 1;
-
-  const cardW = Math.floor(cardH * CARD_RATIO);
-  let hGap = Math.min(H_GAP_MAX, Math.max(H_GAP_MIN, Math.floor(cardW*0.15)));
-
-  const totalW = colsCount*cardW + Math.max(0, colsCount-1)*hGap;
-  const originX = Math.floor((W - totalW)/2) + Math.floor(cardW/2);
-  const totalHpx = totalH(cardH, vGap);
-  const originY = Math.floor((H - totalHpx)/2) + Math.floor(cardH/2);
-
-  return { cardW, cardH, vGap, hGap, originX, originY, floorsCount, colsCount };
-}
-
-
-// ================== [DOGE] Render 2D responsivo (colunas próximas sem colisão) ==================
-
-// === Render 2D: responsivo, SEM SCROLL, cabendo 100% na área útil ===
-function render2DCardsToScreen(tFade){
-  if (!__gridModel) prepareGridModel();
-  if (!__gridModel) return;
-  if (!__cardsBuilt) build2DCards();
-
-  const { floors, cols, map } = __gridModel;
-  const rows    = floors.length;
-  const colsLen = cols.length;
-  if (!rows || !colsLen) return;
-
-  // (A) mede HUD e configura overlay para terminar no topo do HUD
-  const hud = document.getElementById('hud');
-  const hudH = hud ? hud.offsetHeight : 0;
-
-  const pane = cards2d; // seu #cards2d
-  pane.style.position      = 'fixed';
-  pane.style.top           = '0';
-  pane.style.left          = '0';
-  pane.style.right         = '0';
-  
-  pane.style.setProperty('bottom', `${hudH}px`, 'important');   // ENCOSTA no HUD
-  pane.style.opacity       = String(tFade);
-  pane.style.pointerEvents = (tFade > 0) ? 'auto' : 'none';
-  pane.style.display       = (tFade > 0 ? 'block' : 'none');
-  pane.style.overflowY     = 'hidden';      // ajusto abaixo se precisar
-
-  // (B) mede a área útil REAL do overlay (após aplicar bottom)
-  // força reflow
-  // eslint-disable-next-line no-unused-expressions
-  pane.offsetHeight;
-  const availW = Math.max(240, pane.clientWidth);
-  const availH = Math.max(180, pane.clientHeight);
-
-  // (C) slots por pavimento (máximo empilhado na coluna para aquele pav.)
-  const slotsPerFloor = floors.map(f=>{
-    let m = 1;
-    for (let i=0;i<colsLen;i++){
-      const arr = map.get(`${f}|${cols[i]}`) || [];
-      if (arr.length > m) m = arr.length;
+      return { cardW, cardH, vGap, hGap, originX, originY, floorsCount, colsCount };
     }
-    return m;
-  });
-  const sumSlots = slotsPerFloor.reduce((s,v)=>s+v,0);
 
-  // (D) métricas base
-  const RATIO = 120/72;
-  const MIN_W=44, MIN_H=18, MIN_FONT=8;
+    function render2DCardsToScreen(tFade){
+      if (!__gridModel) prepareGridModel();
+      if (!__gridModel) return;
+      if (!__cardsBuilt) build2DCards();
 
-  let hGap = Math.max(8, Math.floor(availW * 0.012));
-  let vGap = Math.max(6, Math.floor(availH * 0.012));
+      const { floors, cols, map } = __gridModel;
+      const rows    = floors.length;
+      const colsLen = cols.length;
+      if (!rows || !colsLen) return;
 
-  let cardH = Math.floor((availH - Math.max(0, rows-1)*vGap) / Math.max(1, sumSlots));
-  cardH = Math.max(MIN_H, cardH);
-  let cardW = Math.max(MIN_W, Math.floor(cardH * RATIO));
+      const hud = document.getElementById('hud');
+      const hudH = hud ? hud.offsetHeight : 0;
 
-  const totalW = () => colsLen*cardW + Math.max(0, colsLen-1)*hGap;
-  const totalH = () => sumSlots*cardH + Math.max(0, rows-1)*vGap;
+      const pane = cards2d;
+      pane.style.position      = 'fixed';
+      pane.style.top           = '0';
+      pane.style.left          = '0';
+      pane.style.right         = '0';
+      pane.style.setProperty('bottom', `${hudH}px`, 'important');
+      pane.style.opacity       = String(tFade);
+      pane.style.pointerEvents = (tFade > 0) ? 'auto' : 'none';
+      pane.style.display       = (tFade > 0 ? 'block' : 'none');
+      pane.style.overflowY     = 'hidden';
 
-  // caber em largura
-  let TW = totalW(), TH = totalH();
-  if (TW > availW){
-    const sx = availW / TW;
-    cardW = Math.max(MIN_W, Math.floor(cardW * sx));
-    hGap  = Math.max(6, Math.floor(hGap  * sx));
-    TW = totalW(); TH = totalH();
-  }
+      // força reflow
+      pane.offsetHeight;
+      const availW = Math.max(240, pane.clientWidth);
+      const availH = Math.max(180, pane.clientHeight);
 
-  // se não couber em altura no mínimo → ativa scroll
-  let useScroll = false, guard = 400;
-  while (TH > availH && guard-- > 0){
-    if (vGap > 2) vGap -= 1;
-    else if (cardH > MIN_H) cardH -= 1;
-    else { useScroll = true; break; }
-    TW = totalW(); TH = totalH();
-  }
-  pane.style.overflowY = useScroll ? 'auto' : 'hidden';
+      const slotsPerFloor = floors.map(f=>{
+        let m = 1;
+        for (let i=0;i<colsLen;i++){
+          const arr = map.get(`${f}|${cols[i]}`) || [];
+          if (arr.length > m) m = arr.length;
+        }
+        return m;
+      });
+      const sumSlots = slotsPerFloor.reduce((s,v)=>s+v,0);
 
-  // (E) centralização horizontal garantida no overlay
- const originX = Math.floor(availW/2);
+      const RATIO = 120/72;
+      const MIN_W=44, MIN_H=18, MIN_FONT=8;
 
-  // vertical: centraliza se couber; senão começa do topo com respiro
-  const padTop = 8;
-  const originY = useScroll
-    ? (padTop + Math.floor(cardH/2))
-    : (Math.floor(availH/2 - TH/2) + Math.floor(cardH/2));
+      let hGap = Math.max(8, Math.floor(availW * 0.012));
+      let vGap = Math.max(6, Math.floor(availH * 0.012));
 
-  // fonte + tamanho dos cards
-  const fontPx = Math.max(MIN_FONT, Math.round(Math.min(cardW, cardH) * 0.18));
-  for (const A of __aptRoots){
-    const el = A.root.userData?._cardEl;
-    if (!el) continue;
-    el.style.width     = `${cardW}px`;
-    el.style.height    = `${cardH}px`;
-    el.style.fontSize  = `${fontPx}px`;
-    el.style.opacity   = String(0.15 + 0.85*tFade);
-    // mantemos o translate(-50%,-50%) do CSS
-  }
+      let cardH = Math.floor((availH - Math.max(0, rows-1)*vGap) / Math.max(1, sumSlots));
+      cardH = Math.max(MIN_H, cardH);
+      let cardW = Math.max(MIN_W, Math.floor(cardH * RATIO));
 
-  // (F) posicionamento por pavimento/coluna
-  let cursorY = useScroll ? (originY - Math.floor(cardH/2)) : (originY - TH/2);
-  for (let r=0; r<rows; r++){
-    const f = floors[r];
-    const bandH = slotsPerFloor[r] * cardH;
-    const rowCenterY = cursorY + bandH/2;
+      const totalW = () => colsLen*cardW + Math.max(0, colsLen-1)*hGap;
+      const totalH = () => sumSlots*cardH + Math.max(0, rows-1)*vGap;
 
-    for (let cx=0; cx<colsLen; cx++){
-      const key = `${f}|${cols[cx]}`;
-      const arr = map.get(key) || [];
-      const slots = Math.max(1, arr.length);
+      let TW = totalW(), TH = totalH();
+      if (TW > availW){
+        const sx = availW / TW;
+        cardW = Math.max(MIN_W, Math.floor(cardW * sx));
+        hGap  = Math.max(6, Math.floor(hGap  * sx));
+        TW = totalW(); TH = totalH();
+      }
 
-      const colCenterX = originX - (TW/2) + cx*(cardW + hGap) + cardW/2;
-      const topBand = rowCenterY - (slots*cardH)/2;
+      let useScroll = false, guard = 400;
+      while (TH > availH && guard-- > 0){
+        if (vGap > 2) vGap -= 1;
+        else if (cardH > MIN_H) cardH -= 1;
+        else { useScroll = true; break; }
+        TW = totalW(); TH = totalH();
+      }
+      pane.style.overflowY = useScroll ? 'auto' : 'hidden';
 
-      for (let k=0; k<arr.length; k++){
-        const A = arr[k];
+      const originX = Math.floor(availW/2);
+      const padTop = 8;
+      const originY = useScroll
+        ? (padTop + Math.floor(cardH/2))
+        : (Math.floor(availH/2 - TH/2) + Math.floor(cardH/2));
+
+      const fontPx = Math.max(MIN_FONT, Math.round(Math.min(cardW, cardH) * 0.18));
+      for (const A of __aptRoots){
         const el = A.root.userData?._cardEl;
         if (!el) continue;
-
-        const x = colCenterX;
-        const y = topBand + cardH*(k + 0.5);
-
-        el.style.left = `${x}px`;
-        el.style.top  = `${y}px`;
+        el.style.width     = `${cardW}px`;
+        el.style.height    = `${cardH}px`;
+        el.style.fontSize  = `${fontPx}px`;
+        el.style.opacity   = String(0.15 + 0.85*tFade);
       }
+
+      let cursorY = useScroll ? (originY - Math.floor(cardH/2)) : (originY - TH/2);
+      for (let r=0; r<rows; r++){
+        const f = floors[r];
+        const bandH = slotsPerFloor[r] * cardH;
+        const rowCenterY = cursorY + bandH/2;
+
+        for (let cx=0; cx<colsLen; cx++){
+          const key = `${f}|${cols[cx]}`;
+          const arr = map.get(key) || [];
+          const slots = Math.max(1, arr.length);
+
+          const colCenterX = originX - (TW/2) + cx*(cardW + hGap) + cardW/2;
+          const topBand = rowCenterY - (slots*cardH)/2;
+
+          for (let k=0; k<arr.length; k++){
+            const A = arr[k];
+            const el = A.root.userData?._cardEl;
+            if (!el) continue;
+
+            const x = colCenterX;
+            const y = topBand + cardH*(k + 0.5);
+
+            el.style.left = `${x}px`;
+            el.style.top  = `${y}px`;
+          }
+        }
+        cursorY += bandH + (r < rows-1 ? vGap : 0);
+      }
+
+      if (useScroll) pane.scrollTop = 0;
     }
-    cursorY += bandH + (r < rows-1 ? vGap : 0);
-  }
 
-  if (useScroll) pane.scrollTop = 0;
-}
-
-(function watchHudAndRerender(){
-  let lastHudH = -1;
-  function tick(){
-    const hud = document.getElementById('hud');
-    const h = hud ? hud.offsetHeight : 0;
-    if (flatten2D > 0 && h !== lastHudH){
-      lastHudH = h;
-      render2DCardsToScreen(flatten2D);
-    }
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-})();
-
+    (function watchHudAndRerender(){
+      let lastHudH = -1;
+      function tick(){
+        const hud = document.getElementById('hud');
+        const h = hud ? hud.offsetHeight : 0;
+        if (flatten2D > 0 && h !== lastHudH){
+          lastHudH = h;
+          render2DCardsToScreen(flatten2D);
+        }
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    })();
 
     function hide2DCards(){
       cards2d.style.opacity = '0';
       cards2d.style.pointerEvents = 'none';
     }
 
-    // Estado inicial
-    //opacityVal.textContent = (Number(opacity.value)/100).toFixed(2);
-    setFaceOpacity(Number(opacity.value)/100);
-    setFacesVisible(true);
+    // ===== Cores herdadas do 2D =====
+    let COLOR_MAP = {
+      default: '#6e7681',
+      colors:  {},
+      byFloor: {}
+    };
 
-    // ====== Cores herdadas do 2D ======
-// ====== FVS → mapa de cores unificado (3D + 2D) ======
-let COLOR_MAP = {
-  default: '#6e7681',
-  colors:  {},       // { "301": "#RRGGBB", ... }
-  byFloor: {}        // { "0": "#RRGGBB", ... } (por índice de pavimento numérico)
-};
+    function doge_openDetails(aptoId, floorIdx){
+      try {
+        parent.postMessage({
+          type: 'open-fvs-modal',
+          payload: {
+            aptoId: String(aptoId ?? ''),
+            floorIdx: Number.isFinite(floorIdx) ? Number(floorIdx) : null
+          }
+        }, '*');
+      } catch (_) {}
 
-// ====== Disparo do modal de detalhes (comunicação com index.html) ======
-function doge_openDetails(aptoId, floorIdx){
-  // Envia para o parent (index.html) abrir o modal
-  try {
-    parent.postMessage({
-      type: 'open-fvs-modal',
-      payload: {
-        aptoId: String(aptoId ?? ''),
-        floorIdx: Number.isFinite(floorIdx) ? Number(floorIdx) : null
+      if (typeof window.openAptModal === 'function') {
+        window.openAptModal({ id: String(aptoId ?? ''), floor: floorIdx });
       }
-    }, '*');
-  } catch (_) {}
-
-  // Fallback local: se existir uma função global no viewer, usa
-  if (typeof window.openAptModal === 'function') {
-    window.openAptModal({ id: String(aptoId ?? ''), floor: floorIdx });
-  }
-}
-
-// Decide se o clique é por apartamento ou por pavimento
-// Regra: se houver cor específica para o apto → trata como apto;
-// senão, se houver cor para o pavimento → trata como pavimento;
-// se nada houver, ainda assim tenta abrir por apto.
-function doge_decideAndOpen(aptoId, floorIdx){
-  const idNorm = (aptoId != null) ? String(aptoId) : '';
-  const hasApt = !!(COLOR_MAP.colors[idNorm] || COLOR_MAP.colors[normApto(idNorm)]);
-  const hasFloor = !!COLOR_MAP.byFloor?.[String(floorIdx)];
-  if (hasApt) {
-    doge_openDetails(idNorm, null);
-  } else if (hasFloor) {
-    doge_openDetails(null, floorIdx);
-  } else {
-    doge_openDetails(idNorm, floorIdx);
-  }
-}
-
-
-// Normaliza id do apartamento (mesma regra)
-function normApto(s){
-  if (s == null) return '';
-  let t = String(s).trim().toUpperCase();
-  t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, '');
-  t = t.replace(/[\s\-\._\/]/g, '');
-  return t;
-}
-
-// Busca a cor da FVS para um apto/piso
-function pickFVSColor(aptoId, floorIdx){
-  const hexA = COLOR_MAP.colors[aptoId] || COLOR_MAP.colors[normApto(aptoId)];
-  if (hexA && /^#?[0-9a-f]{6}$/i.test(hexA)) return hexA.startsWith('#') ? hexA : '#'+hexA;
-
-  const hexF = COLOR_MAP.byFloor[String(floorIdx)];
-  if (hexF && /^#?[0-9a-f]{6}$/i.test(hexF)) return hexF.startsWith('#') ? hexF : '#'+hexF;
-
-  const defHex = COLOR_MAP.default || '#6e7681';
-  return defHex.startsWith('#') ? defHex : '#'+defHex;
-}
-
-// Repinta as malhas 3D
-function recolorMeshes3D(){
-  if (!torre) return;
-  for (const g of torre.children){
-    const nome  = g.userData.nome || g.userData.meta?.id || '';
-    const floor = g.userData.levelIndex ?? 0;
-    const hex   = pickFVSColor(nome, floor);
-
-    const mat = g.userData.mesh.material;
-    mat.color = new THREE.Color(hex);
-    if (faceOpacity >= 0.999){
-      mat.transparent = false;
-      mat.depthWrite = true;
-      mat.opacity = 1.0;
-    } else {
-      mat.transparent = true;
-      mat.depthWrite = false;
-      mat.opacity = faceOpacity;
     }
-    mat.needsUpdate = true;
-  }
-}
 
-// Repinta os cards 2D
-function recolorCards2D(){
-  if (!__aptRoots || !__aptRoots.length) return;
-  for (const A of __aptRoots){
-    const el = A.root.userData?._cardEl;
-    if (!el) continue;
-    const id   = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
-    const piso = (A.meta?.floor ?? A.root.userData.levelIndex ?? 0);
-    el.style.background = pickFVSColor(id, piso);
-  }
-}
+    function doge_decideAndOpen(aptoId, floorIdx){
+      const idNorm = (aptoId != null) ? String(aptoId) : '';
+      const hasApt = !!(COLOR_MAP.colors[idNorm] || COLOR_MAP.colors[normApto(idNorm)]);
+      const hasFloor = !!COLOR_MAP.byFloor?.[String(floorIdx)];
+      if (hasApt) {
+        doge_openDetails(idNorm, null);
+      } else if (hasFloor) {
+        doge_openDetails(null, floorIdx);
+      } else {
+        doge_openDetails(idNorm, floorIdx);
+      }
+    }
 
-// Atualiza o mapa e repinta tudo (usado pelo main.html via postMessage)
-function setFVSColorMap(payload){
-  if (!payload) return;
-  COLOR_MAP = {
-    default: payload.default || '#6e7681',
-    colors:  payload.colors  || {},
-    byFloor: payload.byFloor || {}
-  };
-  recolorMeshes3D();
-  recolorCards2D();
-}
+    function normApto(s){
+      if (s == null) return '';
+      let t = String(s).trim().toUpperCase();
+      t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, '');
+      t = t.replace(/[\s\-\._\/]/g, '');
+      return t;
+    }
 
+    function pickFVSColor(aptoId, floorIdx){
+      const hexA = COLOR_MAP.colors[aptoId] || COLOR_MAP.colors[normApto(aptoId)];
+      if (hexA && /^#?[0-9a-f]{6}$/i.test(hexA)) return hexA.startsWith('#') ? hexA : '#'+hexA;
 
-// Mantém compatível com o main.html já existente
-window.addEventListener('message', (e)=>{
-  const data = e.data || {};
-  if (data.type === 'fvsColorMap') {
-    setFVSColorMap(data.payload);
-  }
-});
-try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
+      const hexF = COLOR_MAP.byFloor[String(floorIdx)];
+      if (hexF && /^#?[0-9a-f]{6}$/i.test(hexF)) return hexF.startsWith('#') ? hexF : '#'+hexF;
 
+      const defHex = COLOR_MAP.default || '#6e7681';
+      return defHex.startsWith('#') ? defHex : '#'+defHex;
+    }
+
+    // Recolor (ajustada para não disputar opacidade)
+    function recolorMeshes3D(){
+      if (!torre) return;
+      for (const g of torre.children){
+        const nome  = g.userData.nome || g.userData.meta?.id || '';
+        const floor = g.userData.levelIndex ?? 0;
+        const hex   = pickFVSColor(nome, floor);
+
+        const mat = g.userData.mesh.material;
+        mat.color = new THREE.Color(hex);
+        mat.needsUpdate = true;
+      }
+      // Reaplica opacidade efetiva após recolorir
+      const eff = computeEffectiveOpacity(faceOpacity, flatten2D || 0);
+      applyOpacityToAllMeshes(eff);
+    }
+
+    function recolorCards2D(){
+      if (!__aptRoots || !__aptRoots.length) return;
+      for (const A of __aptRoots){
+        const el = A.root.userData?._cardEl;
+        if (!el) continue;
+        const id   = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
+        const piso = (A.meta?.floor ?? A.root.userData.levelIndex ?? 0);
+        el.style.background = pickFVSColor(id, piso);
+      }
+    }
+
+    function setFVSColorMap(payload){
+      if (!payload) return;
+      COLOR_MAP = {
+        default: payload.default || '#6e7681',
+        colors:  payload.colors  || {},
+        byFloor: payload.byFloor || {}
+      };
+      recolorMeshes3D();
+      recolorCards2D();
+    }
+
+    window.addEventListener('message', (e)=>{
+      const data = e.data || {};
+      if (data.type === 'fvsColorMap') {
+        setFVSColorMap(data.payload);
+      }
+    });
+    try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
 
     // ====== Resize & Loop ======
     addEventListener('resize', () => {
@@ -1628,7 +1428,6 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
       renderer.setSize(innerWidth, innerHeight);
       updateCamera();
 
-      // [DOGE] se a transição 2D estiver ativa, reposiciona a grade
       if (typeof flatten2D !== 'undefined' && flatten2D > 0 && typeof render2DCardsToScreen === 'function') {
         render2DCardsToScreen(flatten2D);
       }
@@ -1636,8 +1435,6 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
 
     (function animate(){ requestAnimationFrame(animate); renderer.render(scene, camera); })();
   })();
-
-  
   </script>
 </body>
 </html>
