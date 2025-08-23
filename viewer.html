@@ -857,7 +857,7 @@ renderer.domElement.addEventListener('click', (e) => {
     // ================== [DOGE] Transição 3D→2D (fade/zoom + grade overlay) ==================
 function apply2DTransition(){
   if (!torre) return;
-
+   cacheBaseVisualsIfNeeded();
   // Garante coleta/construção da grade na 1ª vez que o slider mexe
   if (!__aptRoots || __aptRoots.length === 0) collectApartmentRoots();
   if (!__gridModel) prepareGridModel();
@@ -870,29 +870,47 @@ function apply2DTransition(){
   const s = THREE.MathUtils.lerp(1.0, 0.50, t);  // 1 → 0.5
   torre.scale.set(baseScale.x * s, baseScale.y * s, baseScale.z * s);
 
-  torre.traverse(n=>{
-    if (!n.material) return;
+torre.traverse(n=>{
+  if (!n.material) return;
 
-    if (n.isMesh) {
-      const base = (typeof n.userData.__baseOpacityMesh === 'number')
-                    ? n.userData.__baseOpacityMesh : (typeof faceOpacity==='number'?faceOpacity:1.0);
-      const op = THREE.MathUtils.lerp(base, 0.03, t);
+  if (n.isMesh) {
+    const base = (typeof n.userData.__baseOpacityMesh === 'number')
+                  ? n.userData.__baseOpacityMesh
+                  : (typeof faceOpacity==='number' ? faceOpacity : 1.0);
+
+    const op = THREE.MathUtils.lerp(base, 0.03, t);
+    n.material.opacity = op;
+
+    // quando estamos “no 3D” (t ~ 0), volte aos flags originais
+    if (t <= 0.001) {
+      const opaque = base >= 0.999;
+      n.material.transparent = !opaque;
+      n.material.depthWrite  = opaque;
+    } else {
       n.material.transparent = true;
       n.material.depthWrite  = false;
-      n.material.opacity     = op;
-      n.material.needsUpdate = true;
     }
+    n.material.needsUpdate = true;
+  }
 
-    if (n.isLine || n.isLineSegments) {
-      const base = (typeof n.userData.__baseOpacityLine === 'number')
-                    ? n.userData.__baseOpacityLine : 0.95;
-      const op = THREE.MathUtils.lerp(base, 0.08, t);
+  if (n.isLine || n.isLineSegments) {
+    const base = (typeof n.userData.__baseOpacityLine === 'number')
+                  ? n.userData.__baseOpacityLine : 0.95;
+
+    const op = THREE.MathUtils.lerp(base, 0.08, t);
+    n.material.opacity = op;
+
+    if (t <= 0.001) {
+      const opaque = base >= 0.999;
+      n.material.transparent = !opaque;
+      n.material.depthWrite  = opaque;
+    } else {
       n.material.transparent = true;
       n.material.depthWrite  = false;
-      n.material.opacity     = op;
-      n.material.needsUpdate = true;
     }
-  });
+    n.material.needsUpdate = true;
+  }
+});
 
   // 2) Overlay 2D: posiciona e controla visibilidade
   render2DCardsToScreen(t);
@@ -924,12 +942,40 @@ function tweenFlatten2D(target, ms=280){
   const start = performance.now();
   function step(now){
     const k = Math.min(1, (now - start) / ms);
-    // easeInOut (suave)
     const eased = k < 0.5 ? 2*k*k : 1 - Math.pow(-2*k + 2, 2)/2;
     flatten2D = from + (to - from) * eased;
     apply2DTransition();
-    if (k < 1) requestAnimationFrame(step);
-    else { flatten2D = to; apply2DTransition(); update2DButtonVisual(); }
+
+    if (k < 1) {
+      requestAnimationFrame(step);
+    } else {
+      flatten2D = to;
+      apply2DTransition();
+      update2DButtonVisual();
+
+      // se voltamos ao 3D, restaura exatamente a base
+      if (to === 0 && torre) {
+        torre.traverse(n=>{
+          if (!n.material) return;
+          if (n.isMesh && typeof n.userData.__baseOpacityMesh === 'number') {
+            const base = n.userData.__baseOpacityMesh;
+            n.material.opacity     = base;
+            const opaque           = base >= 0.999;
+            n.material.transparent = !opaque;
+            n.material.depthWrite  = opaque;
+            n.material.needsUpdate = true;
+          }
+          if ((n.isLine || n.isLineSegments) && typeof n.userData.__baseOpacityLine === 'number') {
+            const base = n.userData.__baseOpacityLine;
+            n.material.opacity     = base;
+            const opaque           = base >= 0.999;
+            n.material.transparent = !opaque;
+            n.material.depthWrite  = opaque;
+            n.material.needsUpdate = true;
+          }
+        });
+      }
+    }
   }
   requestAnimationFrame(step);
 }
@@ -1526,4 +1572,5 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
