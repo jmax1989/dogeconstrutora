@@ -171,6 +171,8 @@
       </div>
       <div class="row">
         <label>Código (ex.: 301) <input id="cID" type="text" placeholder="vazio = automático"></label>
+        <label>Nome <input id="cName" type="text" placeholder="ex.: Apto 301"></label>
+        <label>Ordem col. <input id="cOrdem" type="number" min="0" max="99" value="0" style="width:72px"></label>
         <label>W (X) <input id="cW" type="number" min="1" max="64" value="6"></label>
         <label>H (Y pavimentos) <input id="cH" type="number" min="1" max="200" value="6"></label>
         <label>D (Z) <input id="cD" type="number" min="1" max="64" value="4"></label>
@@ -872,7 +874,8 @@ function elementTouchesFloor(e, f){
 /* ==================== Undo/Redo/Clipboard ==================== */
 function serializeElement(e){
   return {
-    id:e.id, code:e.code, color:e.color, x:e.x, y:e.y, z:e.z, W:e.W, H:e.H, D:e.D,
+    id:e.id, code:e.code, name:(e.name||''), ordemcol: (e.ordemcol|0),
+    color:e.color, x:e.x, y:e.y, z:e.z, W:e.W, H:e.H, D:e.D,
     yb: e.yb|0,
     topMask:[...e.topMask], frontMask:[...e.frontMask],
     sideMask: e.sideMask ? [...e.sideMask] : []
@@ -880,7 +883,8 @@ function serializeElement(e){
 }
 function deserializeElement(o){
   return {
-    id:o.id, code:o.code, color:o.color, x:o.x, y:o.y, z:o.z, W:o.W, H:o.H, D:o.D,
+    id:o.id, code:o.code, name:(o.name||''), ordemcol: (o.ordemcol|0),
+    color:o.color, x:o.x, y:o.y, z:o.z, W:o.W, H:o.H, D:o.D,
     yb: (o.yb|0),
     topMask:new Set(o.topMask), frontMask:new Set(o.frontMask),
     sideMask: new Set(o.sideMask || [])
@@ -915,36 +919,41 @@ function copySelection(){
   sel.forEach(e=>{ minX=Math.min(minX,e.x); minY=Math.min(minY,e.y); minZ=Math.min(minZ,e.z); });
   clipboard = {
     base:{x:minX,y:minY,z:minZ},
-items: sel.map(e=>({
-  dx: e.x - minX, dy: e.y - minY, dz: e.z - minZ,
-  W:e.W,H:e.H,D:e.D, color:e.color, code:e.code,
-  yb: e.yb|0,
-  topMask:[...e.topMask], frontMask:[...e.frontMask], sideMask: e.sideMask ? [...e.sideMask] : [],
-  id:e.id
-}))
+    items: sel.map(e=>({
+      dx: e.x - minX, dy: e.y - minY, dz: e.z - minZ,
+      W:e.W,H:e.H,D:e.D, color:e.color, code:e.code,
+      name: e.name || "",             // NOVO
+      zIndex: (e.zIndex|0),           // NOVO
+      yb: e.yb|0,
+      topMask:[...e.topMask], frontMask:[...e.frontMask], sideMask: e.sideMask ? [...e.sideMask] : [],
+      id:e.id
+    }))
   };
   pasteBump = 0;
   statusEl.textContent = `Copiados ${sel.length} elemento(s). Ctrl+V para colar.`;
 }
+
 function pasteClipboard(){
   if (!clipboard) return;
   startAction();
   const baseOffset = {x:clipboard.base.x + 1 + pasteBump, y:clipboard.base.y, z:clipboard.base.z};
   const newIds=[];
   clipboard.items.forEach(it=>{
-const e = {
-  id: rndId(),
-  code: it.code,
-  color: it.color,
-  x: baseOffset.x + it.dx,
-  y: baseOffset.y + it.dy,
-  z: baseOffset.z + it.dz,
-  W: it.W, H: it.H, D: it.D,
-  yb: it.yb|0,
-  topMask: new Set(it.topMask),
-  frontMask: new Set(it.frontMask),
-  sideMask: new Set(it.sideMask || [])
-};
+    const e = {
+      id: rndId(),
+      code: it.code,
+      name: it.name || "",           // NOVO
+      zIndex: (it.zIndex|0),         // NOVO
+      color: it.color,
+      x: baseOffset.x + it.dx,
+      y: baseOffset.y + it.dy,
+      z: baseOffset.z + it.dz,
+      W: it.W, H: it.H, D: it.D,
+      yb: it.yb|0,
+      topMask: new Set(it.topMask),
+      frontMask: new Set(it.frontMask),
+      sideMask: new Set(it.sideMask || [])
+    };
     elements.push(e);
     newIds.push(e.id);
   });
@@ -954,6 +963,8 @@ const e = {
   renumberIds();
   drawAll(); updateButtonsState();
 }
+
+
 
 /* atalhos */
 document.addEventListener('keydown', (e)=>{
@@ -1532,6 +1543,8 @@ function requestRebuild3D(){ if (!group3D) return; if (rebuildTimer) cancelAnima
 const creatorOverlay = document.getElementById('creatorOverlay');
 const creatorTitle = document.getElementById('creatorTitle');
 const cID = document.getElementById('cID');
+const cName = document.getElementById('cName');       // NOVO
+const cZIndex = document.getElementById('cOrdem');   // NOVO
 const cW = document.getElementById('cW');
 const cH = document.getElementById('cH');
 const cD = document.getElementById('cD');
@@ -1724,7 +1737,6 @@ function autoAptCode(floor, candidate){
 /* Criar/Editar */
 function openCreator(mode='new'){
   function deriveSideFrom(topMask, frontMask){
-    // side = { (z,y) existe x tal que (x,z)∈top e (x,y)∈front }
     const xsByZ = new Map();
     topMask.forEach(k=>{
       const [x,z]=k.split(',').map(Number);
@@ -1740,10 +1752,7 @@ function openCreator(mode='new'){
     const out = new Set();
     xsByZ.forEach((xset,z)=>{
       xsByY.forEach((xsetY,y)=>{
-        // intersecção não-vazia?
-        for (const x of xset){
-          if (xsetY.has(x)){ out.add(`${z},${y}`); break; }
-        }
+        for (const x of xset){ if (xsetY.has(x)){ out.add(`${z},${y}`); break; } }
       });
     });
     return out;
@@ -1753,14 +1762,17 @@ function openCreator(mode='new'){
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
     cID.value = e.code || '';
+    cName.value = e.name || '';
+    cOrdem.value = (e.ordemcol|0);
     cW.value = e.W; cH.value = e.H; cD.value = e.D;
     tempTop   = new Set(e.topMask);
     tempFront = new Set(e.frontMask);
-    // side existente → usa; senão, deriva
     tempSide  = new Set(e.sideMask ? e.sideMask : deriveSideFrom(e.topMask, e.frontMask));
     creatorTitle.textContent = 'Editar elemento';
   } else {
     cID.value = '';
+    cName.value = '';
+    cOrdem.value = '0';
     cW.value = 6; cH.value = Math.max(6, floors.length); cD.value = 4;
     tempTop.clear(); tempFront.clear(); tempSide.clear();
     creatorTitle.textContent = 'Novo elemento';
@@ -1798,33 +1810,40 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
 
   if (normTop.size===0)   normTop.add('0,0');
   if (normFront.size===0) normFront.add('0,0');
-  // side é opcional; não precisamos forçar conteúdo
 
   pushUndo(snapshotState());
+
+  const nomeVal = (cName.value||'').trim();
+  const ordemVal = Math.max(0, parseInt(cOrdem.value||'0',10) || 0);
 
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
     e.code = (cID.value||'').trim() || e.code;
+    e.name = nomeVal;
+    e.ordemcol = ordemVal|0;
     e.W=Wv; e.H=Hv; e.D=Dv;
     e.topMask   = normTop;
     e.frontMask = normFront;
-    e.sideMask  = normSide; // pode estar vazio
+    e.sideMask  = normSide;
     selId = e.id;
   } else {
     const bornY = (isolatedFloor!=null ? isolatedFloor : 0);
-const e = { 
-  id: rndId(), 
-  code: (cID.value||'').trim() || autoAptCode(bornY, null),
-  color: COLORS[elements.length % COLORS.length],
-  x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv,
-  yb: 0,
-  topMask: normTop, frontMask: normFront, sideMask: normSide
-};
+    const e = {
+      id: rndId(),
+      code: (cID.value||'').trim() || autoAptCode(bornY, null),
+      name: nomeVal,
+      ordemcol: ordemVal|0,
+      color: COLORS[elements.length % COLORS.length],
+      x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv,
+      yb: 0,
+      topMask: normTop, frontMask: normFront, sideMask: normSide
+    };
     elements.push(e); selId = e.id; selectedIds = new Set([e.id]);
   }
   closeCreator(); drawAll(); updateButtonsState();
   renumberIds();
 });
+
 /* ==================== UI básica & grelha de pavimentos ==================== */
 function updateButtonsState(){
   const hasSel = selectedIds.size>0;
@@ -1839,19 +1858,24 @@ document.getElementById('dupElem').addEventListener('click', ()=>{
   const ids = Array.from(selectedIds); const newIds=[];
   for (const id of ids){
     const src = elements.find(e=>e.id===id); if (!src) continue;
-const dup = { 
-  id: rndId(), code: src.code, color: src.color, x: src.x+1, y: src.y, z: src.z,
-  W: src.W, H: src.H, D: src.D,
-  yb: src.yb|0,
-  topMask: new Set(src.topMask),
-  frontMask: new Set(src.frontMask),
-  sideMask: new Set(src.sideMask || [])
-};
+    const dup = { 
+      id: rndId(),
+      code: src.code,
+      name: src.name || "",          // NOVO
+      zIndex: (src.zIndex|0),        // NOVO
+      color: src.color, x: src.x+1, y: src.y, z: src.z,
+      W: src.W, H: src.H, D: src.D,
+      yb: src.yb|0,
+      topMask: new Set(src.topMask),
+      frontMask: new Set(src.frontMask),
+      sideMask: new Set(src.sideMask || [])
+    };
     elements.push(dup); newIds.push(dup.id);
   }
   selectedIds = new Set(newIds); selId = newIds[0] ?? null; drawAll(); updateButtonsState();
   renumberIds();
 });
+
 
 /* ==================== Mesclar (adjacência 6-neigh) ==================== */
 function bboxXYZ(e){
@@ -1899,7 +1923,6 @@ function mergeSelected(){
   const ids = [...selectedIds];
   const els = ids.map(id => elements.find(e => e.id === id)).filter(Boolean);
 
-  // Verificação 6-conexa (continua igual)
   for (let i = 0; i < els.length; i++){
     for (let j = i+1; j < els.length; j++){
       if (!areAdjacent3D(els[i], els[j])){
@@ -1909,17 +1932,15 @@ function mergeSelected(){
     }
   }
 
-  // Snapshot para Undo
   pushUndo(snapshotState());
 
-  // ==== União de voxels em coordenadas globais (x, ySub, z) ====
   const union = new Set();
   let minGX=Infinity, minYSub=Infinity, minGZ=Infinity;
   let maxGX=-Infinity, maxYSub=-Infinity, maxGZ=-Infinity;
   let color = els[0]?.color || COLORS[0];
 
   for (const e of els){
-    const vset = voxelsOf(e); // retorna `${gx},${ySub},${gz}`
+    const vset = voxelsOf(e);
     for (const v of vset){
       if (union.has(v)) continue;
       union.add(v);
@@ -1938,37 +1959,34 @@ function mergeSelected(){
     return;
   }
 
-  // ==== Reconstruir máscaras normalizadas (em coordenadas locais) ====
-  const newTop   = new Set(); // (lx, lz)
-  const newFront = new Set(); // (lx, yLocalBlocks)
-  const newSide  = new Set(); // (lz, yLocalBlocks)
+  const newTop   = new Set();
+  const newFront = new Set();
+  const newSide  = new Set();
 
   for (const v of union){
     const [gx, ySub, gz] = v.split(',').map(Number);
     const lx = gx - minGX;
     const lz = gz - minGZ;
-    const yLocal = ySub - minYSub; // blocos locais
-
+    const yLocal = ySub - minYSub;
     newTop.add(`${lx},${lz}`);
     newFront.add(`${lx},${yLocal}`);
     newSide.add(`${lz},${yLocal}`);
   }
 
-  // ==== Dimensões ====
   const W = Math.max(1, (maxGX - minGX + 1));
   const D = Math.max(1, (maxGZ - minGZ + 1));
-  const HBlocks = Math.max(1, (maxYSub - minYSub + 1)); // altura em BLOCO(s)
+  const HBlocks = Math.max(1, (maxYSub - minYSub + 1));
 
-  // ==== Base em pavimento + offset de bloco ====
   const yFloor = floorOfYSub(minYSub);
-  const yb     = minYSub - yFloor * BLOCKS_PER_FLOOR; // 0..BPP-1
+  const yb     = minYSub - yFloor * BLOCKS_PER_FLOOR;
   const yClamped = Math.max(0, Math.min(floors.length - 1, yFloor));
 
-  // ==== Código: menor código numérico da seleção (se houver) ====
   let minCode = Infinity;
+  let minZIdx = Infinity;
   for (const e of els){
     const n = parseInt(e.code, 10);
     if (!isNaN(n)) minCode = Math.min(minCode, n);
+    minZIdx = Math.min(minZIdx, (e.zIndex|0)||0);
   }
 
   const merged = {
@@ -1979,25 +1997,22 @@ function mergeSelected(){
     y: yClamped,
     z: minGZ,
     W,
-    // H (em blocos) não é usado diretamente fora; mantemos H=HBlocks para coerência com editor
     H: HBlocks,
     D,
     yb: Math.max(0, Math.min(BLOCKS_PER_FLOOR - 1, yb|0)),
+    zIndex: isFinite(minZIdx) ? minZIdx : 0,
     topMask: newTop,
     frontMask: newFront,
     sideMask: newSide
   };
 
-  // Substitui no array
   elements = elements.filter(e => !selectedIds.has(e.id));
   elements.push(merged);
 
-  // Seleciona novo elemento e remove isolamento para não esconder
   selectedIds = new Set([merged.id]);
   selId = merged.id;
   isolatedFloor = null;
 
-  // Renumera, redesenha e atualiza UI
   renumberIds();
   drawAll();
   updateButtonsState();
@@ -2166,13 +2181,12 @@ function computePlacements(){
       });
     }
 
-    const runsByXZ = new Map(); // key (lx,lz) -> [{y0,y1} em blocos locais]
+    const runsByXZ = new Map();
 
     for (const [lx, ysetBase] of yByX.entries()){
       const zset = zByX.get(lx); if (!zset) continue;
 
       for (const lz of zset){
-        // restringe Y pela lateral, se existir
         let ySet;
         if (yByZ.size>0){
           const allow = yByZ.get(lz); if (!allow) continue;
@@ -2185,20 +2199,16 @@ function computePlacements(){
         while (i<ys.length){
           let y0 = ys[i], y = ys[i]+1; i++;
           while (i<ys.length && ys[i]===y){ y=ys[i]+1; i++; }
-          const y1 = y; // exclusivo
+          const y1 = y;
           const key = `${lx},${lz}`;
           if (!runsByXZ.has(key)) runsByXZ.set(key, []);
-          runsByXZ.get(key).push({y0,y1}); // em blocos locais
+          runsByXZ.get(key).push({y0,y1});
         }
       }
     }
 
-    // compacta em retângulos X×Z por faixas de Y-blocos iguais
     const visited = new Set();
-    const hasRun=(lx,lz,y0,y1)=>{
-      const arr=runsByXZ.get(`${lx},${lz}`); 
-      return !!arr && arr.some(r=>r.y0===y0&&r.y1===y1);
-    };
+    const hasRun=(lx,lz,y0,y1)=>{ const arr=runsByXZ.get(`${lx},${lz}`); return !!arr && arr.some(r=>r.y0===y0&&r.y1===y1); };
     const markRun=(lx,lz,y0,y1)=> visited.add(`${lx},${lz},${y0},${y1}`);
     const isVisited=(lx,lz,y0,y1)=> visited.has(`${lx},${lz},${y0},${y1}`);
 
@@ -2208,12 +2218,10 @@ function computePlacements(){
         const {y0,y1} = run;
         if (isVisited(lx0,lz0,y0,y1)) continue;
 
-        // expandir em Z
         let zMin=lz0, zMax=lz0;
         while (hasRun(lx0, zMin-1, y0, y1) && !isVisited(lx0, zMin-1, y0, y1)) zMin--;
         while (hasRun(lx0, zMax+1, y0, y1) && !isVisited(lx0, zMax+1, y0, y1)) zMax++;
 
-        // expandir em X
         let xMin=lx0, xMax=lx0;
         outerNeg: while (true){
           const nx=xMin-1;
@@ -2226,30 +2234,25 @@ function computePlacements(){
           xMax=nx;
         }
 
-        // marca como visitado
         for (let x=xMin; x<=xMax; x++){
           for (let z=zMin; z<=zMax; z++){
             markRun(x,z,y0,y1);
           }
         }
 
-        // Converter blocos (y0..y1) para pavimentos globais:
-        // base do elemento é em pavimentos (e.y).
-        // ySub global de início e fim-1:
         const ySubStart = ySubOfLocal(e, y0);
-        const ySubEndEx = ySubOfLocal(e, y1); // exclusivo
-        // pavimento inicial
+        const ySubEndEx = ySubOfLocal(e, y1);
         let gFloorStart = floorOfYSub(ySubStart);
-        // pavimento final exclusivo (se acaba no meio do pavimento, ainda conta aquele)
         let gFloorEndEx = floorOfYSub(ySubEndEx - 1) + 1;
 
-        // clipe aos limites do prédio
         gFloorStart = Math.max(0, Math.min(gFloorStart, floors.length));
         gFloorEndEx = Math.max(0, Math.min(gFloorEndEx, floors.length));
         if (gFloorEndEx <= gFloorStart) continue;
 
         placements.push({
           apto: e.code,
+          nome: (e.name||''),
+          ordemcol: (e.ordemcol|0),
           color: e.color,
           andar: gFloorStart,
           x: e.x + xMin,
@@ -2266,10 +2269,21 @@ function computePlacements(){
   return placements;
 }
 
+
 function exportModel(){
+  const placements = computePlacements();
+
+  // mapa com metadados por apartamento (zIndex, e futuramente outros)
+  const aptoMeta = {};
+  for (const e of elements){
+    const key = String(e.code||'').trim();
+    if (!key) continue;
+    aptoMeta[key] = { zIndex: (e.zIndex|0)||0 };
+  }
+
   return {
-    meta: { cellW:1, cellD:1, gap:0, floors: floors.slice() },
-    placements: computePlacements()
+    meta: { cellW:1, cellD:1, gap:0, floors: floors.slice(), aptoMeta },
+    placements
   };
 }
 function downloadText(text, filename='predio_layout.json'){
@@ -2313,14 +2327,23 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
     const text = await f.text();
     const obj = JSON.parse(text);
     if (!obj || !Array.isArray(obj.placements)) throw new Error('Arquivo inválido.');
+
     pushUndo(snapshotState());
+
+    // floors
     if (obj.meta && Array.isArray(obj.meta.floors)) floors = obj.meta.floors.slice();
+
+    // meta por apto (zIndex opcional)
+    const aptoMeta = (obj.meta && obj.meta.aptoMeta) ? obj.meta.aptoMeta : {};
+
+    // agrupa placements por apto
     const byApto = new Map();
     for (const p of obj.placements){
       const key = String(p.apto);
       if (!byApto.has(key)) byApto.set(key, []);
       byApto.get(key).push(p);
     }
+
     elements = [];
     for (const [apto, list] of byApto.entries()){
       let minGX=Infinity,minGY=Infinity,minGZ=Infinity, color=list[0]?.color||COLORS[elements.length%COLORS.length];
@@ -2329,29 +2352,32 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
         minGZ=Math.min(minGZ, pl.z);
         minGY=Math.min(minGY, pl.andar);
       });
+
       const topMask = new Set();
       const frontMask = new Set();
+
       function deriveSideFrom(topMask, frontMask){
-  const xsByZ = new Map();
-  topMask.forEach(k=>{
-    const [x,z]=k.split(',').map(Number);
-    if(!xsByZ.has(z)) xsByZ.set(z,new Set());
-    xsByZ.get(z).add(x);
-  });
-  const xsByY = new Map();
-  frontMask.forEach(k=>{
-    const [x,y]=k.split(',').map(Number);
-    if(!xsByY.has(y)) xsByY.set(y,new Set());
-    xsByY.get(y).add(x);
-  });
-  const out = new Set();
-  xsByZ.forEach((xset,z)=>{
-    xsByY.forEach((xsetY,y)=>{
-      for (const x of xset){ if (xsetY.has(x)){ out.add(`${z},${y}`); break; } }
-    });
-  });
-  return out;
-}
+        const xsByZ = new Map();
+        topMask.forEach(k=>{
+          const [x,z]=k.split(',').map(Number);
+          if(!xsByZ.has(z)) xsByZ.set(z,new Set());
+          xsByZ.get(z).add(x);
+        });
+        const xsByY = new Map();
+        frontMask.forEach(k=>{
+          const [x,y]=k.split(',').map(Number);
+          if(!xsByY.has(y)) xsByY.set(y,new Set());
+          xsByY.get(y).add(x);
+        });
+        const out = new Set();
+        xsByZ.forEach((xset,z)=>{
+          xsByY.forEach((xsetY,y)=>{
+            for (const x of xset){ if (xsetY.has(x)){ out.add(`${z},${y}`); break; } }
+          });
+        });
+        return out;
+      }
+
       list.forEach(pl=>{
         for (let lx=0; lx<pl.w; lx++){
           for (let lz=0; lz<pl.d; lz++){
@@ -2364,20 +2390,33 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
           }
         }
       });
+
       const W = Math.max(1, dimsFromSet(topMask).maxX+1);
       const D = Math.max(1, dimsFromSet(topMask).maxY+1);
       const H = Math.max(1, dimsFromSet(frontMask).maxY+1);
       const sideMask = deriveSideFrom(topMask, frontMask);
-      elements.push({
-        id:rndId(),
-        code:String(apto),
-        color,
-        x:minGX, y:minGY, z:minGZ,
-        W,H,D,
-        topMask, frontMask,
-        sideMask
-      });
+
+      const metaZ = (aptoMeta && aptoMeta[apto] && Number.isFinite(aptoMeta[apto].zIndex))
+        ? (aptoMeta[apto].zIndex|0) : 0;
+
+const nome = (list[0]?.nome || String(apto));
+const ordemcol = (list[0]?.ordemcol|0);
+
+elements.push({
+  id:rndId(),
+  code:String(apto),
+  name: nome,
+  ordemcol: ordemcol|0,
+  color,
+  x:minGX, y:minGY, z:minGZ,
+  W,H,D,
+  topMask, frontMask,
+  sideMask
+});
+
+
     }
+
     selId=null; selectedIds.clear(); isolatedFloor=null;
     renumberIds();
     drawAll(); updateButtonsState();
@@ -2389,10 +2428,12 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
   }
 });
 
+
 /* util duplicado para status em algumas versões de navegador */
 function updateStatus(){ const iso = (isolatedFloor==null) ? '—' : isolatedFloor;
   statusEl.textContent = `Elementos: ${elements.length} • Sel.: ${selectedIds.size} • Pavimentos: ${floors.length} • Isolado: ${iso} • Zoom F:${(frontZoom*100).toFixed(0)}% T:${(topZoom*100).toFixed(0)}%`; }
 function fitAll(){ fitCanvas(frontCanvas); fitCanvas(topCanvas); fit3D(); }
 </script>
+
 </body>
 </html>
