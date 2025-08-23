@@ -222,6 +222,17 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
     let dragging = false;
     let dragMode = 'orbit';
     let lastX = 0, lastY = 0;
+// depois de: let activePointers = new Map(); …
+let tapState = {
+  isDown: false,
+  startX: 0,
+  startY: 0,
+  moved: false,
+  multi: false,
+  downAt: 0
+};
+const TAP_MOVE_THRESH = 6;     // px
+const TAP_TIME_MAX   = 600;    // ms
 
     const ptsArr   = () => Array.from(activePointers.values());
     const centroid = (pts)=>({ x: pts.reduce((a,p)=>a+p.x,0)/pts.length,
@@ -233,7 +244,9 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
     function pointerDown3D(e){
       activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
       renderer.domElement.setPointerCapture(e.pointerId);
-
+// --- tap tracking ---
+if (activePointers.size <= 1) tapState.multi = false;
+if (activePointers.size === 0) tapState.isDown = false;
       const pts = ptsArr();
       if (pts.length === 1){
         // 1 dedo / 1 mouse: ORBIT (botão direito do mouse = pan)
@@ -251,12 +264,24 @@ html, body { overscroll-behavior: none; } /* evita bounce/pull-to-refresh */
         };
       }
       e.preventDefault();
+      // --- tap tracking ---
+tapState.isDown = true;
+tapState.startX = e.clientX;
+tapState.startY = e.clientY;
+tapState.moved  = false;
+tapState.multi  = (pts.length >= 2);
+tapState.downAt = performance.now();
     }
 renderer.domElement.style.touchAction = 'none';
     function pointerMove3D(e){
       if (!activePointers.has(e.pointerId)) return;
       activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
-
+// --- tap tracking ---
+if (tapState.isDown) {
+  const dx = e.clientX - tapState.startX;
+  const dy = e.clientY - tapState.startY;
+  if (Math.hypot(dx, dy) > TAP_MOVE_THRESH) tapState.moved = true;
+}
       const pts = ptsArr();
 
       // 1 apontador (mouse/1 dedo)
@@ -341,7 +366,10 @@ renderer.domElement.style.touchAction = 'none';
   if (pts.length < 2){ gesture = null; }
   e.preventDefault();
   }
-    renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
+ 
+ 
+ 
+  renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
     renderer.domElement.addEventListener('pointermove',   pointerMove3D,   {passive:false});
     renderer.domElement.addEventListener('pointerup',     pointerUp3D,     {passive:false});
     renderer.domElement.addEventListener('pointercancel', pointerUp3D,     {passive:false});
@@ -469,23 +497,26 @@ renderer.domElement.style.touchAction = 'none';
     }
 
     // ===== Voxelização por APTO =====
-    function voxelizeByApto(l){
-      const byApto = new Map();
-      for (const p of l.placements){
-        const apt = String(p.apto);
-        if (!byApto.has(apt)) byApto.set(apt, new Set());
-        const set = byApto.get(apt);
-        const baseY = (typeof p.andar === 'number') ? p.andar : 0; // 'AT' => 0
-        for (let gx = p.x; gx < p.x + p.w; gx++){
-          for (let gz = p.z; gz < p.z + p.d; gz++){
-            for (let gy = baseY; gy < baseY + p.h; gy++){
-              set.add(`${gx},${gy},${gz}`);
-            }
-          }
+// ===== Voxelização por NOME =====
+function voxelizeByNome(l){
+  const byNome = new Map();
+  for (const p of (l.placements || [])){
+    const nome = String(p.nome);
+    if (!byNome.has(nome)) byNome.set(nome, new Set());
+    const set = byNome.get(nome);
+    const baseY = (typeof p.andar === 'number') ? p.andar : 0;
+    for (let gx = p.x; gx < p.x + p.w; gx++){
+      for (let gz = p.z; gz < p.z + p.d; gz++){
+        for (let gy = baseY; gy < baseY + p.h; gy++){
+          set.add(`${gx},${gy},${gz}`);
         }
       }
-      return byApto;
     }
+  }
+  return byNome;
+}
+
+
 
     // ===== Meshing de fronteira (sem faces internas) =====
     function buildSurfaceGeometryFromOcc(occSet){
@@ -551,85 +582,81 @@ renderer.domElement.style.touchAction = 'none';
 function buildFromLayout(l){
   // --- 1) Colete metadados por apartamento (nome, ordemcol, zIndex, etc.)
   //     Se houver mais de um placement para o mesmo apto, o último "vence".
-  const aptMeta = new Map();
-  if (l && Array.isArray(l.placements)){
-    for (const p of l.placements){
-      const id = String(p.apto);
-      const m  = aptMeta.get(id) || {};
-      if (p.nome != null)      m.name     = String(p.nome);
-      if (p.ordemcol != null)  m.ordemcol = Number(p.ordemcol); // 1-based
-      if (p.zindex != null)    m.zIndex   = Number(p.zindex);
-      // opcional: se no futuro houver m.floor vindo do JSON
-      if (p.floor != null)     m.floor    = Number(p.floor);
-      aptMeta.set(id, m);
-    }
+const aptMeta = new Map();
+if (l && Array.isArray(l.placements)){
+  for (const p of l.placements){
+    const id = String(p.nome);            // <- chave é NOME
+    const m  = aptMeta.get(id) || {};
+    m.name       = String(p.nome);
+    if (p.ordemcol != null) m.ordemcol = Number(p.ordemcol);
+    if (p.zindex  != null)  m.zIndex   = Number(p.zindex);
+    if (p.floor   != null)  m.floor    = Number(p.floor);
+    aptMeta.set(id, m);
   }
+}
+
 
   // limpa torre
   while (torre.children.length) torre.remove(torre.children[0]);
 
   // voxeliza por apartamento
-  const occByApto = voxelizeByApto(l);
+  const occByNome = voxelizeByNome(l);
+for (const [nome, occ] of occByNome.entries()){
+  const surface = buildSurfaceGeometryFromOcc(occ);
+  if (!surface) continue;
 
-  for (const [apto, occ] of occByApto.entries()){
-    const surface = buildSurfaceGeometryFromOcc(occ);
-    if (!surface) continue;
+  // material neutro
+  const faceMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0x6e7681),
+    metalness: 0.05,
+    roughness: 0.9,
+    transparent: faceOpacity < 0.999,
+    opacity: Math.min(1, faceOpacity),
+    depthWrite: faceOpacity >= 0.999,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1
+  });
 
-    // material neutro (cores virão do FVS; opacidade coerente)
-    const faceMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(0x6e7681),
-      metalness: 0.05,
-      roughness: 0.9,
-      transparent: faceOpacity < 0.999,
-      opacity: Math.min(1, faceOpacity),
-      depthWrite: faceOpacity >= 0.999,
-      side: THREE.DoubleSide,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1
-    });
+  const mesh = new THREE.Mesh(surface, faceMat);
+  mesh.renderOrder = 1;
 
-    const mesh = new THREE.Mesh(surface, faceMat);
-    mesh.renderOrder = 1;
+  const inflated = inflateGeometry(surface, 0.04);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
+  edges.renderOrder = 2;
 
-    // contorno limpo
-    const inflated = inflateGeometry(surface, 0.04);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(inflated, 1), MAT.line);
-    edges.renderOrder = 2;
+  // pavimento mínimo
+  let minLevel = Infinity;
+  for (const key of occ){
+    const gy = parseInt(key.split(',')[1],10);
+    if (gy < minLevel) minLevel = gy;
+  }
+  if (!Number.isFinite(minLevel)) minLevel = 0;
 
-    // pavimento mínimo (explodeY)
-    let minLevel = Infinity;
-    for (const key of occ){
-      const gy = parseInt(key.split(',')[1],10);
-      if (gy < minLevel) minLevel = gy;
+  const group = new THREE.Group();
+  group.add(mesh); group.add(edges);
+
+  const metaFromJson = aptMeta.get(String(nome)) || {};
+  const idStr   = String(nome);
+  const nameStr = metaFromJson.name || idStr;
+
+  group.userData = {
+    nome: idStr,                 // agora usamos `nome`
+    mesh, edges,
+    levelIndex: minLevel,
+    basePos: new THREE.Vector3(0,0,0),
+    anchor:  new THREE.Vector3(0,0,0),
+    meta: {
+      id: idStr,
+      name: nameStr,
+      ordemcol: (typeof metaFromJson.ordemcol === 'number') ? metaFromJson.ordemcol : undefined,
+      zIndex:   (typeof metaFromJson.zIndex   === 'number') ? metaFromJson.zIndex   : undefined
     }
-    if (!Number.isFinite(minLevel)) minLevel = 0;
+  };
 
-    const group = new THREE.Group();
-    group.add(mesh); group.add(edges);
-    group.position.set(0,0,0);
+  // resto do código para calcular centro, anchor, adicionar no torre...
 
-    // meta vindo do JSON (se houver) + campos locais
-    const metaFromJson = aptMeta.get(String(apto)) || {};
-    // garante string de id e name
-    const idStr   = String(apto);
-    const nameStr = metaFromJson.name || idStr;
-
-    group.userData = {
-      apto: idStr,
-      mesh, edges,
-      levelIndex: minLevel,                          // usado no explode Y
-      basePos: new THREE.Vector3(0,0,0),
-      anchor:  new THREE.Vector3(0,0,0),
-      // meta fica aqui; será lida em collectApartmentRoots()
-      meta: {
-        id: idStr,
-        name: nameStr,
-        // 1-based no JSON; guardamos como veio.
-        ordemcol: (typeof metaFromJson.ordemcol === 'number') ? metaFromJson.ordemcol : undefined,
-        zIndex:   (typeof metaFromJson.zIndex   === 'number') ? metaFromJson.zIndex   : undefined
-      }
-    };
 
     // centro local do geometry (para anchor depois)
     surface.computeBoundingBox();
@@ -679,11 +706,11 @@ function buildFromLayout(l){
       orbitTarget.set(0, c2.y, 0);
     }
 // Mapa de metadados por apto (nome, ordemcol) vindo do JSON
-const metaByApto = new Map();
+const metaByNome = new Map();
 for (const p of (layout.placements||[])){
-  const key = String(p.apto);
-  if (!metaByApto.has(key)){
-    metaByApto.set(key, { nome: (p.nome||''), ordemcol: (p.ordemcol|0) });
+  const key = String(p.nome);
+  if (!metaByNome.has(key)){
+    metaByNome.set(key, { ordemcol: (p.ordemcol|0) });
   }
 }
 
@@ -694,10 +721,10 @@ for (const p of (layout.placements||[])){
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-renderer.domElement.addEventListener('click', (e) => {
+function pickAtClientXY(clientX, clientY){
   const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
   // 1) faces
   const faceObjects = torre.children.map(g => g.userData.mesh);
@@ -712,7 +739,7 @@ renderer.domElement.addEventListener('click', (e) => {
     inter = raycaster.intersectObjects(edgeObjects, false);
   }
 
-  // limpar seleção anterior (visual)
+  // limpar seleção anterior
   if (window.__SEL_GROUP__) {
     const gPrev = window.__SEL_GROUP__;
     gPrev.userData.edges.material = gPrev.__lineBackup;
@@ -721,36 +748,49 @@ renderer.domElement.addEventListener('click', (e) => {
     window.__SEL_GROUP__ = null;
   }
 
-  if (inter.length) {
-    const hitObj   = inter[0].object;
-    const selGroup = hitObj.parent; // o Group do apto
-    if (selGroup && selGroup.userData) {
-      // Destaque visual (opcional, mantive seu comportamento atual)
-      selGroup.__lineBackup = selGroup.userData.edges.material;
-      selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
-      selGroup.userData.edges.material = MAT.selLine;
-      const faceClone = selGroup.userData.mesh.material.clone();
-      faceClone.opacity = Math.min(1, faceOpacity + 0.2);
-      selGroup.userData.mesh.material = faceClone;
-      window.__SEL_GROUP__ = selGroup;
+  if (!inter.length) return;
 
-      // >>> Envia mensagem ao pai para abrir o modal
-      const aptId = String(selGroup.userData.apto || selGroup.userData?.meta?.id || '').trim();
-      // tenta extrair a cor atual do material
-      let hex = null;
-      try {
-        const c = selGroup.userData.mesh.material.color;
-        if (c) hex = '#' + c.getHexString();
-      } catch(_) {}
-      try {
-        parent.postMessage({ type: 'viewer:open-apt', apt: aptId, color: hex }, '*');
-      } catch(_) {}
+  const hitObj   = inter[0].object;
+  const selGroup = hitObj.parent;
+  if (!selGroup || !selGroup.userData) return;
 
-      // log interno
-      console.log('[viewer] click apto:', aptId);
-    }
-  }
-});
+  // Destaque visual
+  selGroup.__lineBackup = selGroup.userData.edges.material;
+  selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
+  selGroup.userData.edges.material = MAT.selLine;
+  const faceClone = selGroup.userData.mesh.material.clone();
+  faceClone.opacity = Math.min(1, faceOpacity + 0.2);
+  selGroup.userData.mesh.material = faceClone;
+  window.__SEL_GROUP__ = selGroup;
+
+  // Mensagem para o parent (usa 'nome' como id)
+  const nomeId = String(selGroup.userData.nome || selGroup.userData?.meta?.id || '').trim();
+  let hex = null;
+  try { const c = selGroup.userData.mesh.material.color; if (c) hex = '#' + c.getHexString(); } catch(_){}
+  try { parent.postMessage({ type: 'viewer:open-apt', apt: nomeId, color: hex }, '*'); } catch(_){}
+
+  console.log('[viewer] tap nome:', nomeId);
+}
+
+// Tap “real” só dispara se não houve gesto/pan/pinch
+renderer.domElement.addEventListener('pointerup', (e) => {
+  // ignora botão direito
+  if (e.pointerType === 'mouse' && e.button === 2) return;
+
+  const dt = performance.now() - tapState.downAt;
+  const dx = e.clientX - tapState.startX;
+  const dy = e.clientY - tapState.startY;
+  const moved = Math.hypot(dx, dy) > TAP_MOVE_THRESH;
+
+  const isTap = !tapState.multi && !moved && dt <= TAP_TIME_MAX;
+
+  // zera estado de tap
+  tapState.isDown = false;
+  tapState.multi  = false;
+
+  if (!isTap) return;        // <- bloqueia o "click fantasma"
+  pickAtClientXY(e.clientX, e.clientY);
+}, { passive:false });
 
 
 
@@ -1227,7 +1267,7 @@ function build2DCards(){
   for (const A of __aptRoots){
     const el = document.createElement('div');
     el.className  = 'card';
-    const idStr   = A.meta?.id || A.meta?.name || A.root.userData.apto || '';
+    const idStr = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
     el.dataset.id = idStr;
 
     // cor pela FVS (igual ao 3D)
@@ -1527,9 +1567,9 @@ function pickFVSColor(aptoId, floorIdx){
 function recolorMeshes3D(){
   if (!torre) return;
   for (const g of torre.children){
-    const apt   = g.userData.apto || '';
+    const nome  = g.userData.nome || g.userData.meta?.id || '';
     const floor = g.userData.levelIndex ?? 0;
-    const hex   = pickFVSColor(apt, floor);
+    const hex   = pickFVSColor(nome, floor);
 
     const mat = g.userData.mesh.material;
     mat.color = new THREE.Color(hex);
@@ -1552,7 +1592,7 @@ function recolorCards2D(){
   for (const A of __aptRoots){
     const el = A.root.userData?._cardEl;
     if (!el) continue;
-    const id   = A.meta?.id || A.meta?.name || A.root.userData.apto || '';
+    const id   = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
     const piso = (A.meta?.floor ?? A.root.userData.levelIndex ?? 0);
     el.style.background = pickFVSColor(id, piso);
   }
@@ -1596,6 +1636,8 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
 
     (function animate(){ requestAnimationFrame(animate); renderer.render(scene, camera); })();
   })();
+
+  
   </script>
 </body>
 </html>
