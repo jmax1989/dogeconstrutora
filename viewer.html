@@ -321,8 +321,6 @@ renderer.domElement.style.touchAction = 'none';
       if (pts.length === 0){ dragging = false; gesture = null; }
       if (pts.length < 2){ gesture = null; }
       e.preventDefault();
-    }
-
     
      if (gesture && pts.length === 1){
     const p = pts[0];
@@ -337,7 +335,7 @@ renderer.domElement.style.touchAction = 'none';
   if (pts.length === 0){ dragging = false; gesture = null; }
   if (pts.length < 2){ gesture = null; }
   e.preventDefault();
-
+  }
     renderer.domElement.addEventListener('pointerdown',   pointerDown3D,   {passive:false});
     renderer.domElement.addEventListener('pointermove',   pointerMove3D,   {passive:false});
     renderer.domElement.addEventListener('pointerup',     pointerUp3D,     {passive:false});
@@ -1594,6 +1592,7 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
+
 
 
 
