@@ -6,9 +6,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <style>
     html, body { height: 100%; margin: 0; }
+    :root{
+  --bg:#0d1117;
+  --card:#161b22;
+  --text:#c9d1d9;
+  --muted:#8b949e;
+  --border:#30363d;
+  --blue:#58a6ff;
+  --green:#238636;
+  --yellow:#d29922;
+  --gray:#6e7681;
+  --red:#f85149;
+  --red-muted:#8b3431;
+}
+
     body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
     #app { position: fixed; inset: 0; }
     canvas { display:block; }
+#cards2d .card .meta {
+  position: absolute;
+  right: 8px; bottom: 6px;
+  font-size: 11px; line-height: 1;
+  opacity: .9;
+  padding: 2px 6px; border-radius: 999px;
+  background: rgba(0,0,0,.28);
+  border: 1px solid rgba(255,255,255,.12);
+}
 
     /* === HUD compacto no rodapé === */
     #hud{
@@ -114,11 +137,352 @@
       border: 1px solid rgba(255,255,255,.12);
     }
     canvas { touch-action: none; }
-    html, body { overscroll-behavior: none; }
+    html, body { overscroll-behavior: contain; }
+
+    /* ===== Modal (nativo do viewer) ===== */
+/* === Modal idêntico ao index (mapeado para #doge-modal) === */
+#doge-modal-backdrop{
+  position:fixed; inset:0; display:none;
+  justify-content:center; align-items:center; /* << garante centralização */
+  z-index:10000;
+  background: rgba(13,17,23,0.35);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
+  animation:fadeIn .25s ease;
+}
+@keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+
+#doge-modal{
+  position:relative;
+  width:clamp(280px, 90vw, 520px);
+  max-height:80vh; overflow:auto;
+  line-height: 1.35;
+  padding: 14px 16px;
+  border-radius:16px;
+  background:
+    linear-gradient(135deg, var(--modal-tint-strong, rgba(88,166,255,0.20)), transparent 60%),
+    linear-gradient( 45deg, var(--modal-tint-soft,   rgba(88,166,255,0.10)), transparent 55%),
+    rgba(22,27,34,0.40);
+  border: 1px solid var(--modal-border, rgba(240,246,252,0.08));
+  box-shadow:0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
+  /* REMOVER estas duas linhas se você as tiver mantido: */
+  /* -webkit-backdrop-filter: blur(6px) saturate(110%); */
+  /* backdrop-filter: blur(6px) saturate(110%); */
+  color:#c9d1d9; font-size:14px;
+  animation:slideUp .25s ease;
+}
+@keyframes slideUp{ from{ transform:translateY(10px); opacity:0 } to{ transform:translateY(0); opacity:1 } }
+#doge-modal::-webkit-scrollbar{ width:0; height:0 }
+#doge-modal{ scrollbar-width:none; -ms-overflow-style:none; overscroll-beavior:contain; }
+
+/* Título exatamente como #modal h2 do index */
+#doge-modal h3{
+  margin:0 0 12px;
+  font-weight:600; font-size:18px; color:#f0f6fc;
+  border-bottom:1px solid rgba(240,246,252,0.06);
+  padding-bottom:8px;
+  text-align:left;
+}
+
+/* Botão fechar igual ao index */
+#doge-modal .close{
+  position:absolute; top:10px; right:10px;
+  background:rgba(240,246,252,0.04);
+  border:1px solid rgba(240,246,252,0.08);
+  color:#f0f6fc; font-size:16px; cursor:pointer; font-weight:700; line-height:1;
+  padding:6px 10px; border-radius:10px;
+  transition:transform .12s ease, background-color .15s ease, border-color .15s ease;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+#doge-modal .close:hover{
+  background:rgba(240,246,252,0.08);
+  border-color:rgba(240,246,252,0.14);
+  transform:scale(1.03);
+}
+
+/* Tabela identica ao index */
+#doge-modal table{ width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+#doge-modal th, #doge-modal td{
+  text-align:left; padding:8px 4px;
+  border-bottom:1px solid rgba(240,246,252,0.06);
+}
+#doge-modal th{ color:#8b949e; font-weight:500 }
+#doge-modal td{ color:#c9d1d9 }
+
+/* Grid de pares chave/valor (mantemos porque o viewer usa isso também) */
+#doge-modal .content{ padding-top:6px; display:grid; gap:6px; }
+#doge-modal .kv{ display:grid; grid-template-columns: 160px 1fr; gap:8px; font-size:14px; }
+#doge-modal .kv .k{ color:#9fb0c3; }
+#doge-modal .kv .v{ color:#e6eef7; }
+
+/* Tags (mantidas, mas com mesma estética do index) */
+#doge-modal .tags{ display:flex; flex-wrap:wrap; gap:6px; margin: 6px 0 2px; }
+#doge-modal .tag{
+  padding: 2px 8px; border-radius: 999px; font-size: 12px; line-height: 1;
+  border: 1px solid rgba(255,255,255,.15); opacity:.95; background: rgba(0,0,0,.25);
+}
+#doge-modal .tag.success{ border-color: rgba(35,134,54,.45); }
+#doge-modal .tag.warn{    border-color: rgba(210,153,34,.45); }
+#doge-modal .tag.info{    border-color: rgba(88,166,255,.45); }
+#doge-modal .tag.danger{  border-color: rgba(248,81,73,.55); } /* usa --red do index */
+
+/* Pill (mantida) */
+#doge-modal .pill{
+  margin-left:auto;
+  padding: 4px 8px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.15);
+  font-size: 12px; line-height: 1; opacity: .95;
+}
+
+/* Responsivo como o index */
+@media (max-width:600px){
+  #doge-modal{ width:95%; padding:16px }
+  #doge-modal h3{ font-size:16px }
+  #doge-modal table{ font-size:12px }
+}
+
+#legend .item{ display:flex; align-items:center; gap:8px; margin:4px 0; white-space:nowrap; }
+#legend .sw{ width:14px; height:14px; border-radius:4px; border:1px solid rgba(255,255,255,.2); }
+/* ===== Botão NC: visual consistente e sem "pular" layout ===== */
+/* Botão NC (off) */
+#btnNC {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(240,246,252,0.15);
+  background: rgba(240,246,252,0.06);
+  color: #c9d1d9;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s;
+}
+
+/* Hover (off) */
+#btnNC:hover {
+  background: rgba(240,246,252,0.1);
+}
+
+/* Botão NC (on/ativo) */
+#btnNC.active {
+  background: #ff3b30;       /* fundo vermelho forte */
+  color: #fff;               /* texto branco */
+  border-color: #ff3b30;
+  box-shadow: 0 0 12px rgba(255,59,48,0.45);
+}
+
+/* ===== Botões do HUD (inclui os com emoji: 🔄 🎯 etc.) ===== */
+#hud .row > button{
+  appearance: none; -webkit-appearance: none;
+  background: rgba(240,246,252,0.06);
+  color: #e6eef7;
+  border: 1px solid #30363d;      /* borda sutil, arredondada */
+  border-radius: 10px;
+  padding: 6px 10px;
+  height: 32px; min-width: 32px;
+  line-height: 1;
+  font: 600 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: filter .12s ease, background-color .15s ease, border-color .15s ease, transform .06s ease;
+}
+#hud .row > button:hover{
+  background: rgba(240,246,252,0.10);
+  border-color: rgba(240,246,252,0.18);
+}
+#hud .row > button:active{ transform: scale(0.98); }
+
+/* Remove qualquer moldura "nativa" feia em alguns SOs */
+#hud .row > button:focus{ outline: none; }
+#hud .row > button:focus-visible{
+  box-shadow: 0 0 0 2px rgba(88,166,255,.25);
+}
+/* ===== Dropdown FVS (igual ao estilo do NC) ===== */
+#hud select{
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background: rgba(240,246,252,0.06);
+  color: #e6eef7;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 6px 28px 6px 10px; /* espaço p/ ícone da seta */
+  height: 32px; min-width: 140px;
+  font: 500 13px system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: filter .12s ease, background-color .15s ease, border-color .15s ease;
+}
+
+/* hover / active */
+#hud select:hover{
+  background: rgba(240,246,252,0.10);
+  border-color: rgba(240,246,252,0.18);
+}
+#hud select:focus{
+  outline: none;
+  border-color: rgba(88,166,255,.55);
+  box-shadow: 0 0 0 2px rgba(88,166,255,.25);
+}
+
+/* ícone da seta custom */
+#hud select::-ms-expand { display: none; } /* tira no IE */
+#hud select::after{
+  content: '▾';
+  position: absolute;
+  right: 10px; top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* Container do dropdown deve ser relativo p/ a seta custom */
+#hud .row label,
+#hud select { position: relative; }
+/* ===== Estilo do menu suspenso do dropdown ===== */
+#hud select option {
+  background-color: #161b22;   /* fundo escuro */
+  color: #e6eef7;              /* texto claro */
+  font: 500 13px system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+  padding: 6px 10px;
+}
+
+#hud select option:checked {
+  background-color: #238636;   /* verde discreto quando selecionado */
+  color: #fff;
+}
+
+#hud select option:hover {
+  background-color: rgba(88,166,255,0.25); /* azul translúcido no hover */
+  color: #fff;
+}
+
+#cards2d .card .num { 
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:700; font-size: 14px;
+  opacity:0; transition:opacity .12s ease;
+}
+#cards2d .card .dur {
+  position:absolute; right:8px; bottom:6px;
+  font-size:11px; line-height:1;
+  opacity:.95;
+  padding:2px 6px; border-radius:999px;
+  background: rgba(0,0,0,.28);
+  border: 1px solid rgba(255,255,255,.12);
+  transition:opacity .12s ease;
+}
+#cards2d .card:hover .num { opacity:1; }
+#cards2d .card:hover .dur { opacity:0; }
+
+/* ===== RESET/FINAL do MODAL ===== */
+
+/* Backdrop: centraliza via flex e aplica o blur APENAS atrás */
+#doge-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  display: none;                /* começa fechado */
+  z-index: 10000;
+  justify-content: center;      /* centra horizontal */
+  align-items: center;          /* centra vertical   */
+  background: rgba(13,17,23,0.35);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
+}
+
+/* Modal: NADA de top/left/transform. Sem blur. Centralizado pelo flex do backdrop */
+#doge-modal{
+  position: relative;           /* importante: não fixed/absolute */
+  box-sizing: border-box;
+  width: clamp(280px, 90vw, 520px);
+  max-height: 80vh;
+  overflow: auto;
+  margin: 0;                    /* sem margens extras */
+  padding: 22px;
+  border-radius: 16px;
+
+  /* Visual (igual ao index, com variáveis de tinta) */
+  background:
+    linear-gradient(135deg, var(--modal-tint-strong, rgba(88,166,255,0.20)), transparent 60%),
+    linear-gradient( 45deg, var(--modal-tint-soft,   rgba(88,166,255,0.10)), transparent 55%),
+    rgba(22,27,34,0.40);
+  border: 1px solid var(--modal-border, rgba(240,246,252,0.08));
+  box-shadow: 0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
+  color: #c9d1d9;
+  font-size: 14px;
+
+  /* 🔴 REMOVIDO intencionalmente:
+     top/left/transform
+     -webkit-backdrop-filter / backdrop-filter
+  */
+}
+
+/* Título/botão/tabela — mantém como já estava no bloco anterior */
+#doge-modal h3{
+  margin:0 0 12px;
+  font-weight:600; font-size:18px; color:#f0f6fc;
+  border-bottom:1px solid rgba(240,246,252,0.06);
+  padding-bottom:8px;
+  text-align:left;
+}
+#doge-modal .close{
+  position:absolute; top:10px; right:10px;
+  background:rgba(240,246,252,0.04);
+  border:1px solid rgba(240,246,252,0.08);
+  color:#f0f6fc; font-size:16px; cursor:pointer; font-weight:700; line-height:1;
+  padding:6px 10px; border-radius:10px;
+}
+#doge-modal table{ width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+#doge-modal th, #doge-modal td{
+  text-align:left; padding:4px 2px;
+  font-size: 12px;
+  border-bottom:1px solid rgba(240,246,252,0.06);
+}
+#doge-modal th{ color:#8b949e; font-weight:500 }
+#doge-modal td{ color:#c9d1d9 }
+
+/* ==== Progress bar (mesmo do index) ==== */
+.q-linear-progress{ display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:10px; background:rgba(240,246,252,0.06); border:1px solid rgba(240,246,252,0.10); }
+.q-linear-progress__track{ position:relative; flex:1; height:8px; background:rgba(240,246,252,0.08); border:1px solid rgba(240,246,252,0.10); border-radius:999px; overflow:hidden; }
+.q-linear-progress__bar{ position:absolute; inset:0 100% 0 0; background:currentColor; transition:width .45s ease; }
+.q-linear-progress__label{ font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; }
+.line-progress{ display:flex; align-items:center; gap:12px; }
+.line-progress .q-linear-progress{ margin-left:auto; min-width:96px; max-width:140px; }
+.q-linear-progress--sm{ padding:2px 4px; gap:6px; }
+.q-linear-progress--sm .q-linear-progress__track{ height:6px; }
+.q-linear-progress--sm .q-linear-progress__label{ font-size:11px; font-weight:500; min-width:2.6ch; opacity:.9; }
+@media (min-width: 720px){
+  .line-progress .q-linear-progress{ min-width:110px; max-width:130px; }
+  .q-linear-progress--sm .q-linear-progress__track{ height:4px; }
+}
+
+/* Link “Última inspeção” (mesmo do index) */
+#doge-modal a.link-row{ color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:2px 6px; border-radius:8px; transition:background-color .15s ease, transform .05s ease; vertical-align:middle; }
+#doge-modal a.link-row:hover{ background-color:rgba(240,246,252,0.06); text-decoration:none; }
+#doge-modal a.link-row:active{ transform:scale(0.99) }
+#doge-modal a.link-row svg{ width:14px; height:14px; display:inline-block; flex:0 0 auto; stroke:currentColor; }
+
+
   </style>
 </head>
 <body>
   <div id="app"><div id="cards2d"></div></div>
+  <div id="doge-loading" style="
+  position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  background: rgba(0,0,0,.35); z-index: 3500; color:#e6eef7; font: 500 14px system-ui;">
+  Carregando dados…
+</div>
+
+<!-- Modal nativo do viewer -->
+<!-- Modal nativo do viewer (AGORA aninhado no backdrop) -->
+<div id="doge-modal-backdrop">
+  <div id="doge-modal" role="dialog" aria-modal="true" aria-labelledby="doge-modal-title">
+    <header>
+      <h3 id="doge-modal-title">Detalhes do Apartamento</h3>
+      <span class="pill" id="doge-modal-pill"></span>
+      <button class="close" id="doge-modal-close" type="button">✕</button>
+    </header>
+    <div class="content" id="doge-modal-content"></div>
+  </div>
+</div>
+
+
+<div id="doge-tip" role="tooltip" aria-hidden="true"></div>
 
   <div id="hud">
     <div class="row handle" id="hudHandle">
@@ -126,7 +490,13 @@
       <span style="font-weight:600; flex:1;">Controles</span>
       <button id="hudToggle" aria-expanded="true" title="Recolher/Expandir">▾</button>
     </div>
-
+    <div class="row" id="row-fvs">
+      <label for="fvsSelect" title="Selecionar FVS">FVS</label>
+      <select id="fvsSelect">
+        <option value="">Carregando...</option>
+      </select>
+      <button id="btnNC" type="button" title="Mostrar apenas NC">NC</button>
+    </div>
     <div class="row">
       <button id="resetRot">🔄</button>
       <button id="recenter">🎯</button>
@@ -153,15 +523,658 @@
       </button>
     </div>
   </div>
-
+<div id="legend" aria-hidden="true"></div>
   <!-- THREE -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
   <script>
+  
   (async function(){
     // ====== Carrega o layout ======
     const LAYOUT_URL = './data/layout-3d.json';
+    const FVS_LIST_URL = './data/fvs-list.json';
+const APTS_URL     = './data/apartamentos.json';
+
+// === TDZ guards: declarar cedo para evitar "Cannot access ... before initialization"
+let COLOR_MAP = { default: '#6e7681', colors: {}, byFloor: {} };
+let META_MAP = new Map();
+
+// Tooltip
+const tipEl = document.getElementById('doge-tip');
+let tipVisible = false;
+let tipHideTO = null;
+
+function showTip(x, y, text){
+  if (!tipEl) return;
+  tipEl.textContent = text || '';
+  if (!text) { hideTip(); return; }
+
+  // posiciona (protege bordas)
+  const pad = 10;
+  const W = innerWidth, H = innerHeight;
+  let tx = Math.max(pad, Math.min(W - pad, x));
+  let ty = Math.max(pad, Math.min(H - pad, y));
+  tipEl.style.left = tx + 'px';
+  tipEl.style.top  = ty + 'px';
+
+  tipEl.style.opacity = '1';
+  tipEl.setAttribute('aria-hidden', 'false');
+  tipVisible = true;
+
+  if (tipHideTO) { clearTimeout(tipHideTO); tipHideTO = null; }
+}
+
+function hideTip(delay=0){
+  if (!tipEl || !tipVisible) return;
+  if (tipHideTO) clearTimeout(tipHideTO);
+  tipHideTO = setTimeout(()=>{
+    tipEl.style.opacity = '0';
+    tipEl.setAttribute('aria-hidden', 'true');
+    tipVisible = false;
+  }, delay);
+}
+
+
+// ==== Deep link & Persistência ====
+const STORAGE_KEYS = {
+  FVS: 'doge.viewer.fvs',
+  NC:  'doge.viewer.nc',
+};
+
+function getQS(name){
+  const u = new URL(location.href);
+  return u.searchParams.get(name);
+}
+function setQS(updates){
+  const u = new URL(location.href);
+  for (const [k,v] of Object.entries(updates)){
+    if (v == null || v === '' || v === false) u.searchParams.delete(k);
+    else u.searchParams.set(k, String(v));
+  }
+  history.replaceState(null, '', u.toString());
+}
+
+function savePrefs(){
+  try{
+    if (CURRENT_FVS) localStorage.setItem(STORAGE_KEYS.FVS, CURRENT_FVS);
+    localStorage.setItem(STORAGE_KEYS.NC, String(!!NC_MODE));
+  }catch(_){}
+}
+
+function loadPrefs(){
+  let fvs = null, nc = null;
+  try{
+    fvs = localStorage.getItem(STORAGE_KEYS.FVS);
+    nc  = localStorage.getItem(STORAGE_KEYS.NC);
+  }catch(_){}
+  return {
+    fvs: fvs || '',
+    nc : (nc === 'true')
+  };
+}
+
+// Compat: se estiver dentro de iframe (fase de transição), ainda enviaremos postMessage.
+// O modal nativo abre SEMPRE, com ou sem iframe.
+const LEGACY_IFRAME = false;
+
+// Modal refs
+const _modalBackdrop = document.getElementById('doge-modal-backdrop');
+const _modal         = document.getElementById('doge-modal');
+const _modalTitle    = document.getElementById('doge-modal-title');
+const _modalPill     = document.getElementById('doge-modal-pill');
+const _modalContent  = document.getElementById('doge-modal-content');
+const _modalClose    = document.getElementById('doge-modal-close');
+
+// Estado inicial sempre fechado
+if (_modalBackdrop) _modalBackdrop.style.display = 'none';
+if (_modal)         _modal.style.display         = 'none';
+
+function tintFromColor(hex){
+  // retorna um background gradiente sutil usando a cor base como referência
+  try{
+    const c = new THREE.Color(hex || '#6e7681');
+    const [r,g,b] = [c.r*255, c.g*255, c.b*255].map(v=>Math.round(v));
+    return `linear-gradient(to bottom,
+      rgba(${r},${g},${b},.12),
+      rgba(0,0,0,.00) 40%)`;
+  }catch(_){
+    return `linear-gradient(to bottom, rgba(0,0,0,.12), rgba(0,0,0,0) 40%)`;
+  }
+}
+
+function findAptRowByName(aptoName){
+  if (!aptoName) return null;
+  const key = normAptoKey(aptoName);
+  // Usa META_MAP primeiro (já filtrado pela FVS atual)
+  const meta = META_MAP.get(key);
+  if (meta?.raw) return meta.raw;
+
+  // Fallback: buscar direto em APT_DATA restringindo por FVS atual
+  const rows = Array.isArray(APT_DATA)
+    ? APT_DATA.filter(r => String(r?.fvs||'').trim() === String(CURRENT_FVS||'').trim())
+    : [];
+  return rows.find(r => normAptoKey(r?.apartamento) === key) || null;
+}
+
+
+function formatDateBR(dateStr){
+  if(!dateStr) return "";
+  const parts = String(dateStr).split('-');
+  if(parts.length<3) return dateStr;
+  const yyyy = parseInt(parts[0],10);
+  const mm = parseInt(parts[1],10)-1;
+  const dd = parseInt(parts[2].substring(0,2),10);
+  const d = new Date(yyyy,mm,dd);
+  if(isNaN(d)) return dateStr;
+  return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
+}
+function getUltimaInspecaoInfo(reaberturas){
+  if(!Array.isArray(reaberturas)||reaberturas.length===0){
+    return { codigo_ultima_inspecao:null, qtd_pend_ultima_inspecao:0 };
+  }
+  let best=null;
+  for(const r of reaberturas){
+    const c = Number(r.codigo);
+    if(!Number.isNaN(c)){
+      if(!best || c>best.c) best = { c, q:Number(r.qtd_itens_pendentes)||0 };
+    }
+  }
+  if(best) return { codigo_ultima_inspecao:String(best.c), qtd_pend_ultima_inspecao:best.q };
+  const last = reaberturas[reaberturas.length-1];
+  return { codigo_ultima_inspecao: last.codigo ?? null, qtd_pend_ultima_inspecao: Number(last.qtd_itens_pendentes) || 0 };
+}
+function linearProgress(pct, overrideColor){
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  const color = overrideColor || '#58a6ff';
+  return `
+    <span class="q-linear-progress q-linear-progress--sm" style="color:${color}">
+      <span class="q-linear-progress__track">
+        <span class="q-linear-progress__bar" data-w="${p}%"></span>
+      </span>
+      <span class="q-linear-progress__label">${p}%</span>
+    </span>`;
+}
+function animateProgressBars(root=document){
+  const bars = root.querySelectorAll('.q-linear-progress__bar[data-w]');
+  requestAnimationFrame(()=> bars.forEach(b => { b.style.width = b.dataset.w; }));
+}
+
+// Mantém a função que colore o modal pela cor da FVS (você já tem setModalTint/hexToRgb)
+function applyModalTint(fillHex){
+  setModalTint(fillHex || '#58a6ff');
+}
+
+// ==== Busca a linha do apartamentos.json pela *chave de nome* + FVS atual ====
+function findAptRowByName_strict(aptoName){
+  if (!aptoName) return null;
+  const key = normAptoKey(aptoName);
+  // 1) usa META_MAP (já filtrado por FVS)
+  const meta = META_MAP.get(key);
+  if (meta?.raw) return meta.raw;
+  // 2) fallback: filtra APT_DATA pela FVS e procura pelo nome
+  const rows = Array.isArray(APT_DATA)
+    ? APT_DATA.filter(r => String(r?.fvs||'').trim() === String(CURRENT_FVS||'').trim())
+    : [];
+  return rows.find(r => normAptoKey(r?.apartamento) === key) || null;
+}
+
+// ==== Substitua sua openAptModal por ESTA ====
+function openAptModal({ id, floor }){
+  const aptName = String(id||'').trim();
+  const row = findAptRowByName_strict(aptName);
+
+  // título e cor/tint iguais ao index (usamos a mesma regra de cor por FVS)
+  const hex = pickFVSColor(aptName, floor ?? row?.pavimento_origem ?? null);
+  _modalTitle.textContent = aptName || 'Apartamento';
+  applyModalTint(hex);
+  _modal.querySelector('header').style.background = tintFromColor(hex);
+
+  // helpers de formatação (mesmos do index)
+  const fmtInt  = (v)=> (v==null || v==='') ? '—' : String(v);
+  const fmtBool = (b)=> b ? 'Sim' : 'Não';
+
+  // Se não achou dados, mostra mensagem e abre o modal mesmo assim
+  if (!row){
+    _modalContent.innerHTML = `<p>Sem dados para o apartamento ${aptName}.</p>`;
+    _modalPill.textContent = '';
+    _modalBackdrop.style.display = 'flex';
+    _modal.style.display         = 'block';
+    void _modal.offsetHeight;
+    if (renderer?.domElement) renderer.domElement.style.pointerEvents = 'none';
+    return;
+  }
+  // ====== Campos usados pelo index ======
+  // Fallbacks/cálculos idênticos ao main.js
+  let codUlt = row.codigo_ultima_inspecao;
+  let pendUlt = row.qtd_pend_ultima_inspecao;
+  if(codUlt == null){
+    const aux = getUltimaInspecaoInfo(row.reaberturas);
+    codUlt = aux.codigo_ultima_inspecao;
+    pendUlt = aux.qtd_pend_ultima_inspecao;
+  }
+
+  // NC da última inspeção (fallback: última reabertura)
+  let ncUlt = row.qtd_nao_conformidades_ultima_inspecao;
+  if (ncUlt == null && Array.isArray(row.reaberturas) && row.reaberturas.length) {
+    const lastReab = row.reaberturas[row.reaberturas.length - 1];
+    ncUlt = Number(lastReab.qtd_nao_conformidades);
+  }
+
+  const idLink = row.id_ultima_inspecao || row.id;
+  const inmetaUrl = idLink
+    ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
+    : null;
+
+  // PILL no header (mesmo comportamento do index: não é fixa; usamos principal “Duração inicial” + progresso)
+  // No index, o “pill” não é obrigatório; aqui podemos mostrar um resumo simples:
+  _modalPill.textContent = (row.duracao_real != null)
+    ? `Duração: ${row.duracao_real} dia${Number(row.duracao_real)===1?'':'s'}`
+    : (row.percentual_ultima_inspecao != null ? `Progresso: ${row.percentual_ultima_inspecao}%` : '');
+
+  // ===== HTML do conteúdo — replicando o index =====
+  let html = '';
+  html += `<p><strong>Apartamento:</strong> ${row.apartamento}</p>`;
+  if (row.pavimento_origem) {
+    html += `<p><strong>Pavimento origem:</strong> ${row.pavimento_origem}</p>`;
+  }
+  html += `<p><strong>Início:</strong> ${formatDateBR(row.data_abertura)}</p>`;
+  if(row.data_termino_inicial){
+    html += `<p><strong>Término:</strong> ${formatDateBR(row.data_termino_inicial)}</p>`;
+  }
+
+  // Progress bar (mesma lógica de cor)
+  let progressMarkup = '';
+  const pct = Number(row.percentual_ultima_inspecao);
+  if (!Number.isNaN(pct)) {
+    if (!row.data_termino_inicial) {
+      progressMarkup = linearProgress(pct, 'var(--blue)');
+    } else if ((Number((row.qtd_pend_ultima_inspecao||0))>0) || (Number((ncUlt||0))>0) || pct<100) {
+      progressMarkup = linearProgress(pct, 'var(--yellow)');
+    }
+  }
+  html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${row.duracao_inicial}</span>${progressMarkup}</p>`;
+
+  if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0) {
+    html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
+  }
+
+  // Reinspeções — mesma ordenação do index
+  if(row.reaberturas?.length){
+    const toTime = (d) => {
+      const [yy, mm, dd] = (d || '').split('-').map(x => parseInt(x, 10));
+      const t = new Date(yy, (mm||1)-1, dd||1).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+    const reabs = [...row.reaberturas].sort((a, b) => {
+      const ta = toTime(a.data_abertura), tb = toTime(b.data_abertura);
+      if (ta !== tb) return ta - tb;
+      const pa = Number(a.qtd_itens_pendentes) || 0;
+      const pb = Number(b.qtd_itens_pendentes) || 0;
+      if (pa !== pb) return pa - pb;
+      const na = Number(a.qtd_nao_conformidades) || 0;
+      const nb = Number(b.qtd_nao_conformidades) || 0;
+      if (na !== nb) return na - nb;
+      return String(a.codigo ?? '').localeCompare(String(b.codigo ?? ''), 'pt-BR', { numeric: true });
+    });
+
+    html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
+    reabs.forEach(r => {
+      html += `<tr>
+        <td>${r.codigo ?? '-'}</td>
+        <td>${formatDateBR(r.data_abertura)}</td>
+        <td>${r.qtd_itens_pendentes}</td>
+        <td>${r.qtd_nao_conformidades ?? '-'}</td>
+      </tr>`;
+    });
+    html += `</table>`;
+    html += `<p><strong>Duração reinspeções:</strong> ${row.duracao_reaberturas || 0}</p>`;
+  }
+
+  // Link para a última inspeção (mesmo componente do index)
+  if(inmetaUrl){
+    html += `
+    <p>
+      <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
+        <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
+        </svg>
+      </a>
+    </p>`;
+  } else {
+    html += `<p><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</p>`;
+  }
+
+  html += `<p><strong>Duração total:</strong> ${row.duracao_real}</p>`;
+  if(row.termino_final){
+    html += `<p><strong>Término final:</strong> ${formatDateBR(row.termino_final)}</p>`;
+  }
+
+  _modalContent.innerHTML = html;
+  animateProgressBars(_modalContent);
+
+  // abrir
+  _modalBackdrop.style.display = 'flex';
+  _modal.style.display         = 'block';
+  void _modal.offsetHeight;
+  if (renderer?.domElement) renderer.domElement.style.pointerEvents = 'none';
+}
+
+
+function hexToRgb(hex){
+  const m = String(hex||'').replace('#','').match(/^([0-9a-f]{6})$/i);
+  if (!m) return {r:88,g:166,b:255}; // fallback azul do index
+  const n = parseInt(m[1],16);
+  return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+}
+function setModalTint(hex){
+  const el = document.getElementById('doge-modal');
+  if (!el) return;
+  const {r,g,b} = hexToRgb(hex || '#58a6ff');
+  el.style.setProperty('--modal-tint-strong', `rgba(${r},${g},${b},0.20)`);
+  el.style.setProperty('--modal-tint-soft',   `rgba(${r},${g},${b},0.10)`);
+  el.style.setProperty('--modal-border',      `rgba(${r},${g},${b},0.28)`); // << igual ao index
+}
+
+
+
+function focusModalInitial(){
+  const preferred = _modal.querySelector('#doge-modal-close') || _modal.querySelector('button, [href], [tabindex]');
+  if (preferred) preferred.focus({ preventScroll: true });
+}
+
+let _lastFocusEl = null;
+
+function trapFocus(e){
+  if (!_modal || _modal.style.display !== 'block') return;
+  const focusables = _modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  const list = Array.from(focusables).filter(el => !el.hasAttribute('disabled'));
+  if (list.length === 0) return;
+  const first = list[0], last = list[list.length - 1];
+
+  if (e.key === 'Tab'){
+    if (e.shiftKey && document.activeElement === first) {
+      last.focus(); e.preventDefault();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      first.focus(); e.preventDefault();
+    }
+  }
+}
+function closeAptModal(){
+  _modalBackdrop.style.display = 'none';
+  _modal.style.display         = 'none';
+  if (renderer?.domElement) renderer.domElement.style.pointerEvents = 'auto';
+  if (_lastFocusEl && typeof _lastFocusEl.focus === 'function') {
+    try { _lastFocusEl.focus({ preventScroll: true }); } catch(_){}
+  }
+  _lastFocusEl = null;
+}
+
+_modalBackdrop.addEventListener('click', (e)=>{
+  if (e.target === _modalBackdrop) closeAptModal();
+});
+_modalClose.addEventListener('click', closeAptModal);
+addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeAptModal(); });
+
+
+
+
+// === Paleta padrão (ajuste livre, se quiser ficar idêntico ao index)
+const PALETTE = {
+  default: '#6e7681',   // cinza
+  done:    '#238636',   // verde
+  working: '#58a6ff',   // azul
+  pending: '#d29922',   // amarelo
+  failed:  '#ff3b30'    // vermelho (NCs)
+};
+
+// === Função de decisão de cor por linha de apartamentos.json
+// === MODO NORMAL: "pendências" (amarelo) tem prioridade sobre "em andamento/percentual"
+// === MODO NORMAL: mesma regra do main.js (2D)
+function colorFromRowNormal(row){
+  const nc   = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? 0);
+  const pend = Number(row?.qtd_pend_ultima_inspecao ?? 0);
+  const pct  = Number(row?.percentual_ultima_inspecao);
+  const terminouInicial = !!row?.data_termino_inicial;
+
+  // Sem término inicial -> azul (em andamento)
+  if (!terminouInicial) return PALETTE.working;
+
+  // Com término inicial:
+  const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
+  return ultimaOK ? PALETTE.done : PALETTE.pending; // verde ou amarelo
+}
+
+
+// === MODO NC: só destaca NC>0 em vermelho; o resto cinza
+function colorFromRowNC(row){
+  const ncs = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? 0);
+  return (ncs > 0) ? PALETTE.failed : PALETTE.default;
+}
+
+let FVS_LIST = [];
+let APT_DATA = [];      // conteúdo bruto de apartamentos.json
+let CURRENT_FVS = '';   // FVS selecionada
+let NC_MODE = false;    // estado do botão NC
+
+
     const layout = await fetch(LAYOUT_URL, { cache: 'no-store' }).then(r=>r.json());
+
+    // Carrega FVS e Apartamentos
+[FVS_LIST, APT_DATA] = await Promise.all([
+  fetch(FVS_LIST_URL, { cache: 'no-store' }).then(r=>r.json()).catch(()=>[]),
+  fetch(APTS_URL,     { cache: 'no-store' }).then(r=>r.json()).catch(()=>[])
+]);
+
+
+
+const loadingEl = document.getElementById('doge-loading');
+if (loadingEl) loadingEl.style.display = 'none';
+
+// Estado inicial: query string tem prioridade; fallback no storage
+const prefs = loadPrefs();
+let QS_FVS = getQS('fvs');
+let QS_NC  = getQS('nc');
+let QS_APT = getQS('apt');  // se presente, abriremos modal após montar tudo
+
+if (QS_FVS == null || QS_FVS === '') QS_FVS = prefs.fvs || '';
+if (QS_NC == null) QS_NC = (prefs.nc ? '1' : '0');
+
+NC_MODE = (QS_NC === '1' || QS_NC === 'true');
+
+
+// Popular dropdown
+const fvsSelect = document.getElementById('fvsSelect');
+if (Array.isArray(FVS_LIST) && fvsSelect) {
+  fvsSelect.innerHTML = '';
+  for (const f of FVS_LIST) {
+    const val = (typeof f === 'string') ? f : (f?.nome || f?.id || '');
+    if (!val) continue;
+    const opt = document.createElement('option');
+    opt.value = String(val);
+    opt.textContent = String(val);
+    fvsSelect.appendChild(opt);
+  }
+  if (QS_FVS && [...fvsSelect.options].some(o => o.value === QS_FVS)) {
+    fvsSelect.value = QS_FVS;
+  } else if (fvsSelect.options.length) {
+    fvsSelect.selectedIndex = 0;
+  }
+  CURRENT_FVS = fvsSelect.value || '';
+}
+
+function computeFvsNcCounts(){
+  // Retorna { 'FVS A': 3, 'FVS B': 0, ... }
+  const counts = {};
+  if (!Array.isArray(APT_DATA)) return counts;
+  for (const r of APT_DATA){
+    const fvs = String(r?.fvs||'').trim(); if (!fvs) continue;
+    const ncs = Number(r?.qtd_nao_conformidades_ultima_inspecao ?? 0);
+    counts[fvs] = (counts[fvs] || 0) + (ncs > 0 ? 1 : 0);
+  }
+  return counts;
+}
+
+function rebuildFvsDropdown(){
+  const fvsSelect = document.getElementById('fvsSelect'); if (!fvsSelect) return;
+  const counts = computeFvsNcCounts();
+
+  // Monta lista base
+  const all = Array.isArray(FVS_LIST)
+    ? FVS_LIST.map(f => (typeof f === 'string') ? f.trim() : String(f?.nome ?? f?.id ?? '').trim())
+    : [];
+
+  // Se NC ativo: filtra só FVS com NC>0 e mostra contagem. Senão: mostra todas, sem contagem.
+  const values = NC_MODE
+    ? all.filter(name => (counts[name]||0) > 0)
+    : all;
+
+  const previous = fvsSelect.value;
+  fvsSelect.innerHTML = '';
+  for (const name of values){
+    if (!name) continue;
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = NC_MODE
+      ? `${name} (${counts[name]||0})`
+      : name;
+    fvsSelect.appendChild(opt);
+  }
+
+  // Seleção inteligente: mantém a atual se existir; senão, pega a primeira
+  if (values.includes(previous)){
+    fvsSelect.value = previous;
+  } else if (fvsSelect.options.length){
+    fvsSelect.selectedIndex = 0;
+  } else {
+    fvsSelect.value = '';
+  }
+  CURRENT_FVS = fvsSelect.value || '';
+}
+rebuildFvsDropdown();
+// Sincroniza UI do NC com o estado inicial
+const btnNC = document.getElementById('btnNC');
+if (btnNC) btnNC.classList.toggle('active', NC_MODE);
+
+function normAptoKey(s){
+  if (s == null) return '';
+  let t = String(s).trim().toUpperCase();
+  t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  t = t.replace(/\b(APARTAMENTO|APTO|AP|APT|APART)\b\.?/g, '');
+  t = t.replace(/[\s\-\._\/]/g, '');
+  return t;
+}
+
+// Constrói o COLOR_MAP a partir da FVS selecionada.
+// Observação: aqui fazemos um mapeamento neutro (cinza) para garantir funcionamento.
+// Na próxima etapa, você pode plugar exatamente a regra de cores que já usava no index.
+// buildColorMapForFVS (NORMAL)
+function buildColorMapForFVS(fvsName){
+  const map = { default: PALETTE.default, colors: {}, byFloor: {} };
+  if (!fvsName || !Array.isArray(APT_DATA)) return map;
+
+  const rows = APT_DATA.filter(r => String(r?.fvs||'').trim() === String(fvsName).trim());
+
+  for (const r of rows){
+    const aptName = r?.apartamento; if (!aptName) continue;
+    map.colors[normAptoKey(aptName)] = colorFromRowNormal(r);
+  }
+
+  // agregação por pavimento: working > pending > done > default
+  const agg = new Map(), bump=(o,k)=>o[k]=(o[k]||0)+1;
+  for (const r of rows){
+    const pav = (r?.pavimento_origem != null) ? String(r.pavimento_origem) : null;
+    if (!pav) continue;
+    const col = colorFromRowNormal(r);
+    const stat = (col===PALETTE.working)?'working':(col===PALETTE.pending)?'pending':(col===PALETTE.done)?'done':'default';
+    const o = agg.get(pav)||{}; bump(o,stat); agg.set(pav,o);
+  }
+  for (const [pav,o] of agg){
+    let chosen = PALETTE.default;
+    if (o.working) chosen = PALETTE.working;
+    else if (o.pending) chosen = PALETTE.pending;
+    else if (o.done)    chosen = PALETTE.done;
+    map.byFloor[pav] = chosen;
+  }
+  return map;
+}
+
+// buildColorMapForFVS_NC (NC)
+function buildColorMapForFVS_NC(fvsName){
+  const map = { default: PALETTE.default, colors: {}, byFloor: {} };
+  if (!fvsName || !Array.isArray(APT_DATA)) return map;
+
+  const rows = APT_DATA.filter(r => String(r?.fvs||'').trim() === String(fvsName).trim());
+  for (const r of rows){
+    const aptName = r?.apartamento; if (!aptName) continue;
+    map.colors[normAptoKey(aptName)] = colorFromRowNC(r);
+  }
+  const floors = new Map();
+  for (const r of rows){
+    const pav = (r?.pavimento_origem != null) ? String(r.pavimento_origem) : null;
+    if (!pav) continue;
+    const hasNC = Number(r?.qtd_nao_conformidades_ultima_inspecao ?? 0) > 0;
+    const e = floors.get(pav) || { hasNC:false }; if (hasNC) e.hasNC = true; floors.set(pav,e);
+  }
+  for (const [pav,e] of floors) map.byFloor[pav] = e.hasNC ? PALETTE.failed : PALETTE.default;
+  return map;
+}
+// Constrói metadados (duração etc.) por apartamento para os cards e modal
+function buildMetaMapForFVS(fvsName){
+  const meta = new Map();
+  if (!fvsName || !Array.isArray(APT_DATA)) return meta;
+
+  const rows = APT_DATA.filter(r => String(r?.fvs||'').trim() === String(fvsName).trim());
+  for (const r of rows){
+    const aptName = r?.apartamento;
+    if (!aptName) continue;
+    const key = normAptoKey(aptName);
+
+    meta.set(key, {
+      apto: String(aptName),
+      duracao: (r?.duracao_real ?? r?.duracao_inicial ?? null),
+      percentual: r?.percentual_ultima_inspecao ?? null,
+      pendencias: r?.qtd_pend_ultima_inspecao ?? null,
+      pavimento: r?.pavimento_origem ?? null,
+      raw: r
+    });
+  }
+  return meta;
+}
+
+function applyFVSAndRefresh(){
+  let cm;
+  if (NC_MODE) {
+    cm = buildColorMapForFVS_NC(CURRENT_FVS);   // só NCs em vermelho
+  } else {
+    cm = buildColorMapForFVS(CURRENT_FVS);      // normal, IGNORA NCs
+  }
+  setFVSColorMap(cm);
+  META_MAP = buildMetaMapForFVS(CURRENT_FVS);
+  refreshCardsWithMeta();
+}// Dropdown FVS
+if (fvsSelect){
+  fvsSelect.addEventListener('change', ()=>{
+    CURRENT_FVS = String(fvsSelect.value || '');
+    setQS({ fvs: CURRENT_FVS || null });  // atualiza URL
+    savePrefs();
+    applyFVSAndRefresh();
+  });
+}
+
+// Botão NC
+if (btnNC){
+btnNC.addEventListener('click', ()=>{
+  NC_MODE = !NC_MODE;
+  btnNC.classList.toggle('active', NC_MODE);
+  rebuildFvsDropdown();          // << atualiza o dropdown conforme regra NC
+  setQS({ nc: NC_MODE ? '1' : null, fvs: CURRENT_FVS || null });
+  savePrefs();
+  applyFVSAndRefresh();
+});
+}
+
 
     // ====== Setup ======
     const root = document.getElementById('app');
@@ -686,56 +1699,118 @@
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    function pickAtClientXY(clientX, clientY){
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+function pickAtClientXY(clientX, clientY){
+  // Converter coordenadas do clique para NDC
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
-      // faces
-      const faceObjects = torre.children.map(g => g.userData.mesh);
-      raycaster.setFromCamera(mouse, camera);
-      let inter = raycaster.intersectObjects(faceObjects, false);
+  // Raycast nas faces
+  const faceObjects = torre.children.map(g => g.userData.mesh);
+  raycaster.setFromCamera(mouse, camera);
+  let inter = raycaster.intersectObjects(faceObjects, false);
 
-      // fallback em arestas
-      if (!inter.length) {
-        const edgeObjects = torre.children.map(g => g.userData.edges);
-        raycaster.params.Line = raycaster.params.Line || {};
-        raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06;
-        inter = raycaster.intersectObjects(edgeObjects, false);
-      }
+  // Fallback: tentar nas arestas (aumenta um pouco o threshold)
+  if (!inter.length) {
+    const edgeObjects = torre.children.map(g => g.userData.edges);
+    raycaster.params.Line = raycaster.params.Line || {};
+    raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06;
+    inter = raycaster.intersectObjects(edgeObjects, false);
+  }
 
-      // limpar seleção anterior
-      if (window.__SEL_GROUP__) {
-        const gPrev = window.__SEL_GROUP__;
-        gPrev.userData.edges.material = gPrev.__lineBackup;
-        gPrev.userData.mesh.material = gPrev.__faceBackup;
-        delete gPrev.__lineBackup; delete gPrev.__faceBackup;
-        window.__SEL_GROUP__ = null;
-      }
+  // Hover 3D (sem selecionar)
+let lastHoverGroup = null;
+const HOVER_THROTTLE_MS = 40;
+let lastHoverTS = 0;
 
-      if (!inter.length) return;
+function hoverAtClientXY(clientX, clientY){
+  const now = performance.now();
+  if (now - lastHoverTS < HOVER_THROTTLE_MS) return; // throttle
+  lastHoverTS = now;
 
-      const hitObj   = inter[0].object;
-      const selGroup = hitObj.parent;
-      if (!selGroup || !selGroup.userData) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
-      // Destaque visual
-      selGroup.__lineBackup = selGroup.userData.edges.material;
-      selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
-      selGroup.userData.edges.material = MAT.selLine;
-      const faceClone = selGroup.userData.mesh.material.clone();
-      faceClone.opacity = Math.min(1, faceOpacity + 0.2);
-      selGroup.userData.mesh.material = faceClone;
-      window.__SEL_GROUP__ = selGroup;
+  const faceObjects = torre.children.map(g => g.userData.mesh);
+  raycaster.setFromCamera(mouse, camera);
+  let inter = raycaster.intersectObjects(faceObjects, false);
 
-      // Mensagem para o parent
-      const nomeId = String(selGroup.userData.nome || selGroup.userData?.meta?.id || '').trim();
-      let hex = null;
-      try { const c = selGroup.userData.mesh.material.color; if (c) hex = '#' + c.getHexString(); } catch(_){}
-      try { parent.postMessage({ type: 'viewer:open-apt', apt: nomeId, color: hex }, '*'); } catch(_){}
+  if (!inter.length){
+    const edgeObjects = torre.children.map(g => g.userData.edges);
+    raycaster.params.Line = raycaster.params.Line || {};
+    raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06;
+    inter = raycaster.intersectObjects(edgeObjects, false);
+  }
 
-      console.log('[viewer] tap nome:', nomeId);
-    }
+  if (!inter.length){
+    lastHoverGroup = null;
+    hideTip(50);
+    return;
+  }
+
+  const g = inter[0].object.parent;
+  if (!g || !g.userData) { hideTip(50); return; }
+
+  lastHoverGroup = g;
+  const nomeId = String(g.userData.nome || g.userData?.meta?.id || '').trim();
+  // Mostra tooltip perto do cursor
+  showTip(clientX, clientY, nomeId || 'apt');
+}
+
+// liga o hover no canvas (só quando não estiver em 2D "cheio")
+renderer.domElement.addEventListener('pointermove', (e)=>{
+  if (flatten2D >= 0.95) { hideTip(0); return; }
+  // se estiver arrastando para orbitar/panar, não mostrar tooltip
+  if (dragging) { hideTip(0); return; }
+  hoverAtClientXY(e.clientX, e.clientY);
+}, { passive: true });
+
+renderer.domElement.addEventListener('pointerleave', ()=> hideTip(0), { passive: true });
+
+  // Limpa seleção anterior
+  if (window.__SEL_GROUP__) {
+    const gPrev = window.__SEL_GROUP__;
+    if (gPrev.__lineBackup) gPrev.userData.edges.material = gPrev.__lineBackup;
+    if (gPrev.__faceBackup) gPrev.userData.mesh.material  = gPrev.__faceBackup;
+    delete gPrev.__lineBackup;
+    delete gPrev.__faceBackup;
+    window.__SEL_GROUP__ = null;
+  }
+
+  // Nada atingido
+  if (!inter.length) return;
+
+  // Grupo selecionado
+  const hitObj   = inter[0].object;
+  const selGroup = hitObj.parent;
+  if (!selGroup || !selGroup.userData) return;
+
+  // Destaque visual (salva materiais e aplica highlight)
+  selGroup.__lineBackup = selGroup.userData.edges.material;
+  selGroup.__faceBackup = selGroup.userData.mesh.material.clone();
+  selGroup.userData.edges.material = MAT.selLine;
+  const faceClone = selGroup.userData.mesh.material.clone();
+  faceClone.opacity = Math.min(1, (typeof faceOpacity === 'number' ? faceOpacity : 0.3) + 0.2);
+  selGroup.userData.mesh.material = faceClone;
+  window.__SEL_GROUP__ = selGroup;
+
+  // Identificação e cor atual
+  const nomeId = String(selGroup.userData.nome || selGroup.userData?.meta?.id || '').trim();
+  let hex = null;
+  try { const c = selGroup.userData.mesh.material.color; if (c) hex = '#' + c.getHexString(); } catch(_){}
+
+  // Compat: se estiver dentro de um iframe, ainda notifica o parent
+  if (typeof LEGACY_IFRAME !== 'undefined' && LEGACY_IFRAME){
+    try { parent.postMessage({ type: 'viewer:open-apt', apt: nomeId, color: hex }, '*'); } catch(_){}
+  }
+
+  // Modal nativo SEMPRE
+  openAptModal({ id: nomeId, floor: selGroup.userData.levelIndex ?? null });
+
+  // Log útil para debug
+  console.log('[viewer] tap nome:', nomeId);
+}
 
     // Tap “real” (bloqueia click fantasma)
     renderer.domElement.addEventListener('pointerup', (e) => {
@@ -802,6 +1877,8 @@
       if (e.target === hudToggle) return;
       hudToggle.click();
     });
+
+
 
     // Opacidade (slider)
     const opacity = document.getElementById('opacity');
@@ -990,6 +2067,30 @@
     let __aptRoots   = [];
     let __gridModel  = null;
     let __cardsBuilt = false;
+// Garante coleta de aptos/cards já construídos antes do 1º refresh
+if (!__aptRoots || __aptRoots.length === 0) collectApartmentRoots();
+if (!__gridModel) prepareGridModel();
+if (!__cardsBuilt) build2DCards();
+
+// Aplica FVS padrão (ou primeira do dropdown)
+applyFVSAndRefresh();
+
+// Se veio ?apt=301 na URL, abre o modal quando tudo já estiver pronto
+if (QS_APT){
+  // aguarda um microtask para garantir que recolor/refresh aplicou
+  setTimeout(()=>{
+    openAptModal({ id: QS_APT, floor: null });
+  }, 0);
+}
+
+// Sempre manter URL coerente com o estado atual (primeiro load)
+setQS({
+  fvs: CURRENT_FVS || null,
+  nc : NC_MODE ? '1' : null,
+  apt: null // não manter apt aberto na URL por padrão (se quiser, remova esta linha)
+});
+savePrefs();
+
 
     // Coleta de apartamentos
     function collectApartmentRoots(){
@@ -1108,46 +2209,133 @@
       __gridModel = { floors: floorsArr, cols: colsArr, map };
     }
 
-    function build2DCards(){
-      if (!__aptRoots || !__aptRoots.length) return;
-      if (!__gridModel) prepareGridModel();
-      if (!__gridModel) return;
+function build2DCards(){
+  if (!__aptRoots || !__aptRoots.length) return;
+  if (!__gridModel) prepareGridModel();
+  if (!__gridModel) return;
 
-      cards2d.innerHTML = '';
+  cards2d.innerHTML = '';
 
-      for (const A of __aptRoots){
-        const el = document.createElement('div');
-        el.className  = 'card';
-        const idStr = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
-        el.dataset.id = idStr;
+  for (const A of __aptRoots){
+    const el = document.createElement('div');
+    el.className  = 'card';
+    const idStr = A.meta?.id || A.meta?.name || A.root.userData.nome || '';
+    el.dataset.id = idStr;
 
-        // cor pela FVS (igual ao 3D)
-        const piso = (A.meta?.floor ?? A.root.userData.levelIndex ?? 0);
-        el.style.background = pickFVSColor(idStr, piso);
+    // cor pela FVS (igual ao 3D)
+    const piso = (A.meta?.floor ?? A.root.userData.levelIndex ?? 0);
+    el.style.background = pickFVSColor(idStr, piso);
 
-        const lab = document.createElement('div');
-        lab.className = 'label';
-        lab.textContent = A.meta?.name || A.meta?.id || 'apt';
-        el.appendChild(lab);
+    // ===== NOVO: conteúdo interno do card
+    // número do apto (visível só no hover) + duração (padrão)
+    const aptLabel = String(A.meta?.name || A.meta?.id || A.root.userData.nome || 'apt');
 
-        el.addEventListener('click', (ev)=>{
-          ev.stopPropagation();
-          const aptId = String(A.meta?.id || A.meta?.name || '').trim();
-          let hex = null;
-          try {
-            const c = (A.root?.userData?.mesh?.material?.color);
-            if (c) hex = '#' + c.getHexString();
-          } catch(_) {}
-          try {
-            parent.postMessage({ type: 'viewer:open-apt', apt: aptId, color: hex }, '*');
-          } catch(_) {}
-        });
+    const numEl = document.createElement('div');
+    numEl.className = 'num';
+    numEl.textContent = aptLabel;
+    el.appendChild(numEl);
 
-        cards2d.appendChild(el);
-        A.root.userData._cardEl = el;
+    const durEl = document.createElement('div');
+    durEl.className = 'dur';
+    // preenchimento inicial simples (refreshCardsWithMeta fará o update oficial)
+    try {
+      const key = normAptoKey(aptLabel);
+      const info = META_MAP?.get ? META_MAP.get(key) : null;
+      if (!NC_MODE && info?.duracao != null) {
+        durEl.textContent = `${info.duracao}d`;
+      } else {
+        durEl.style.display = 'none';
       }
-      __cardsBuilt = true;
+    } catch(_) { /* noop */ }
+    el.appendChild(durEl);
+
+    // guarda refs para updates posteriores
+    A.root.userData._cardEl = el;
+    A.root.userData._numEl  = numEl;
+    A.root.userData._durEl  = durEl;
+
+    // ===== Ações
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      const aptId = String(A.meta?.id || A.meta?.name || '').trim();
+      let hex = null;
+      try {
+        const c = (A.root?.userData?.mesh?.material?.color);
+        if (c) hex = '#' + c.getHexString();
+      } catch(_) {}
+
+      if (LEGACY_IFRAME){
+        try { parent.postMessage({ type: 'viewer:open-apt', apt: aptId, color: hex }, '*'); } catch(_) {}
+      }
+      openAptModal({ id: aptId, floor: (A.meta?.floor ?? A.root.userData.levelIndex ?? null) });
+    });
+
+    // Hover: tooltip com apto + duração (quando NC desligado)
+    el.addEventListener('pointerenter', (ev)=>{
+      const aptId = String(A.meta?.id || A.meta?.name || A.root.userData.nome || '').trim();
+      const key = normAptoKey(aptId);
+      const info = META_MAP.get ? META_MAP.get(key) : null;
+      const dur = (!NC_MODE && info?.duracao != null) ? ` • ${info.duracao}d` : '';
+      showTip(ev.clientX, ev.clientY, aptId + dur);
+    }, { passive: true });
+
+    el.addEventListener('pointermove', (ev)=>{
+      if (!tipVisible) return;
+      showTip(ev.clientX, ev.clientY, tipEl.textContent);
+    }, { passive: true });
+
+    el.addEventListener('pointerleave', ()=> hideTip(0), { passive: true });
+
+    cards2d.appendChild(el);
+  }
+
+  __cardsBuilt = true;
+}
+
+    function getDurationForCard(info){
+  // Heurística: duracao_real > (duracao_inicial + duracao_reaberturas) > duracao_inicial
+  if (!info) return null;
+  const real = info?.duracao;
+  if (real != null) return `${real}d`;
+  const ini  = Number(info?.raw?.duracao_inicial ?? NaN);
+  const reab = Number(info?.raw?.duracao_reaberturas ?? NaN);
+  if (!Number.isNaN(ini) && !Number.isNaN(reab)) return `${ini + reab}d`;
+  if (!Number.isNaN(ini)) return `${ini}d`;
+  return null;
+}
+function refreshCardsWithMeta(){
+  if (!__aptRoots || !__aptRoots.length) return;
+
+  for (const A of __aptRoots){
+    const el   = A.root.userData?._cardEl;
+    const num  = A.root.userData?._numEl;
+    const dur  = A.root.userData?._durEl;
+    if (!el || !num || !dur) continue;
+
+    // chave
+    const aptId = String(A.meta?.id || A.meta?.name || A.root.userData.nome || '').trim();
+    const key   = normAptoKey(aptId);
+    const info  = META_MAP.get(key) || null;
+
+    // número do apto (mostrado no hover)
+    num.textContent = aptId || 'apt';
+
+    // duração (padrão) — some se NC_MODE
+    if (NC_MODE){
+      dur.textContent = '';
+      dur.style.display = 'none';
+    } else {
+      const d = getDurationForCard(info);
+      if (d){
+        dur.textContent = d;
+        dur.style.display = '';
+      } else {
+        dur.textContent = '';
+        dur.style.display = 'none';
+      }
     }
+  }
+}
 
     function layout2D_computeMetrics(){
       const pad = 16;
@@ -1319,11 +2507,6 @@
     }
 
     // ===== Cores herdadas do 2D =====
-    let COLOR_MAP = {
-      default: '#6e7681',
-      colors:  {},
-      byFloor: {}
-    };
 
     function doge_openDetails(aptoId, floorIdx){
       try {
@@ -1341,6 +2524,7 @@
       }
     }
 
+    
     function doge_decideAndOpen(aptoId, floorIdx){
       const idNorm = (aptoId != null) ? String(aptoId) : '';
       const hasApt = !!(COLOR_MAP.colors[idNorm] || COLOR_MAP.colors[normApto(idNorm)]);
@@ -1412,14 +2596,7 @@
       recolorMeshes3D();
       recolorCards2D();
     }
-
-    window.addEventListener('message', (e)=>{
-      const data = e.data || {};
-      if (data.type === 'fvsColorMap') {
-        setFVSColorMap(data.payload);
-      }
-    });
-    try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
+    
 
     // ====== Resize & Loop ======
     addEventListener('resize', () => {
