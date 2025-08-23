@@ -52,6 +52,93 @@ function resizeSvgArea(){
   const available = Math.max(300, vh - topH);
   container.style.height = (available - padY) + 'px';
 }
+
+/* ========= [DOGE] Exporte abridores de modal no escopo global ========= */
+
+/** Abre modal por apartamento (wrapper seguro para ser chamado de fora) */
+window.openAptModalFromHost = function openAptModalFromHost(apartamento, fillHex) {
+  try {
+    // pega FVS atualmente selecionada (o <select id="dropdown">) se existir
+    const sel = document.getElementById('dropdown');
+    const fvsSelecionada = sel ? (sel.value || '') : '';
+
+    // cor fallback igual à que o main já usaria
+    const cor = fillHex || (typeof colorFromApt === 'function' ? colorFromApt(apartamento) : '#6e7681');
+
+    if (typeof abrirModalDetalhes === 'function') {
+      abrirModalDetalhes(apartamento, fvsSelecionada, cor);
+    }
+  } catch (err) {
+    console.error('[DOGE] Falha ao abrir modal de apto via host:', err);
+  }
+};
+
+/** Abre modal por pavimento (se você quiser usar via mensagem no futuro) */
+window.openPavModalFromHost = function openPavModalFromHost(pavKey, displayLabel, fillHex) {
+  try {
+    const cor = fillHex || '#6e7681';
+    if (typeof abrirModalDetalhesPavimento === 'function') {
+      // Se não tiver a lista de aptos daquele pavimento aqui, pode passar [].
+      abrirModalDetalhesPavimento(pavKey, displayLabel || String(pavKey), cor, []);
+    }
+  } catch (err) {
+    console.error('[DOGE] Falha ao abrir modal de pavimento via host:', err);
+  }
+};
+
+/* ========= [DOGE] Escuta mensagens vindas do viewer (iframe) ========= */
+/*
+Protocolo esperado do viewer:
+- { type: 'viewer:open-apt', apt: '301', color?: '#RRGGBB' }
+- { type: 'viewer:open-floor', floorKey: '3', label: '3º Pavimento', color?: '#RRGGBB' }
+- { type: 'ready-3d' } // já existe no viewer atual
+*/
+// === [DOGE] Recebe clique do viewer e abre o modal existente ===
+window.addEventListener('message', (ev) => {
+  const d = ev?.data || {};
+  if (!d || !d.type) return;
+
+  // DEBUG: veja o que chegou
+  console.log('[HOST] msg do viewer:', d);
+
+  if (d.type === 'viewer:open-apt') {
+    const apt = String(d.apt || d.apto || '').trim();
+    if (!apt) return;
+
+    // FVS atualmente selecionada no index (se existir um <select id="dropdown">)
+    const sel = document.getElementById('dropdown');
+    const fvsSelecionada = sel ? (sel.value || '') : '';
+
+    // cor vinda do viewer ou calculada pelo seu main.js
+    let cor = d.color || '#6e7681';
+    try {
+      if (typeof colorFromApt === 'function') {
+        const c = colorFromApt(apt);
+        if (c) cor = c;
+      }
+    } catch (_) {}
+
+    // Usa suas funções já existentes no main.js
+    if (typeof abrirModalDetalhes === 'function') {
+      abrirModalDetalhes(apt, fvsSelecionada, cor);
+    } else {
+      console.warn('[DOGE] abrirModalDetalhes não encontrada no main.js');
+    }
+  }
+
+  if (d.type === 'viewer:open-floor') {
+    // Opcional: clique por pavimento se você enviar isso no futuro
+    const pavKey = String(d.floorKey ?? d.floor ?? '').trim();
+    const label  = d.label ?? pavKey;
+    const cor    = d.color || '#6e7681';
+
+    if (pavKey && typeof abrirModalDetalhesPavimento === 'function') {
+      abrirModalDetalhesPavimento(pavKey, label, cor, []);
+    }
+  }
+});
+
+
 window.addEventListener('resize', resizeSvgArea);
 
 function groupCells(grid){
