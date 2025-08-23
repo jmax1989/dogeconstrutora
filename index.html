@@ -8,6 +8,43 @@
   <link rel="preload" href="assets/css/style.css" as="style">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
+<style>
+  /* Camada do overlay 3D (fica abaixo do modal) */
+  #viewer3d-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000; /* abaixo do modal */
+  }
+
+  /* O iframe do viewer fica “abaixo” do modal e com z-index controlado */
+  #viewer3d-iframe {
+    position: relative;
+    z-index: 1000; /* abaixo do modal */
+    pointer-events: auto; /* o JS alterna para 'none' quando o modal abre */
+  }
+
+  /* Backdrop e conteúdo do modal SEMPRE acima do iframe */
+  #modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000 !important; /* acima do overlay/iframe */
+  }
+
+  #modal {
+    position: fixed;
+    z-index: 2001 !important; /* acima do backdrop */
+  }
+
+  /* Se você usar classes genéricas de modal em algum momento, mantenha estas também */
+  .modal,
+  #modalDetalhes,
+  #detalhesModal,
+  .doge-modal-top {
+    position: fixed;
+    z-index: 2001 !important;
+  }
+</style>
+
 <body>
   <div id="dropdown-container">
     <div class="controls">
