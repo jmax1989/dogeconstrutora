@@ -342,8 +342,7 @@ renderer.domElement.style.touchAction = 'none';
     renderer.domElement.addEventListener('pointercancel', pointerUp3D,     {passive:false});
 
     // bloqueia menu do botão direito (para pan no desktop)
-    renderer.domElement.ad
-      dEventListener('contextmenu', e => e.preventDefault());
+    renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
     // Scroll do mouse (zoom)
     renderer.domElement.addEventListener('wheel', e=>{
@@ -1592,8 +1591,3 @@ try { parent.postMessage({ type: 'ready-3d' }, '*'); } catch(_) {}
   </script>
 </body>
 </html>
-
-
-
-
-
