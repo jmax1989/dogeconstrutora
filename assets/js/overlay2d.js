@@ -397,6 +397,60 @@ export function render2DCards(){
     openAptModal({ id: apt, floor: pav, row, tintHex: hex });
   };
 
+  // ==== ZOOM do GRID: wheel e pinch (Pointer Events) ====
+attach2DZoomHandlers(host);
+
+function setRows(n){
+  const r = Math.max(3, Math.min(20, Math.round(n)));
+  if (r !== State.grid2DRows){
+    State.grid2DRows = r;
+    render2DCards();
+  }
+}
+
+function attach2DZoomHandlers(el){
+  // wheel (desktop) — mais linhas quando rola pra cima (mais conteúdo), menos linhas ao rolar pra baixo
+  el.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const dir = Math.sign(e.deltaY);
+    setRows((State.grid2DRows || 8) + dir); // delta de 1 linha por notch
+  }, { passive:false });
+
+  // Pointer Events para pinch
+  const ptrs = new Map();
+  let start = null; // { d, rows0 }
+
+  el.addEventListener('pointerdown', (e)=>{
+    el.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (ptrs.size === 2){
+      const a = [...ptrs.values()];
+      const dx = a[1].x - a[0].x, dy = a[1].y - a[0].y;
+      start = { d: Math.hypot(dx,dy) || 1, rows0: (State.grid2DRows || 8) };
+    }
+  });
+  el.addEventListener('pointermove', (e)=>{
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+
+    if (ptrs.size === 2 && start){
+      const a = [...ptrs.values()];
+      const dx = a[1].x - a[0].x, dy = a[1].y - a[0].y;
+      const d = Math.hypot(dx,dy) || 1;
+      const scale = d / (start.d || 1);
+
+      // scale > 1  => "aproxima" => menos linhas (cards maiores)
+      // scale < 1  => "afasta"   => mais linhas
+      const newRows = start.rows0 / Math.max(0.25, Math.min(4, scale));
+      setRows(newRows);
+    }
+  }, { passive:true });
+  function end(id){ ptrs.delete(id); if (ptrs.size < 2) start = null; }
+  el.addEventListener('pointerup', end, { passive:true });
+  el.addEventListener('pointercancel', end, { passive:true });
+}
+
+
   // ====== Layout ======
   const paneW = Math.max(240, host.clientWidth);
   const paneH = Math.max(180, host.clientHeight);
@@ -407,7 +461,8 @@ export function render2DCards(){
   let hGap = Math.max(12, Math.floor(paneW * 0.014));
   let vGap = Math.max(10, Math.floor(paneH * 0.014));
 
-  const TARGET_ROWS = getGridRows(); // <-- agora vem do estado/zoom
+ const TARGET_ROWS = Math.max(3, Math.min(20, Math.round(State.grid2DRows || 8)));
+
 
   let cardH = Math.floor((paneH - (TARGET_ROWS-1)*vGap) / TARGET_ROWS);
   cardH = Math.max(MIN_H, Math.min(cardH, MAX_H));
