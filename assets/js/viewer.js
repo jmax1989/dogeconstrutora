@@ -47,6 +47,15 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
 
   // Picking (hover + click)
   initPicking();
+  import { initPicking, setRowResolver, selectGroup, setOnSelect } from './picking.js';
+import { openAptModal } from './modal.js';
+
+// ...
+
+initPicking();
+setOnSelect(({ id, floor, row }) => {
+  openAptModal({ id, floor, row });
+});
 
   // Resolvers para 2D e Modal (conforme FVS atual)
   updateResolversForCurrentFVS();
