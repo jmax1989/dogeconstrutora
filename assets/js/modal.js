@@ -1,186 +1,294 @@
-// ============================
-// Modal (abrir/fechar + conteúdo + tint)
-// ============================
+// modal.js
+// Modal de detalhes do apartamento (abre no próprio viewer, sem iframe)
 
-import { formatDateBR, normAptoId } from './utils.js';
-import { tintFromColor } from './colors.js';
 import { State } from './state.js';
+import { apartamentos } from './data.js';
+import { normAptoId } from './utils.js';
 
-let backdrop, modal, titleEl, pillEl, contentEl, closeBtn;
+// refs DOM
+let _backdrop, _modal, _title, _pill, _content, _closeBtn;
 
-// foco anterior para restaurar ao fechar
-let lastFocused = null;
+// guard contra "ghost-click" (tap abre modal e clica no link que surgiu no mesmo lugar)
+let _openTs = 0;
+const GHOST_GUARD_MS = 450;
 
-// ---------------
-// Inicialização
-// ---------------
 export function initModal(){
-  backdrop  = document.getElementById('doge-modal-backdrop');
-  modal     = document.getElementById('doge-modal');
-  titleEl   = document.getElementById('doge-modal-title');
-  pillEl    = document.getElementById('doge-modal-pill');
-  contentEl = document.getElementById('doge-modal-content');
-  closeBtn  = document.getElementById('doge-modal-close');
+  _backdrop = document.getElementById('doge-modal-backdrop');
+  _modal    = document.getElementById('doge-modal');
+  _title    = document.getElementById('doge-modal-title');
+  _pill     = document.getElementById('doge-modal-pill');
+  _content  = document.getElementById('doge-modal-content');
+  _closeBtn = document.getElementById('doge-modal-close');
 
-  if (!backdrop || !modal) return;
+  if (!_backdrop || !_modal) return;
 
-  closeBtn?.addEventListener('click', closeModal, { passive:true });
-  backdrop.addEventListener('click', (e)=>{
-    if (e.target === backdrop) closeModal();
-  }, { passive:true });
+  // estado inicial
+  _backdrop.style.display = 'none';
+  _modal.style.display    = 'none';
 
-  document.addEventListener('keydown', (e)=>{
-    if (e.key === 'Escape' && backdrop.classList.contains('show')){
+  // clique fora fecha
+  _backdrop.addEventListener('click', (e)=>{
+    if (e.target === _backdrop) closeModal();
+  });
+
+  // fechar no botão
+  _closeBtn?.addEventListener('click', closeModal);
+
+  // fechar no ESC
+  window.addEventListener('keydown', (e)=>{
+    if (e.key === 'Escape' && isOpen()) closeModal();
+  });
+
+  // Anti-ghost-click dentro do modal:
+  // - bloqueia clique em links nos primeiros N ms após abrir
+  // - e ainda impede o primeiro clique se estivermos no período de guarda
+  _modal.addEventListener('click', (e)=>{
+    const a = e.target.closest?.('a');
+    if (!a) return;
+    const now = performance.now();
+    if (now - _openTs < GHOST_GUARD_MS){
+      e.preventDefault();
       e.stopPropagation();
-      closeModal();
     }
-  });
+  }, { capture: true });
 
-  // trap de foco simples dentro do modal
-  document.addEventListener('keydown', (e)=>{
-    if (!backdrop.classList.contains('show')) return;
-    if (e.key !== 'Tab') return;
-
-    const focusables = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-    if (!focusables.length) return;
-
-    const first = focusables[0];
-    const last  = focusables[focusables.length-1];
-    if (e.shiftKey && document.activeElement === first){
-      last.focus();
-      e.preventDefault();
-    }else if (!e.shiftKey && document.activeElement === last){
-      first.focus();
-      e.preventDefault();
+  // evita bubbling do link para o backdrop
+  _modal.addEventListener('click', (e)=>{
+    if (e.target.closest?.('a')) {
+      e.stopPropagation();
     }
   });
 }
 
-// ---------------
-// API pública
-// ---------------
-/**
- * Abre o modal de apartamento.
- * @param {Object} opts
- * @param {string} opts.id  - identificação do apto (ex.: "301")
- * @param {string|number|null} [opts.floor] - pavimento, se houver
- * @param {Object|null} [opts.row] - linha original do apartamentos.json (dados detalhados)
- * @param {string|null} [opts.tintHex] - cor base #rrggbb para tonalizar o header
- */
-export function openAptModal({ id, floor=null, row=null, tintHex=null }){
-  if (!modal || !backdrop) return;
-
-  lastFocused = document.activeElement;
-
-  const aptName = String(id || '').trim();
-  const aptKey  = normAptoId(aptName);
-
-  // Título
-  titleEl.textContent = aptName || 'Apartamento';
-
-  // Pill (pavimento + FVS atual)
-  const pav = (floor != null) ? String(floor) : String(row?.pavimento_origem ?? '');
-  const fvs = State.CURRENT_FVS || '';
-  pillEl.textContent = [pav && `Pav. ${pav}`, fvs].filter(Boolean).join(' • ');
-
-  // Tint do header conforme a cor ativa (se não vier explícito)
-  if (!tintHex){
-    // escolha de cor deve ter sido calculada previamente; se não, usar default do COLOR_MAP
-    tintHex = State.COLOR_MAP?.colors?.[aptKey] || State.COLOR_MAP?.default || '#6e7681';
-  }
-  applyModalTint(tintHex);
-
-  // Conteúdo
-  renderModalContent({ id: aptName, floor: pav, row });
-
-  // Mostrar
-  backdrop.classList.add('show');
-  backdrop.setAttribute('aria-hidden','false');
-  setTimeout(()=> closeBtn?.focus(), 0);
+function isOpen(){
+  return _backdrop && _backdrop.style.display !== 'none';
 }
 
-/** Fecha o modal e restaura foco */
 export function closeModal(){
-  if (!backdrop) return;
-  backdrop.classList.remove('show');
-  backdrop.setAttribute('aria-hidden','true');
-  if (lastFocused && typeof lastFocused.focus === 'function'){
-    setTimeout(()=> lastFocused.focus(), 0);
+  if (!_backdrop || !_modal) return;
+  _backdrop.style.display = 'none';
+  _modal.style.display    = 'none';
+}
+
+// =========================
+// Helpers visuais
+// =========================
+function hexToRgb(hex){
+  const m = String(hex||'').replace('#','').match(/^([0-9a-f]{6})$/i);
+  if (!m) return { r:88, g:166, b:255 }; // fallback azul
+  const n = parseInt(m[1],16);
+  return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+}
+function tintFromColor(hex){
+  const {r,g,b} = hexToRgb(hex || '#58a6ff');
+  return `linear-gradient(to bottom, rgba(${r},${g},${b},.12), rgba(0,0,0,0) 40%)`;
+}
+function setModalTint(hex){
+  const el = _modal;
+  if (!el) return;
+  const {r,g,b} = hexToRgb(hex || '#58a6ff');
+  el.style.setProperty('--modal-tint-strong', `rgba(${r},${g},${b},0.20)`);
+  el.style.setProperty('--modal-tint-soft',   `rgba(${r},${g},${b},0.10)`);
+  el.style.setProperty('--modal-border',      `rgba(${r},${g},${b},0.28)`);
+}
+function formatDateBR(dateStr){
+  if(!dateStr) return '';
+  const p = String(dateStr).split('-');
+  if (p.length<3) return dateStr;
+  const yyyy = +p[0], mm = (+p[1])-1, dd = +(p[2].slice(0,2));
+  const d = new Date(yyyy, mm, dd);
+  if (isNaN(d)) return dateStr;
+  return `${String(dd).padStart(2,'0')}/${String(mm+1).padStart(2,'0')}/${yyyy}`;
+}
+function getUltimaInspecaoInfo(reaberturas){
+  if(!Array.isArray(reaberturas)||reaberturas.length===0){
+    return { codigo_ultima_inspecao:null, qtd_pend_ultima_inspecao:0 };
   }
+  let best=null;
+  for (const r of reaberturas){
+    const c = Number(r.codigo);
+    if(!Number.isNaN(c)){
+      if(!best || c>best.c) best = { c, q:Number(r.qtd_itens_pendentes)||0 };
+    }
+  }
+  if(best) return { codigo_ultima_inspecao:String(best.c), qtd_pend_ultima_inspecao:best.q };
+  const last = reaberturas[reaberturas.length-1];
+  return { codigo_ultima_inspecao: last.codigo ?? null, qtd_pend_ultima_inspecao: Number(last.qtd_itens_pendentes) || 0 };
+}
+function linearProgress(pct, color){
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  const c = color || 'var(--blue)';
+  return `
+    <span class="q-linear-progress q-linear-progress--sm" style="color:${c}">
+      <span class="q-linear-progress__track">
+        <span class="q-linear-progress__bar" data-w="${p}%"></span>
+      </span>
+      <span class="q-linear-progress__label">${p}%</span>
+    </span>`;
+}
+function animateProgressBars(root=document){
+  const bars = root.querySelectorAll('.q-linear-progress__bar[data-w]');
+  requestAnimationFrame(()=> bars.forEach(b => { b.style.width = b.dataset.w; }));
 }
 
-/** Aplica tonalidade ao header do modal (vidro colorido sutil) */
-export function applyModalTint(hex){
-  const header = modal?.querySelector('header');
-  if (!header) return;
-  header.style.background = tintFromColor(hex, 0.22);
+// =========================
+// openAptModal
+// =========================
+export function openAptModal({ id, floor=null, row=null, tintHex=null }){
+  if (!_modal || !_backdrop) return;
+
+  const aptName = String(id||'').trim();
+  const keyNorm = normAptoId(aptName);
+
+  // resolve row se não vier pronta
+  let r = row;
+  if (!r){
+    const fvs = State.CURRENT_FVS || '';
+    if (fvs && Array.isArray(apartamentos)){
+      r = apartamentos
+        .filter(x => String(x.fvs||'').trim() === fvs)
+        .find(x => normAptoId(String(x.apartamento ?? x.apto ?? x.nome ?? '')) === keyNorm) || null;
+    }
+  }
+
+  // Título e cor/tinta (usa pick da FVS atual; se não tiver, usa tintHex ou fallback)
+  const hex = (typeof State.pickFVSColor === 'function')
+    ? State.pickFVSColor(aptName, floor ?? r?.pavimento_origem ?? null)
+    : (tintHex || '#58a6ff');
+
+  _title.textContent = aptName || 'Apartamento';
+  setModalTint(hex);
+  _modal.querySelector('header').style.background = tintFromColor(hex);
+
+  // Se não achou row, abre simples
+  if (!r){
+    _pill.textContent = '';
+    _content.innerHTML = `<p>Sem dados para o apartamento ${aptName}.</p>`;
+    showModalWithGuard();
+    return;
+  }
+
+  // Campos (espelha o index)
+  let codUlt = r.codigo_ultima_inspecao;
+  let pendUlt = r.qtd_pend_ultima_inspecao;
+  if (codUlt == null){
+    const aux = getUltimaInspecaoInfo(r.reaberturas);
+    codUlt  = aux.codigo_ultima_inspecao;
+    pendUlt = aux.qtd_pend_ultima_inspecao;
+  }
+
+  // NC da última inspeção
+  let ncUlt = r.qtd_nao_conformidades_ultima_inspecao;
+  if (ncUlt == null && Array.isArray(r.reaberturas) && r.reaberturas.length){
+    const lastReab = r.reaberturas[r.reaberturas.length - 1];
+    ncUlt = Number(lastReab.qtd_nao_conformidades);
+  }
+
+  const idLink = r.id_ultima_inspecao || r.id;
+  const inmetaUrl = idLink
+    ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
+    : null;
+
+  _pill.textContent = (r.duracao_real != null)
+    ? `Duração: ${r.duracao_real} dia${Number(r.duracao_real)===1?'':'s'}`
+    : (r.percentual_ultima_inspecao != null ? `Progresso: ${r.percentual_ultima_inspecao}%` : '');
+
+  let html = '';
+  html += `<p><strong>Apartamento:</strong> ${r.apartamento}</p>`;
+  if (r.pavimento_origem){
+    html += `<p><strong>Pavimento origem:</strong> ${r.pavimento_origem}</p>`;
+  }
+  html += `<p><strong>Início:</strong> ${formatDateBR(r.data_abertura)}</p>`;
+  if (r.data_termino_inicial){
+    html += `<p><strong>Término:</strong> ${formatDateBR(r.data_termino_inicial)}</p>`;
+  }
+
+  // progress (azul = sem término; amarelo = terminou inicial mas ainda pendências/NC ou pct<100)
+  const pct = Number(r.percentual_ultima_inspecao);
+  if (!Number.isNaN(pct)){
+    const isBlue = !r.data_termino_inicial;
+    const hasPendOrNc = (Number(r.qtd_pend_ultima_inspecao||0)>0) || (Number(ncUlt||0)>0) || pct<100;
+    const color = isBlue ? 'var(--blue)' : (hasPendOrNc ? 'var(--yellow)' : 'var(--green)');
+    html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${r.duracao_inicial}</span>${linearProgress(pct, color)}</p>`;
+  } else {
+    html += `<p><strong>Duração inicial:</strong> ${r.duracao_inicial ?? '-'}</p>`;
+  }
+
+  if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0){
+    html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
+  }
+
+  // reinspeções (ordenadas)
+  if (r.reaberturas?.length){
+    const toTime = (d)=> {
+      const [yy, mm, dd] = (d || '').split('-').map(x => parseInt(x,10));
+      const t = new Date(yy, (mm||1)-1, dd||1).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+    const reabs = [...r.reaberturas].sort((a,b)=>{
+      const ta = toTime(a.data_abertura), tb = toTime(b.data_abertura);
+      if (ta !== tb) return ta - tb;
+      const pa = Number(a.qtd_itens_pendentes)||0;
+      const pb = Number(b.qtd_itens_pendentes)||0;
+      if (pa !== pb) return pa - pb;
+      const na = Number(a.qtd_nao_conformidades)||0;
+      const nb = Number(b.qtd_nao_conformidades)||0;
+      if (na !== nb) return na - nb;
+      return String(a.codigo ?? '').localeCompare(String(b.codigo ?? ''), 'pt-BR', { numeric: true });
+    });
+
+    html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
+    reabs.forEach(rr=>{
+      html += `<tr>
+        <td>${rr.codigo ?? '-'}</td>
+        <td>${formatDateBR(rr.data_abertura)}</td>
+        <td>${rr.qtd_itens_pendentes}</td>
+        <td>${rr.qtd_nao_conformidades ?? '-'}</td>
+      </tr>`;
+    });
+    html += `</table>`;
+    html += `<p><strong>Duração reinspeções:</strong> ${r.duracao_reaberturas || 0}</p>`;
+  }
+
+  // link inmeta — com data-attr para inspeção do guard (sem mudanças visuais)
+  if (inmetaUrl){
+    html += `
+    <p>
+      <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer" data-safe-link="1">
+        <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
+        </svg>
+      </a>
+    </p>`;
+  } else {
+    html += `<p><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</p>`;
+  }
+
+  html += `<p><strong>Duração total:</strong> ${r.duracao_real ?? '-'}</p>`;
+  if (r.termino_final){
+    html += `<p><strong>Término final:</strong> ${formatDateBR(r.termino_final)}</p>`;
+  }
+
+  _content.innerHTML = html;
+  animateProgressBars(_content);
+
+  showModalWithGuard();
 }
 
-// ---------------
-// Renderização do conteúdo
-// ---------------
-function renderModalContent({ id, floor, row }){
-  if (!contentEl) return;
+// mostra modal e ativa “janela de guarda” que bloqueia cliques iniciais em links
+function showModalWithGuard(){
+  _openTs = performance.now();
 
-  // Helpers de formatação
-  const fmt = {
-    int: v => (v==null || v==='') ? '—' : String(v),
-    date: v => v ? formatDateBR(v) : '—',
-    bool: b => (b ? 'Sim' : 'Não')
-  };
+  // 1) abre
+  _backdrop.style.display = 'flex';
+  _modal.style.display    = 'block';
 
-  // Campos previstos no apartamentos.json
-  const pct       = row?.percentual_ultima_inspecao ?? null;
-  const pend      = row?.qtd_pend_ultima_inspecao ?? null;
-  const ncs       = row?.qtd_nao_conformidades_ultima_inspecao ?? null;
-  const andamento = !!row?.em_andamento;
+  // 2) protege conteúdo por alguns ms para impedir o primeiro click automático
+  _content.style.pointerEvents = 'none';
+  setTimeout(()=>{ _content.style.pointerEvents = ''; }, GHOST_GUARD_MS);
 
-  const abertura  = row?.data_abertura ? String(row.data_abertura).slice(0,10) : '';
-  const terminoI  = row?.data_termino_inicial ? String(row.data_termino_inicial).slice(0,10) : '';
-  const terminoF  = row?.termino_final ? String(row.termino_final).slice(0,10) : '';
-
-  // Reaberturas (array de datas)
-  const reab = Array.isArray(row?.reaberturas) ? row.reaberturas : [];
-
-  // Montagem do HTML
-  contentEl.innerHTML = `
-    <section class="row">
-      <div>
-        <h4>Identificação</h4>
-        <div class="kv"><b>Apartamento:</b> <span>${id || '—'}</span></div>
-        <div class="kv"><b>Pavimento:</b> <span>${floor || '—'}</span></div>
-        <div class="kv"><b>FVS:</b> <span>${State.CURRENT_FVS || '—'}</span></div>
-      </div>
-    </section>
-
-    <section class="row">
-      <div>
-        <h4>Status</h4>
-        <div class="kv"><b>Percentual:</b> <span>${pct!=null ? `${pct}%` : '—'}</span></div>
-        <div class="kv"><b>Pendências:</b> <span>${fmt.int(pend)}</span></div>
-        <div class="kv"><b>Não-conformidades:</b> <span>${fmt.int(ncs)}</span></div>
-        <div class="kv"><b>Em andamento:</b> <span>${fmt.bool(andamento)}</span></div>
-      </div>
-    </section>
-
-    <section class="row">
-      <div>
-        <h4>Datas</h4>
-        <div class="kv"><b>Abertura:</b> <span>${fmt.date(abertura)}</span></div>
-        <div class="kv"><b>Término inicial:</b> <span>${fmt.date(terminoI)}</span></div>
-        <div class="kv"><b>Término final:</b> <span>${fmt.date(terminoF)}</span></div>
-      </div>
-    </section>
-
-    <section class="row">
-      <div>
-        <h4>Reaberturas</h4>
-        ${
-          reab.length
-            ? `<ul class="list">${reab.map(d => `<li>${fmt.date(String(d).slice(0,10))}</li>`).join('')}</ul>`
-            : `<div class="kv"><span>—</span></div>`
-        }
-      </div>
-    </section>
-  `;
+  // 3) força reflow para CSS transitions do progress etc.
+  void _modal.offsetHeight;
 }
