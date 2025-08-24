@@ -1,18 +1,22 @@
 // picking.js
 import { State } from './state.js';
 import { getTorre } from './geometry.js';
-import { openAptModal } from './modal.js';
 import { normAptoId, showTip, hideTip } from './utils.js';
 
 /**
- * Picking/seleção com:
+ * Picking/seleção:
  * - hover com throttle + tooltip
- * - tap robusto (mobile/desktop) sem “clique fantasma”
- * - highlight que NÃO congela a cor (recolor 3D continua funcionando)
+ * - tap robusto (mobile/desktop), sem clique fantasma
+ * - highlight que respeita recolor (não “congela” cor)
+ * - sem dependência do modal (evita ciclo): use setOnSelect(...)
  */
 
 let raycaster;
 let mouseNDC;
+
+// callback a ser definido pelo viewer (ex.: openAptModal)
+let onSelect = null;
+export function setOnSelect(fn){ onSelect = (typeof fn === 'function') ? fn : null; }
 
 // throttle do hover
 let hoverThrottleTS = 0;
@@ -21,35 +25,26 @@ const HOVER_THROTTLE_MS = 40;
 // detecção de tap
 const TAP_MOVE_THRESH = 6;   // px
 const TAP_TIME_MAX   = 600;  // ms
-let tapState = {
-  isDown: false,
-  startX: 0,
-  startY: 0,
-  moved:  false,
-  downAt: 0,
-};
+let tapState = { isDown:false, startX:0, startY:0, moved:false, downAt:0 };
 
 // seleção atual
 let selectedGroup = null;
 
-// backups por grupo (para restaurar highlight sem travar cor)
+// backups por grupo (para restaurar highlight sem travar cor/estado)
 const faceBackupMap = new WeakMap(); // group -> material face (clone)
 const lineBackupMap = new WeakMap(); // group -> material linha
 
-// materiais de seleção (apenas contorno/linhas)
+// materiais de seleção (só contorno)
 const SEL_LINE = new THREE.LineBasicMaterial({ color: 0xffc107, linewidth: 2 });
 const OPACITY_BUMP = 0.18; // +18% de opacidade da face
 
 // resolver injetado pelo viewer.js (aptKeyNorm -> row)
 let rowResolver = () => null;
+export function setRowResolver(fn){ if (typeof fn === 'function') rowResolver = fn; }
 
 // ============================
-// API
+// Init
 // ============================
-export function setRowResolver(fn){
-  if (typeof fn === 'function') rowResolver = fn;
-}
-
 export function initPicking(){
   raycaster = new THREE.Raycaster();
   mouseNDC  = new THREE.Vector2();
@@ -57,19 +52,19 @@ export function initPicking(){
   const dom = document.querySelector('#app canvas');
   if (!dom) return;
 
-  // bloqueia menu do botão direito (pan)
   dom.addEventListener('contextmenu', e => e.preventDefault());
 
-  // pointer
-  dom.addEventListener('pointerdown', onPointerDown,   { passive: false });
-  dom.addEventListener('pointermove', onPointerMove,   { passive: false });
-  dom.addEventListener('pointerup',   onPointerUp,     { passive: false });
-  dom.addEventListener('pointercancel', onPointerUp,   { passive: false });
+  dom.addEventListener('pointerdown',   onPointerDown,   { passive:false });
+  dom.addEventListener('pointermove',   onPointerMove,   { passive:false });
+  dom.addEventListener('pointerup',     onPointerUp,     { passive:false });
+  dom.addEventListener('pointercancel', onPointerUp,     { passive:false });
 
-  // roda do mouse cancela tap
-  dom.addEventListener('wheel', () => { tapState.isDown = false; }, { passive: true });
+  dom.addEventListener('wheel', () => { tapState.isDown = false; }, { passive:true });
 }
 
+// ============================
+// API externa
+// ============================
 export function selectGroup(group){
   clearSelection();
   if (!group || !group.userData) return;
@@ -81,12 +76,11 @@ export function selectGroup(group){
   const floor = (typeof group.userData?.levelIndex === 'number') ? group.userData.levelIndex : null;
   const row   = resolveRowFromApto(aptId);
 
-  openAptModal({ id: aptId, floor, row });
+  if (onSelect) onSelect({ id: aptId, floor, row });
 }
 
 export function refreshSelectionVisual(){
   if (!selectedGroup) return;
-  // re-aplica realce sem alterar cor escolhida pelo recolor
   removeHighlight(selectedGroup, /*keepBackups*/ true);
   applyHighlight(selectedGroup);
 }
@@ -101,7 +95,7 @@ export function clearSelection(){
 // Handlers
 // ============================
 function onPointerDown(e){
-  if (e.button === 2) return; // ignorar botão direito
+  if (e.button === 2) return; // ignora botão direito
   tapState.isDown = true;
   tapState.startX = e.clientX;
   tapState.startY = e.clientY;
@@ -131,10 +125,8 @@ function onPointerMove(e){
 
 function onPointerUp(e){
   if (e.button === 2) return;
-
   const isTap = computeIsTap(e.clientX, e.clientY);
   tapState.isDown = false;
-
   if (!isTap) return;
   doClickPick(e.clientX, e.clientY);
 }
@@ -164,11 +156,11 @@ function pickGroupAt(x, y){
   clientToNDC(x, y);
   raycaster.setFromCamera(mouseNDC, State.camera);
 
-  // 1) tentar faces
+  // 1) faces
   const faceObjs = torre.children.map(g => g.userData?.mesh).filter(Boolean);
   let inter = raycaster.intersectObjects(faceObjs, false);
 
-  // 2) fallback: edges com threshold adaptativo (melhora seleção em zooms)
+  // 2) fallback: edges com threshold adaptativo (mais fácil acertar)
   if (!inter.length){
     const edgeObjs = torre.children.map(g => g.userData?.edges).filter(Boolean);
     const thr = Math.max(0.5, Math.min(4, (State.radius || 20) * 0.02));
@@ -178,9 +170,7 @@ function pickGroupAt(x, y){
   }
 
   if (!inter.length) return null;
-
-  const obj = inter[0].object;
-  const group = obj.parent;
+  const group = inter[0].object.parent;
   return (group && group.userData) ? group : null;
 }
 
@@ -203,7 +193,7 @@ function doClickPick(x, y){
 function applyHighlight(group){
   if (!group?.userData) return;
 
-  // guarda backups (uma vez)
+  // backups (uma vez)
   if (!lineBackupMap.has(group)) lineBackupMap.set(group, group.userData.edges?.material || null);
   if (!faceBackupMap.has(group)) faceBackupMap.set(group, group.userData.mesh?.material?.clone() || null);
 
@@ -213,7 +203,7 @@ function applyHighlight(group){
     group.userData.edges.material.needsUpdate = true;
   }
 
-  // 2) face → aumenta opacidade atual (sem mexer na COR!)
+  // 2) face → aumenta opacidade atual (sem mexer na cor!)
   const mat = group.userData.mesh?.material;
   if (mat){
     const bumped = mat.clone();
@@ -241,7 +231,7 @@ function removeHighlight(group, keepBackups=false){
 }
 
 // ============================
-// Row resolver helper
+// Row resolver
 // ============================
 function resolveRowFromApto(aptoId){
   const key = normAptoId(aptoId);
