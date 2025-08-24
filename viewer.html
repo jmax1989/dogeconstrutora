@@ -2494,22 +2494,59 @@ for (let r = 0; r < rows; r++) {
     }
 
     // Recolor (ajustada para não disputar opacidade)
-    function recolorMeshes3D(){
-      if (!torre) return;
-      for (const g of torre.children){
-        const nome  = g.userData.nome || g.userData.meta?.id || '';
-        const floor = g.userData.levelIndex ?? 0;
-        const hex   = pickFVSColor(nome, floor);
+function recolorMeshes3D(){
+  if (!torre) return;
+  for (const g of torre.children){
+    const nome  = g.userData.nome || g.userData.meta?.id || '';
+    const floor = g.userData.levelIndex ?? 0;
+    const hex   = pickFVSColor(nome, floor);
 
-        const mat = g.userData.mesh.material;
-        mat.color = new THREE.Color(hex);
-        mat.needsUpdate = true;
-      }
-      // Reaplica opacidade efetiva após recolorir
-      const eff = computeEffectiveOpacity(faceOpacity, flatten2D || 0);
-      applyOpacityToAllMeshes(eff);
+    // material visível (pode ser o clone quando está selecionado)
+    const mat = g.userData.mesh.material;
+    if (mat && mat.color) {
+      mat.color.set(hex);
+      mat.needsUpdate = true;
     }
 
+    // se houver backup do rosto (usado ao remover o highlight), mantenha-o em sincronia
+    if (g.__faceBackup && g.__faceBackup.color){
+      g.__faceBackup.color.set(hex);
+      g.__faceBackup.needsUpdate = true;
+    }
+  }
+  // Reaplica opacidade efetiva após recolorir
+  const eff = computeEffectiveOpacity(faceOpacity, flatten2D || 0);
+  applyOpacityToAllMeshes(eff);
+}
+function syncSelectedColor(){
+  const g = window.__SEL_GROUP__;
+  if (!g || !g.userData || !g.userData.mesh) return;
+  const nome  = g.userData.nome || g.userData.meta?.id || '';
+  const floor = g.userData.levelIndex ?? 0;
+  const hex   = pickFVSColor(nome, floor);
+
+  // material em uso (clone durante a seleção)
+  if (g.userData.mesh.material?.color){
+    g.userData.mesh.material.color.set(hex);
+    g.userData.mesh.material.needsUpdate = true;
+  }
+  // backup para quando tirar o highlight
+  if (g.__faceBackup?.color){
+    g.__faceBackup.color.set(hex);
+    g.__faceBackup.needsUpdate = true;
+  }
+}
+   function setFVSColorMap(payload){
+  if (!payload) return;
+  COLOR_MAP = {
+    default: payload.default || '#6e7681',
+    colors:  payload.colors  || {},
+    byFloor: payload.byFloor || {}
+  };
+  recolorMeshes3D();
+  recolorCards2D();
+  syncSelectedColor(); // << garante atualização do selecionado
+} 
     function recolorCards2D(){
       if (!__aptRoots || !__aptRoots.length) return;
       for (const A of __aptRoots){
@@ -2549,4 +2586,5 @@ for (let r = 0; r < rows; r++) {
   })();
   </script>
 </body>
+
 </html>
