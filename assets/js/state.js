@@ -1,7 +1,7 @@
 // ============================
 // Estado global + Prefs (QS / LocalStorage)
 // ============================
-
+// em algum lugar do init do State
 export const STORAGE_KEYS = {
   FVS: 'doge.viewer.fvs',
   NC:  'doge.viewer.nc',
@@ -66,3 +66,4 @@ export function loadPrefs(){
     nc : (nc === 'true')
   };
 }
+State.grid2DRows = State.grid2DRows ?? 8; 
