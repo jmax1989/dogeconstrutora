@@ -117,103 +117,159 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
 // - Botão direito: PAN (arrasta o alvo)
 // - Roda: ZOOM (raio)
 // ============================
-(function wireCameraInput(){
+// ============================
+// Controles de câmera com Pointer Events
+// - Mouse:
+//   * Esquerdo: ORBIT
+//   * Direito:  PAN
+//   * Wheel:    ZOOM
+// - Touch:
+//   * 1 dedo:   ORBIT
+//   * 2 dedos:  PAN + PINCH (zoom)
+// ============================
+(function wireCameraInputPE(){
   const dom = document.querySelector('#app canvas');
   if (!dom) return;
 
-  // Previne menu de contexto no botão direito (para pan)
   dom.addEventListener('contextmenu', e => e.preventDefault());
 
-  let dragging = false;
-  let mode = null; // 'orbit' | 'pan'
-  let lastX = 0, lastY = 0;
+  const ptrs = new Map(); // id -> {x,y}
+  let mode = null;        // 'orbit' | 'pan' | 'gesture'
+  let last = { x:0, y:0 };
 
-  // Ganhos mais responsivos (alinhados ao “feeling” do 2D)
-  const ROT_SPEED_MOUSE  = 0.011;  // antes 0.005
-  const ROT_SPEED_TOUCH  = 0.011;  // antes 0.005
-  const PAN_GAIN         = 0.0050; // antes 0.0025
-  const ZOOM_FACTOR      = 0.08;   // mantenho
+  // estado do gesto (2 dedos)
+  let gStart = null; // { d, mid:{x,y}, radius0, target0:THREE.Vector3 }
+  const ROT_SPEED = 0.008;               // mais “leve” que antes
+  const PAN_K     = 0.0032;              // pan mais responsivo
+  const ZOOM_K    = 0.0045;              // pinch sensitivity
 
-  dom.addEventListener('mousedown', (e)=>{
-    dragging = true;
-    mode = (e.button === 2) ? 'pan' : 'orbit'; // direito = pan, esquerdo = orbit
-    lastX = e.clientX;
-    lastY = e.clientY;
-  });
+  function getMidAndDist(){
+    const a = [...ptrs.values()];
+    if (a.length < 2) return null;
+    const [p0, p1] = a;
+    const mid = { x: (p0.x+p1.x)/2, y: (p0.y+p1.y)/2 };
+    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+    const d  = Math.hypot(dx, dy);
+    return { mid, d };
+  }
 
-  window.addEventListener('mouseup', ()=>{
-    dragging = false;
-    mode = null;
-  });
+  dom.addEventListener('pointerdown', (e)=>{
+    dom.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
 
-  window.addEventListener('mousemove', (e)=>{
-    if (!dragging) return;
-    const dx = e.clientX - lastX;
-    const dy = e.clientY - lastY;
-    lastX = e.clientX;
-    lastY = e.clientY;
+    if (ptrs.size === 1){
+      // mouse: botão direito => pan; toque: 1 dedo => orbit
+      mode = (e.pointerType === 'mouse' && e.button === 2) ? 'pan' : 'orbit';
+      last.x = e.clientX; last.y = e.clientY;
+    } else if (ptrs.size === 2){
+      // inicia gesto (pinch+pan)
+      mode = 'gesture';
+      const md = getMidAndDist();
+      gStart = {
+        d: md.d || 1,
+        mid: md.mid,
+        radius0: State.radius,
+        target0: State.orbitTarget.clone()
+      };
+    }
+    e.preventDefault();
+  }, { passive:false });
 
-    if (mode === 'orbit'){
-      State.theta += dx * ROT_SPEED_MOUSE;
-      State.phi   -= dy * ROT_SPEED_MOUSE;
+  dom.addEventListener('pointermove', (e)=>{
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+
+    if (mode === 'orbit' && ptrs.size === 1){
+      const dx = e.clientX - last.x;
+      const dy = e.clientY - last.y;
+      last.x = e.clientX; last.y = e.clientY;
+
+      State.theta += dx * ROT_SPEED;
+      State.phi   -= dy * ROT_SPEED;
       State.phi = Math.max(0.05, Math.min(Math.PI - 0.05, State.phi));
       applyOrbitToCamera();
       render();
-    }else if (mode === 'pan'){
-      // Pan aproximado: desloca orbitTarget nos eixos da câmera
-      const PAN_SPEED = (State.radius || 20) * PAN_GAIN;
+      e.preventDefault();
+    }
+    else if (mode === 'pan' && ptrs.size === 1){
+      const dx = e.clientX - last.x;
+      const dy = e.clientY - last.y;
+      last.x = e.clientX; last.y = e.clientY;
+
       const dir = new THREE.Vector3();
       const right = new THREE.Vector3();
       const up = new THREE.Vector3(0,1,0);
 
-      camera.getWorldDirection(dir);           // para frente
-      right.crossVectors(dir, up).normalize(); // direita da câmera
+      camera.getWorldDirection(dir);
+      right.crossVectors(dir, up).normalize();
       const camUp = camera.up.clone().normalize();
 
-      State.orbitTarget.addScaledVector(right, -dx * PAN_SPEED);
-      State.orbitTarget.addScaledVector(camUp,  dy * PAN_SPEED);
+      const panSpeed = (State.radius || 20) * PAN_K;
+      State.orbitTarget.addScaledVector(right, -dx * panSpeed);
+      State.orbitTarget.addScaledVector(camUp,   dy * panSpeed);
 
       applyOrbitToCamera();
       render();
+      e.preventDefault();
     }
-  });
+    else if (mode === 'gesture' && ptrs.size >= 2){
+      const md = getMidAndDist();
+      if (!md || !gStart) return;
 
-  // Zoom (wheel)
+      // pinch → zoom
+      const scale = (md.d || 1) / (gStart.d || 1);
+      const zoomDelta = (1 - scale) * (State.radius || 20);
+      State.radius = Math.max(4, Math.min(400, gStart.radius0 + zoomDelta * (ZOOM_K * 220)));
+
+      // pan com o midpoint
+      const dx = (md.mid.x - gStart.mid.x);
+      const dy = (md.mid.y - gStart.mid.y);
+
+      const dir = new THREE.Vector3();
+      const right = new THREE.Vector3();
+      const up = new THREE.Vector3(0,1,0);
+
+      camera.getWorldDirection(dir);
+      right.crossVectors(dir, up).normalize();
+      const camUp = camera.up.clone().normalize();
+
+      const panSpeed = (State.radius || 20) * PAN_K;
+      State.orbitTarget.copy(gStart.target0);
+      State.orbitTarget.addScaledVector(right, -dx * panSpeed);
+      State.orbitTarget.addScaledVector(camUp,   dy * panSpeed);
+
+      applyOrbitToCamera();
+      render();
+      e.preventDefault();
+    }
+  }, { passive:false });
+
+  function endPtr(id){
+    ptrs.delete(id);
+    if (ptrs.size === 0){
+      mode = null;
+      gStart = null;
+    } else if (ptrs.size === 1){
+      // se sair de 2 dedos para 1, volta para orbit “limpa”
+      mode = 'orbit';
+      const p = [...ptrs.values()][0];
+      last.x = p.x; last.y = p.y;
+      gStart = null;
+    }
+  }
+
+  dom.addEventListener('pointerup',   e => endPtr(e.pointerId), { passive:true });
+  dom.addEventListener('pointercancel', e => endPtr(e.pointerId), { passive:true });
+
+  // Wheel (desktop)
   dom.addEventListener('wheel', (e)=>{
     e.preventDefault();
     const delta = Math.sign(e.deltaY);
-    const ZOOM_STEP = Math.max(0.5, (State.radius || 20) * ZOOM_FACTOR);
-    State.radius += delta * ZOOM_STEP;
-    State.radius = Math.max(4, Math.min(400, State.radius));
+    const step  = Math.max(0.5, (State.radius || 20) * 0.08);
+    State.radius = Math.max(4, Math.min(400, State.radius + delta * step));
     applyOrbitToCamera();
     render();
   }, { passive:false });
-
-  // Touch: 1 dedo = orbit
-  let touchActive = false;
-  let tLastX=0, tLastY=0;
-  dom.addEventListener('touchstart', (e)=>{
-    if (e.touches.length === 1){
-      touchActive = true;
-      tLastX = e.touches[0].clientX;
-      tLastY = e.touches[0].clientY;
-    }
-  }, { passive:true });
-  dom.addEventListener('touchmove', (e)=>{
-    if (!touchActive || e.touches.length !== 1) return;
-    const x = e.touches[0].clientX;
-    const y = e.touches[0].clientY;
-    const dx = x - tLastX;
-    const dy = y - tLastY;
-    tLastX = x; tLastY = y;
-
-    State.theta += dx * ROT_SPEED_TOUCH;
-    State.phi   -= dy * ROT_SPEED_TOUCH;
-    State.phi = Math.max(0.05, Math.min(Math.PI - 0.05, State.phi));
-    applyOrbitToCamera();
-    render();
-  }, { passive:true });
-  dom.addEventListener('touchend', ()=>{ touchActive = false; }, { passive:true });
 })();
 
 // ============================
