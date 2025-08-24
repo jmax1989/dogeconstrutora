@@ -1,181 +1,250 @@
-// ============================
-// Picking (raycast), Hover (tooltip) e Seleção
-// ============================
-
+// picking.js
 import { State } from './state.js';
-import { showTip, hideTip, normAptoId } from './utils.js';
-import { pickFVSColor } from './colors.js';
-import { camera, renderer } from './scene.js';
-import { getPickTargets, stepX, stepZ } from './geometry.js';
+import { getTorre } from './geometry.js';
 import { openAptModal } from './modal.js';
-
-let raycaster = null;
-let mouse = null;
-
-// Função injetável para recuperar a "row" do apartamentos.json pela FVS ativa.
-let getRowForApt = null;
+import { normAptoId, showTip, hideTip } from './utils.js';
 
 /**
- * Permite injetar um resolvedor de dados:
- *   fn(aptoIdNormalizado) => row | null
+ * Picking/seleção com:
+ * - hover com throttle + tooltip
+ * - tap robusto (mobile/desktop) sem “clique fantasma”
+ * - highlight que NÃO congela a cor (recolor 3D continua funcionando)
  */
+
+let raycaster;
+let mouseNDC;
+
+// throttle do hover
+let hoverThrottleTS = 0;
+const HOVER_THROTTLE_MS = 40;
+
+// detecção de tap
+const TAP_MOVE_THRESH = 6;   // px
+const TAP_TIME_MAX   = 600;  // ms
+let tapState = {
+  isDown: false,
+  startX: 0,
+  startY: 0,
+  moved:  false,
+  downAt: 0,
+};
+
+// seleção atual
+let selectedGroup = null;
+
+// backups por grupo (para restaurar highlight sem travar cor)
+const faceBackupMap = new WeakMap(); // group -> material face (clone)
+const lineBackupMap = new WeakMap(); // group -> material linha
+
+// materiais de seleção (apenas contorno/linhas)
+const SEL_LINE = new THREE.LineBasicMaterial({ color: 0xffc107, linewidth: 2 });
+const OPACITY_BUMP = 0.18; // +18% de opacidade da face
+
+// resolver injetado pelo viewer.js (aptKeyNorm -> row)
+let rowResolver = () => null;
+
+// ============================
+// API
+// ============================
 export function setRowResolver(fn){
-  getRowForApt = (typeof fn === 'function') ? fn : null;
+  if (typeof fn === 'function') rowResolver = fn;
 }
 
-/** Inicializa o picking (registra listeners uma única vez). */
 export function initPicking(){
-  if (!renderer) throw new Error('[picking] renderer não inicializado');
-  if (raycaster) return; // evita duplicar
-
   raycaster = new THREE.Raycaster();
-  mouse = new THREE.Vector2();
+  mouseNDC  = new THREE.Vector2();
 
-  const dom = renderer.domElement;
+  const dom = document.querySelector('#app canvas');
+  if (!dom) return;
 
-  // Click / tap -> seleção
-  dom.addEventListener('click', onPointerClick, { passive: true });
+  // bloqueia menu do botão direito (pan)
+  dom.addEventListener('contextmenu', e => e.preventDefault());
 
-  // Hover (tooltip)
-  dom.addEventListener('pointermove', onPointerMove, { passive: true });
-  dom.addEventListener('pointerleave', ()=> hideTip(0), { passive: true });
+  // pointer
+  dom.addEventListener('pointerdown', onPointerDown,   { passive: false });
+  dom.addEventListener('pointermove', onPointerMove,   { passive: false });
+  dom.addEventListener('pointerup',   onPointerUp,     { passive: false });
+  dom.addEventListener('pointercancel', onPointerUp,   { passive: false });
+
+  // roda do mouse cancela tap
+  dom.addEventListener('wheel', () => { tapState.isDown = false; }, { passive: true });
+}
+
+export function selectGroup(group){
+  clearSelection();
+  if (!group || !group.userData) return;
+
+  applyHighlight(group);
+  selectedGroup = group;
+
+  const aptId = String(group.userData?.nome || group.userData?.meta?.id || '').trim();
+  const floor = (typeof group.userData?.levelIndex === 'number') ? group.userData.levelIndex : null;
+  const row   = resolveRowFromApto(aptId);
+
+  openAptModal({ id: aptId, floor, row });
+}
+
+export function refreshSelectionVisual(){
+  if (!selectedGroup) return;
+  // re-aplica realce sem alterar cor escolhida pelo recolor
+  removeHighlight(selectedGroup, /*keepBackups*/ true);
+  applyHighlight(selectedGroup);
+}
+
+export function clearSelection(){
+  if (!selectedGroup) return;
+  removeHighlight(selectedGroup);
+  selectedGroup = null;
 }
 
 // ============================
 // Handlers
 // ============================
-
-function onPointerClick(e){
-  if (State.flatten2D >= 0.95) { hideTip(0); return; }
-  const g = pickAtClientXY(e.clientX, e.clientY);
-  if (!g) { hideTip(0); return; }
-
-  selectGroup(g);
-
-  // Coleta dados para o modal
-  const nome   = String(g.userData?.nome || '').trim();
-  const pav    = String(g.userData?.pavimento_origem ?? '');
-  const hex    = pickFVSColor(nome, pav, State.COLOR_MAP);
-  const aptKey = normAptoId(nome);
-  const row    = getRowForApt ? (getRowForApt(aptKey) || null) : null;
-
-  openAptModal({ id: nome, floor: pav, row, tintHex: hex });
+function onPointerDown(e){
+  if (e.button === 2) return; // ignorar botão direito
+  tapState.isDown = true;
+  tapState.startX = e.clientX;
+  tapState.startY = e.clientY;
+  tapState.moved  = false;
+  tapState.downAt = performance.now();
 }
-
-let lastHoverTS = 0;
-const HOVER_THROTTLE_MS = 40;
 
 function onPointerMove(e){
-  if (State.flatten2D >= 0.95) { hideTip(0); return; }
-  const now = performance.now();
-  if (now - lastHoverTS < HOVER_THROTTLE_MS) return;
-  lastHoverTS = now;
+  // hover (somente quando não está 100% em 2D)
+  if (State.flatten2D < 0.95){
+    const now = performance.now();
+    if (now - hoverThrottleTS >= HOVER_THROTTLE_MS){
+      hoverThrottleTS = now;
+      doHoverPick(e.clientX, e.clientY);
+    }
+  } else {
+    hideTip(0);
+  }
 
-  const g = pickAtClientXY(e.clientX, e.clientY, /*forHover=*/true);
-  if (!g) { hideTip(60); return; }
+  // tracking do tap
+  if (tapState.isDown){
+    const dx = e.clientX - tapState.startX;
+    const dy = e.clientY - tapState.startY;
+    if (Math.hypot(dx, dy) > TAP_MOVE_THRESH) tapState.moved = true;
+  }
+}
 
-  const nome = String(g.userData?.nome || '').trim();
-  showTip(e.clientX, e.clientY, nome || 'apt');
+function onPointerUp(e){
+  if (e.button === 2) return;
+
+  const isTap = computeIsTap(e.clientX, e.clientY);
+  tapState.isDown = false;
+
+  if (!isTap) return;
+  doClickPick(e.clientX, e.clientY);
 }
 
 // ============================
-// Núcleo de Raycast
+// Picking helpers
 // ============================
+function computeIsTap(x, y){
+  const dt = performance.now() - tapState.downAt;
+  const dx = x - tapState.startX;
+  const dy = y - tapState.startY;
+  const moved = Math.hypot(dx, dy) > TAP_MOVE_THRESH;
+  return !moved && dt <= TAP_TIME_MAX;
+}
 
-/**
- * Faz o raycast no ponto do cliente.
- * Retorna o Group do apartamento (ou null).
- */
-export function pickAtClientXY(clientX, clientY, forHover=false){
-  const targets = getPickTargets();
-  const faces = targets.faces || [];
-  const edges = targets.edges || [];
-  if (!faces.length && !edges.length) return null;
+function clientToNDC(x, y){
+  const dom = document.querySelector('#app canvas');
+  const rect = dom.getBoundingClientRect();
+  mouseNDC.x = ((x - rect.left) / rect.width) * 2 - 1;
+  mouseNDC.y = -((y - rect.top) / rect.height) * 2 + 1;
+}
 
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+function pickGroupAt(x, y){
+  const torre = getTorre();
+  if (!torre) return null;
 
-  raycaster.setFromCamera(mouse, camera);
+  clientToNDC(x, y);
+  raycaster.setFromCamera(mouseNDC, State.camera);
 
-  // 1) Tenta nas faces (mais preciso)
-  let inter = faces.length ? raycaster.intersectObjects(faces, false) : [];
+  // 1) tentar faces
+  const faceObjs = torre.children.map(g => g.userData?.mesh).filter(Boolean);
+  let inter = raycaster.intersectObjects(faceObjs, false);
 
-  // 2) Se não achou, tenta edges com threshold
-  if (!inter.length && edges.length){
+  // 2) fallback: edges com threshold adaptativo (melhora seleção em zooms)
+  if (!inter.length){
+    const edgeObjs = torre.children.map(g => g.userData?.edges).filter(Boolean);
+    const thr = Math.max(0.5, Math.min(4, (State.radius || 20) * 0.02));
     raycaster.params.Line = raycaster.params.Line || {};
-    raycaster.params.Line.threshold = Math.max(stepX, stepZ) * 0.06;
-    inter = raycaster.intersectObjects(edges, false);
+    raycaster.params.Line.threshold = thr;
+    inter = raycaster.intersectObjects(edgeObjs, false);
   }
 
   if (!inter.length) return null;
 
-  // O mesh/edges estão dentro de um Group g (apartamento)
   const obj = inter[0].object;
-  const g = obj.parent;
-  if (!g || !g.userData) return null;
-  return g;
+  const group = obj.parent;
+  return (group && group.userData) ? group : null;
+}
+
+function doHoverPick(x, y){
+  const g = pickGroupAt(x, y);
+  if (!g){ hideTip(50); return; }
+  const apt = String(g.userData?.nome || g.userData?.meta?.id || 'apt').trim();
+  showTip(x, y, apt);
+}
+
+function doClickPick(x, y){
+  const g = pickGroupAt(x, y);
+  if (!g){ hideTip(0); return; }
+  selectGroup(g);
 }
 
 // ============================
-// Seleção e destaque
+// Highlight helpers
 // ============================
+function applyHighlight(group){
+  if (!group?.userData) return;
 
-/**
- * Destaca visualmente o grupo selecionado e limpa o anterior.
- */
-export function selectGroup(g){
-  if (!g) return;
+  // guarda backups (uma vez)
+  if (!lineBackupMap.has(group)) lineBackupMap.set(group, group.userData.edges?.material || null);
+  if (!faceBackupMap.has(group)) faceBackupMap.set(group, group.userData.mesh?.material?.clone() || null);
 
-  // limpa anterior
-  if (State.__SEL_GROUP__ && State.__SEL_GROUP__ !== g){
-    restoreHighlight(State.__SEL_GROUP__);
+  // 1) linhas → material de seleção
+  if (group.userData.edges && group.userData.edges.material !== SEL_LINE){
+    group.userData.edges.material = SEL_LINE;
+    group.userData.edges.material.needsUpdate = true;
   }
 
-  // aplica highlight no atual
-  applyHighlight(g);
-  State.__SEL_GROUP__ = g;
-}
-
-/** Reaplica a cor do selecionado quando o COLOR_MAP muda (ex: troca FVS/NC). */
-export function syncSelectedColor(){
-  const g = State.__SEL_GROUP__;
-  if (!g) return;
-  const nome = String(g.userData?.nome || '').trim();
-  const pav  = String(g.userData?.pavimento_origem ?? '');
-  const hex  = pickFVSColor(nome, pav, State.COLOR_MAP);
-  const m = g.userData?.mesh?.material;
-  if (m && hex){
-    m.color.set(hex);
-    m.needsUpdate = true;
+  // 2) face → aumenta opacidade atual (sem mexer na COR!)
+  const mat = group.userData.mesh?.material;
+  if (mat){
+    const bumped = mat.clone();
+    const baseOpacity = (typeof mat.opacity === 'number') ? mat.opacity : 1;
+    bumped.opacity = Math.min(1, baseOpacity + OPACITY_BUMP);
+    bumped.transparent = bumped.opacity < 1;
+    bumped.depthWrite  = !bumped.transparent;
+    group.userData.mesh.material = bumped;
   }
-  // mantém edges destacados
-  highlightEdges(g, true);
 }
 
-function applyHighlight(g){
-  // 1) cor do mesh: mantém a atual (já baseada na FVS)
-  // 2) destacar as edges (cor mais clara e opacidade maior)
-  highlightEdges(g, true);
-}
+function removeHighlight(group, keepBackups=false){
+  if (!group) return;
 
-function restoreHighlight(g){
-  highlightEdges(g, false);
-}
+  const lineBkp = lineBackupMap.get(group);
+  if (lineBkp) group.userData.edges.material = lineBkp;
 
-function highlightEdges(g, on){
-  const line = g.userData?.edges;
-  if (!line || !line.material) return;
-  const mat = line.material;
+  const faceBkp = faceBackupMap.get(group);
+  if (faceBkp) group.userData.mesh.material = faceBkp.clone();
 
-  if (on){
-    // Destaque
-    mat.color.set(0xffffff);
-    mat.opacity = 1.0;
-  }else{
-    // Volta ao padrão do tema (mesma usada na criação)
-    mat.color.set(0x2a2f3a);
-    mat.opacity = 1.0;
+  if (!keepBackups){
+    lineBackupMap.delete(group);
+    faceBackupMap.delete(group);
   }
-  mat.needsUpdate = true;
+}
+
+// ============================
+// Row resolver helper
+// ============================
+function resolveRowFromApto(aptoId){
+  const key = normAptoId(aptoId);
+  try { return rowResolver(key) || null; }
+  catch { return null; }
 }
