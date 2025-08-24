@@ -4,461 +4,341 @@
   <meta charset="utf-8" />
   <title>Prédio 3D — viewer (cores herdadas da FVS)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <style>
-    html, body { height: 100%; margin: 0; }
-    :root{
-  --bg:#0d1117;
-  --card:#161b22;
-  --text:#c9d1d9;
-  --muted:#8b949e;
-  --border:#30363d;
-  --blue:#58a6ff;
-  --green:#238636;
-  --yellow:#d29922;
-  --gray:#6e7681;
-  --red:#f85149;
-  --red-muted:#8b3431;
-}
+<style>
+  /* ===== Theme tokens ===== */
+  :root{
+    --bg:#0d1117;
+    --card:#161b22;
+    --text:#c9d1d9;
+    --muted:#8b949e;
+    --border:#30363d;
+    --blue:#58a6ff;
+    --green:#238636;
+    --yellow:#d29922;
+    --gray:#6e7681;
+    --red:#f85149;
+    --red-strong:#ff3b30; /* realce ON para NC */
+  }
 
-    body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
-    #app { position: fixed; inset: 0; }
-    canvas { display:block; }
-#cards2d .card .meta {
-  position: absolute;
-  right: 8px; bottom: 6px;
-  font-size: 11px; line-height: 1;
-  opacity: .9;
-  padding: 2px 6px; border-radius: 999px;
-  background: rgba(0,0,0,.28);
-  border: 1px solid rgba(255,255,255,.12);
-}
+  /* ===== Base ===== */
+  html, body { height: 100%; margin: 0; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+  }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; touch-action: none; }
+  html, body { overscroll-behavior: contain; }
 
-    /* === HUD compacto no rodapé === */
-    #hud{
-      position: fixed;
-      left: 0; right: 0; bottom: 0;
-      z-index: 20;
-      display: flex; flex-wrap: wrap;
-      gap: 6px;
-      align-items: center; justify-content: center;
-      padding: 6px 8px;
-      background: rgba(0,0,0,.45);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      color: #fff;
-      border-top: 1px solid #30363d;
-      border-radius: 10px 10px 0 0;
-      font-size: 13px;
-    }
-    #hud .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    #hud .handle{ display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
-    #hud .grabber{ width:40px; height:5px; border-radius:4px; background:#58606b; opacity:.85; margin-right:4px; }
-    #hudToggle{
-      border: 1px solid #30363d; background:#0d1117; color:#c9d1d9;
-      border-radius: 8px; padding: 3px 6px; font-size: 12px; line-height:1;
-    }
+  /* ===== Overlay 2D ===== */
+  #cards2d{
+    position: fixed; inset: 0;
+    z-index: 9;
+    pointer-events: none;
+    opacity: 0;
+    overflow-x: hidden; overflow-y: auto;
+  }
+  #cards2d .card{
+    position: absolute;
+    width: 120px; height: 72px;
+    display: flex; align-items: center; justify-content: center;
+    transform: translate(-50%, -50%);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(34,40,53,.92);
+    color: #e6eef7;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    font: 12px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+    user-select: none; cursor: pointer; pointer-events: auto;
+  }
+  #cards2d .card .num{
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+    opacity: 0; transition: opacity .12s ease;
+  }
+  #cards2d .card .dur{
+    position: absolute; right: 8px; bottom: 6px;
+    font-size: 11px; line-height: 1; opacity: .95;
+    padding: 2px 6px; border-radius: 999px;
+    background: rgba(0,0,0,.28);
+    border: 1px solid rgba(255,255,255,.12);
+    transition: opacity .12s ease;
+  }
+  #cards2d .card:hover .num { opacity: 1; }
+  #cards2d .card:hover .dur { opacity: 0; }
 
-    /* sliders menores */
-    #hud input[type="range"]{
-      width: 120px;
-      height: 4px;
-    }
-    @media (min-width: 900px){
-      #hud{ flex-wrap:nowrap; padding:6px 8px; gap:8px; }
-      #hud input[type="range"]{ width: 150px; }
-      #hud button, #hud select, #hud label{ white-space:nowrap; }
-    }
+  /* ===== HUD (rodapé) ===== */
+  #hud{
+    position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: 20;
+    display: flex; flex-wrap: wrap;
+    gap: 6px;
+    align-items: center; justify-content: center;
+    padding: 6px 8px;
+    background: rgba(0,0,0,.45);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    color: #fff;
+    border-top: 1px solid var(--border);
+    border-radius: 10px 10px 0 0;
+    font-size: 13px;
+    touch-action: pan-y;
+  }
+  #hud .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #hud .handle{ display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
+  #hud .grabber{ width:40px; height:5px; border-radius:4px; background:#58606b; opacity:.85; margin-right:4px; }
+  #hudToggle{
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 3px 6px;
+    font-size: 12px; line-height: 1;
+  }
+  #hud.collapsed .row:not(.handle){ display:none; }
+  #hud button, #hud input, #hud label { touch-action: manipulation; }
 
-    /* colapsar: mostra só a linha de handle */
-    #hud.collapsed .row:not(.handle){ display:none; }
+  /* Sliders */
+  #hud input[type="range"]{
+    width: clamp(120px, 35vw, 180px);
+    height: 4px;
+  }
 
-    #hud { touch-action: pan-y; }
-    #hud button, #hud input, #hud label { touch-action: manipulation; }
+  /* Botões “emoji” & demais botões do HUD */
+  #hud .row > button{
+    appearance: none; -webkit-appearance: none;
+    background: rgba(240,246,252,0.06);
+    color: #e6eef7;
+    border: 1px solid rgba(240,246,252,0.15);
+    border-radius: 10px;
+    padding: clamp(6px, 1.6vh, 8px) clamp(10px, 3.5vw, 12px);
+    height: auto; min-height: 32px; min-width: 32px;
+    line-height: 1;
+    font: 600 clamp(12px, 3.3vw, 14px)/1 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: filter .12s ease, background-color .15s ease, border-color .15s ease, transform .06s ease, box-shadow .15s ease;
+  }
+  #hud .row > button:hover{
+    background: rgba(240,246,252,0.10);
+    border-color: rgba(240,246,252,0.18);
+  }
+  #hud .row > button:active{ transform: scale(0.98); }
+  #hud .row > button:focus{ outline: none; }
+  #hud .row > button:focus-visible{ box-shadow: 0 0 0 2px rgba(88,166,255,.25); }
 
-    /* === Botão 2D (SVG) === */
-    :root{
-      --c-2d-off: #8b949e;
-      --c-2d-on:  #ff3b30;
-    }
-    #btn2D.mode2d{
-      display:inline-flex; align-items:center; justify-content:center;
-      width:40px; height:40px;
-      border:1px solid #30363d; border-radius:10px;
-      background:#0d1117; color:var(--c-2d-off);
-      cursor:pointer; user-select:none;
-      transition: color .18s ease, box-shadow .18s ease, border-color .18s ease;
-    }
-    #btn2D.mode2d:hover{ border-color:#3a3f46; }
-    #btn2D.mode2d.active{
-      color:var(--c-2d-on);
-      box-shadow: 0 0 0 2px rgba(255,59,48,.18), 0 4px 16px rgba(255,59,48,.25);
-      border-color: rgba(255,59,48,.55);
-    }
-    #btn2D.mode2d svg{ width:28px; height:28px; }
-    #btn2D.mode2d .badge{ fill:none; stroke:currentColor; stroke-width:2; opacity:.38; }
-    #btn2D.mode2d .label{ fill:currentColor; font: 700 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial; }
+  /* Botão 2D (SVG) */
+  :root{ --c-2d-off:#8b949e; --c-2d-on:#ff3b30; }
+#btn2D.mode2d{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
 
-    @media (min-width: 900px) {
-      #hud { flex-wrap: nowrap; padding: 8px 10px; gap: 10px; }
-      #hud input[type="range"] { width: 180px; }
-      #hud button, #hud select, #hud label { white-space: nowrap; }
-    }
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--c-2d-off);
 
-    @media (prefers-reduced-motion: reduce) { #hud { transition: none; } }
-    #hud { touch-action: pan-y; }
-    #hudHandle { touch-action: none; }
-
-    /* === Overlay 2D ocupando a tela toda === */
-    #cards2d{
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      z-index: 9;
-      pointer-events: none;
-      opacity: 0;
-      overflow-x: hidden;
-      overflow-y: auto;
-    }
-
-    /* Cada cartão posicionado por top/left absolutos */
-    #cards2d .card{
-      position: absolute;
-      width: 120px; height: 72px;
-      display: flex; align-items: center; justify-content: center;
-      border-radius: 12px; border: 1px solid rgba(255,255,255,.18);
-      background: rgba(34,40,53,.92); color: #e6eef7;
-      box-shadow: 0 8px 24px rgba(0,0,0,.35);
-      font: 12px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
-      user-select: none; cursor: pointer; pointer-events: auto;
-      transform: translate(-50%, -50%);
-    }
-    #cards2d .card .label{
-      padding: .35rem .55rem; border-radius: 999px;
-      background: rgba(0,0,0,.25);
-      border: 1px solid rgba(255,255,255,.12);
-    }
-    canvas { touch-action: none; }
-    html, body { overscroll-behavior: contain; }
-
-    /* ===== Modal (nativo do viewer) ===== */
-/* === Modal idêntico ao index (mapeado para #doge-modal) === */
-#doge-modal-backdrop{
-  position:fixed; inset:0; display:none;
-  justify-content:center; align-items:center; /* << garante centralização */
-  z-index:10000;
-  background: rgba(13,17,23,0.35);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-  backdrop-filter: blur(14px) saturate(120%);
-  animation:fadeIn .25s ease;
-}
-@keyframes fadeIn{ from{opacity:0} to{opacity:1} }
-
-#doge-modal{
-  position:relative;
-  width:clamp(280px, 90vw, 520px);
-  max-height:80vh; overflow:auto;
-  line-height: 1.35;
-  padding: 14px 16px;
-  border-radius:16px;
-  background:
-    linear-gradient(135deg, var(--modal-tint-strong, rgba(88,166,255,0.20)), transparent 60%),
-    linear-gradient( 45deg, var(--modal-tint-soft,   rgba(88,166,255,0.10)), transparent 55%),
-    rgba(22,27,34,0.40);
-  border: 1px solid var(--modal-border, rgba(240,246,252,0.08));
-  box-shadow:0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
-  /* REMOVER estas duas linhas se você as tiver mantido: */
-  /* -webkit-backdrop-filter: blur(6px) saturate(110%); */
-  /* backdrop-filter: blur(6px) saturate(110%); */
-  color:#c9d1d9; font-size:14px;
-  animation:slideUp .25s ease;
-}
-@keyframes slideUp{ from{ transform:translateY(10px); opacity:0 } to{ transform:translateY(0); opacity:1 } }
-#doge-modal::-webkit-scrollbar{ width:0; height:0 }
-#doge-modal{ scrollbar-width:none; -ms-overflow-style:none; overscroll-beavior:contain; }
-
-/* Título exatamente como #modal h2 do index */
-#doge-modal h3{
-  margin:0 0 12px;
-  font-weight:600; font-size:18px; color:#f0f6fc;
-  border-bottom:1px solid rgba(240,246,252,0.06);
-  padding-bottom:8px;
-  text-align:left;
-}
-
-/* Botão fechar igual ao index */
-#doge-modal .close{
-  position:absolute; top:10px; right:10px;
-  background:rgba(240,246,252,0.04);
-  border:1px solid rgba(240,246,252,0.08);
-  color:#f0f6fc; font-size:16px; cursor:pointer; font-weight:700; line-height:1;
-  padding:6px 10px; border-radius:10px;
-  transition:transform .12s ease, background-color .15s ease, border-color .15s ease;
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
-}
-#doge-modal .close:hover{
-  background:rgba(240,246,252,0.08);
-  border-color:rgba(240,246,252,0.14);
-  transform:scale(1.03);
-}
-
-/* Tabela identica ao index */
-#doge-modal table{ width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
-#doge-modal th, #doge-modal td{
-  text-align:left; padding:8px 4px;
-  border-bottom:1px solid rgba(240,246,252,0.06);
-}
-#doge-modal th{ color:#8b949e; font-weight:500 }
-#doge-modal td{ color:#c9d1d9 }
-
-/* Grid de pares chave/valor (mantemos porque o viewer usa isso também) */
-#doge-modal .content{ padding-top:6px; display:grid; gap:6px; }
-#doge-modal .kv{ display:grid; grid-template-columns: 160px 1fr; gap:8px; font-size:14px; }
-#doge-modal .kv .k{ color:#9fb0c3; }
-#doge-modal .kv .v{ color:#e6eef7; }
-
-/* Tags (mantidas, mas com mesma estética do index) */
-#doge-modal .tags{ display:flex; flex-wrap:wrap; gap:6px; margin: 6px 0 2px; }
-#doge-modal .tag{
-  padding: 2px 8px; border-radius: 999px; font-size: 12px; line-height: 1;
-  border: 1px solid rgba(255,255,255,.15); opacity:.95; background: rgba(0,0,0,.25);
-}
-#doge-modal .tag.success{ border-color: rgba(35,134,54,.45); }
-#doge-modal .tag.warn{    border-color: rgba(210,153,34,.45); }
-#doge-modal .tag.info{    border-color: rgba(88,166,255,.45); }
-#doge-modal .tag.danger{  border-color: rgba(248,81,73,.55); } /* usa --red do index */
-
-/* Pill (mantida) */
-#doge-modal .pill{
-  margin-left:auto;
-  padding: 4px 8px; border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.15);
-  font-size: 12px; line-height: 1; opacity: .95;
-}
-
-/* Responsivo como o index */
-@media (max-width:600px){
-  #doge-modal{ width:95%; padding:16px }
-  #doge-modal h3{ font-size:16px }
-  #doge-modal table{ font-size:12px }
-}
-
-#legend .item{ display:flex; align-items:center; gap:8px; margin:4px 0; white-space:nowrap; }
-#legend .sw{ width:14px; height:14px; border-radius:4px; border:1px solid rgba(255,255,255,.2); }
-/* ===== Botão NC: visual consistente e sem "pular" layout ===== */
-/* Botão NC (off) */
-#btnNC {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(240,246,252,0.15);
-  background: rgba(240,246,252,0.06);
-  color: #c9d1d9;
   font-weight: 600;
-  cursor: pointer;
-  transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s;
-}
+  font-size: clamp(12px, 3.3vw, 14px);
 
-/* Hover (off) */
-#btnNC:hover {
-  background: rgba(240,246,252,0.1);
-}
-
-/* Botão NC (on/ativo) */
-#btnNC.active {
-  background: #ff3b30;       /* fundo vermelho forte */
-  color: #fff;               /* texto branco */
-  border-color: #ff3b30;
-  box-shadow: 0 0 12px rgba(255,59,48,0.45);
-}
-
-/* ===== Botões do HUD (inclui os com emoji: 🔄 🎯 etc.) ===== */
-#hud .row > button{
-  appearance: none; -webkit-appearance: none;
-  background: rgba(240,246,252,0.06);
-  color: #e6eef7;
-  border: 1px solid #30363d;      /* borda sutil, arredondada */
-  border-radius: 10px;
-  padding: 6px 10px;
-  height: 32px; min-width: 32px;
+  padding: clamp(6px, 1.6vh, 8px) clamp(10px, 3.5vw, 12px);
   line-height: 1;
-  font: 600 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
-  display: inline-flex; align-items: center; justify-content: center;
+  height: auto;
+  min-height: 32px;
+  min-width: clamp(48px, 16vw, 72px);
+
   cursor: pointer;
-  transition: filter .12s ease, background-color .15s ease, border-color .15s ease, transform .06s ease;
+  user-select: none;
+  transition: color .18s ease, box-shadow .18s ease, border-color .18s ease, transform .1s;
 }
-#hud .row > button:hover{
-  background: rgba(240,246,252,0.10);
-  border-color: rgba(240,246,252,0.18);
+#btn2D.mode2d:hover{
+  border-color:#3a3f46;
+  background: rgba(240,246,252,0.08);
 }
-#hud .row > button:active{ transform: scale(0.98); }
+#btn2D.mode2d.active{
+  color: var(--c-2d-on);
+  box-shadow: 0 0 0 2px rgba(255,59,48,.18), 0 4px 16px rgba(255,59,48,.25);
+  border-color: rgba(255,59,48,.55);
+}
+  #btn2D.mode2d svg{ width:18px; height:18px; }
+  #btn2D.mode2d .badge{ fill:none; stroke:currentColor; stroke-width:2; opacity:.38; }
+  #btn2D.mode2d .label{ fill:currentColor; font:700 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,Inter,Arial; }
 
-/* Remove qualquer moldura "nativa" feia em alguns SOs */
-#hud .row > button:focus{ outline: none; }
-#hud .row > button:focus-visible{
-  box-shadow: 0 0 0 2px rgba(88,166,255,.25);
-}
-/* ===== Dropdown FVS (igual ao estilo do NC) ===== */
-#hud select{
-  appearance: none; -webkit-appearance: none; -moz-appearance: none;
-  background: rgba(240,246,252,0.06);
-  color: #e6eef7;
-  border: 1px solid #30363d;
-  border-radius: 10px;
-  padding: 6px 28px 6px 10px; /* espaço p/ ícone da seta */
-  height: 32px; min-width: 140px;
-  font: 500 13px system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
-  line-height: 1.2;
-  cursor: pointer;
-  transition: filter .12s ease, background-color .15s ease, border-color .15s ease;
-}
+  /* ===== Botão NC (bonito, estável e responsivo) ===== */
+  #btnNC{
+    display:inline-flex; align-items:center; justify-content:center;
+    white-space: nowrap;
+    border: 1px solid rgba(240,246,252,0.15);
+    border-radius: 10px;
+    background: rgba(240,246,252,0.06);
+    color: #c9d1d9;
+    font-weight: 600;
+    font-size: clamp(12px, 3.3vw, 14px);
+    padding: clamp(6px, 1.6vh, 8px) clamp(10px, 3.5vw, 12px);
+    line-height: 1;
+    height: auto;
+    min-width: clamp(48px, 16vw, 72px);
+    cursor: pointer;
+    transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s, transform .1s;
+  }
+  #btnNC:hover{ background: rgba(240,246,252,0.10); }
+  #btnNC:active{ transform: scale(0.98); }
+  #btnNC.active{
+    background: var(--red-strong);
+    color: #fff;
+    border-color: var(--red-strong);
+    box-shadow: 0 0 12px rgba(255,59,48,0.35);
+  }
 
-/* hover / active */
-#hud select:hover{
-  background: rgba(240,246,252,0.10);
-  border-color: rgba(240,246,252,0.18);
-}
-#hud select:focus{
-  outline: none;
-  border-color: rgba(88,166,255,.55);
-  box-shadow: 0 0 0 2px rgba(88,166,255,.25);
-}
+  /* ===== Dropdown FVS (consistente com NC + responsivo) ===== */
+  #hud label{
+    font-size: clamp(12px, 3.3vw, 14px);
+    white-space: nowrap;
+  }
+  #fvsSelect{
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background: rgba(240,246,252,0.06);
+    color: #e6eef7;
+    border: 1px solid rgba(240,246,252,0.15);
+    border-radius: 10px;
+    padding: clamp(8px, 1.6vh, 10px) clamp(28px, 6vw, 36px) clamp(8px, 1.6vh, 10px) clamp(10px, 3.5vw, 12px);
+    height: auto; min-height: 32px;
+    min-width: 0; width: min(60vw, 320px); max-width: 100%;
+    font: 500 clamp(12px, 3.3vw, 14px)/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color .2s, border-color .2s, box-shadow .2s;
+    color-scheme: dark; /* ajuda a forçar popup escuro em UAs compatíveis */
+  }
+  #fvsSelect:hover{ background: rgba(240,246,252,0.10); border-color: rgba(240,246,252,0.18); }
+  #fvsSelect:focus{
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88,166,255,.22);
+  }
+  /* Menu de opções (melhor legibilidade no escuro) */
+  #fvsSelect option{
+    background: #0d1117;
+    color: #e6eef7;
+    font: 500 13px system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+    padding: 6px 10px;
+  }
+  #fvsSelect option:checked{
+    background-color: #238636;
+    color: #fff;
+  }
 
-/* ícone da seta custom */
-#hud select::-ms-expand { display: none; } /* tira no IE */
-#hud select::after{
-  content: '▾';
-  position: absolute;
-  right: 10px; top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
+  /* Linha que contém FVS + NC pode quebrar bem no mobile */
+  #row-fvs{
+    display: flex; align-items: center;
+    gap: clamp(6px, 2.8vw, 10px);
+    flex-wrap: wrap;
+    min-width: 0;
+  }
 
-/* Container do dropdown deve ser relativo p/ a seta custom */
-#hud .row label,
-#hud select { position: relative; }
-/* ===== Estilo do menu suspenso do dropdown ===== */
-#hud select option {
-  background-color: #161b22;   /* fundo escuro */
-  color: #e6eef7;              /* texto claro */
-  font: 500 13px system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
-  padding: 6px 10px;
-}
+  /* ===== Modal (única definição — sem duplicações) ===== */
+  #doge-modal-backdrop{
+    position: fixed; inset: 0;
+    display: none;
+    z-index: 10000;
+    justify-content: center; align-items: center;
+    background: rgba(13,17,23,0.35);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+    backdrop-filter: blur(14px) saturate(120%);
+    animation: fadeIn .25s ease;
+  }
+  @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
 
-#hud select option:checked {
-  background-color: #238636;   /* verde discreto quando selecionado */
-  color: #fff;
-}
+  #doge-modal{
+    position: relative;
+    box-sizing: border-box;
+    width: clamp(280px, 90vw, 520px);
+    max-height: 80vh; overflow: auto;
+    margin: 0;
+    padding: 14px 16px;            /* compacto (modal menor) */
+    line-height: 1.35;             /* menor espaçamento vertical */
+    border-radius: 16px;
+    background:
+      linear-gradient(135deg, var(--modal-tint-strong, rgba(88,166,255,0.20)), transparent 60%),
+      linear-gradient( 45deg, var(--modal-tint-soft,   rgba(88,166,255,0.10)), transparent 55%),
+      rgba(22,27,34,0.40);
+    border: 1px solid var(--modal-border, rgba(240,246,252,0.08));
+    box-shadow: 0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
+    color: var(--text);
+    font-size: 14px;
+    animation: slideUp .25s ease;
+  }
+  @keyframes slideUp{ from{ transform:translateY(10px); opacity:0 } to{ transform:translateY(0); opacity:1 } }
+  #doge-modal::-webkit-scrollbar{ width:0; height:0 }
+  #doge-modal{ scrollbar-width:none; -ms-overflow-style:none; }
 
-#hud select option:hover {
-  background-color: rgba(88,166,255,0.25); /* azul translúcido no hover */
-  color: #fff;
-}
+  #doge-modal h3{
+    margin: 0 0 10px;
+    font-weight: 600; font-size: 18px; color: #f0f6fc;
+    border-bottom: 1px solid rgba(240,246,252,0.06);
+    padding-bottom: 6px;           /* mais compacto */
+    text-align: left;
+  }
+  #doge-modal .close{
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(240,246,252,0.04);
+    border: 1px solid rgba(240,246,252,0.08);
+    color: #f0f6fc; font-size: 16px; font-weight: 700; line-height: 1;
+    padding: 6px 10px; border-radius: 10px;
+    cursor: pointer;
+    transition: transform .12s ease, background-color .15s ease, border-color .15s ease;
+    -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  }
+  #doge-modal .close:hover{
+    background: rgba(240,246,252,0.08);
+    border-color: rgba(240,246,252,0.14);
+    transform: scale(1.03);
+  }
 
-#cards2d .card .num { 
-  position:absolute; inset:0;
-  display:flex; align-items:center; justify-content:center;
-  font-weight:700; font-size: 14px;
-  opacity:0; transition:opacity .12s ease;
-}
-#cards2d .card .dur {
-  position:absolute; right:8px; bottom:6px;
-  font-size:11px; line-height:1;
-  opacity:.95;
-  padding:2px 6px; border-radius:999px;
-  background: rgba(0,0,0,.28);
-  border: 1px solid rgba(255,255,255,.12);
-  transition:opacity .12s ease;
-}
-#cards2d .card:hover .num { opacity:1; }
-#cards2d .card:hover .dur { opacity:0; }
+  /* Tabela mais compacta */
+  #doge-modal table{ width:100%; border-collapse:collapse; margin-top:6px; font-size:12px; }
+  #doge-modal th, #doge-modal td{
+    text-align:left; padding:4px 2px;
+    border-bottom:1px solid rgba(240,246,252,0.06);
+  }
+  #doge-modal th{ color: var(--muted); font-weight: 500; }
+  #doge-modal td{ color: var(--text); }
 
-/* ===== RESET/FINAL do MODAL ===== */
+  /* Link “Última inspeção” */
+  #doge-modal a.link-row{
+    color: inherit; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 2px 6px; border-radius: 8px;
+    transition: background-color .15s ease, transform .05s ease;
+    vertical-align: middle;
+  }
+  #doge-modal a.link-row:hover{ background-color: rgba(240,246,252,0.06); }
+  #doge-modal a.link-row:active{ transform: scale(0.99); }
+  #doge-modal a.link-row svg{ width:14px; height:14px; stroke:currentColor; }
 
-/* Backdrop: centraliza via flex e aplica o blur APENAS atrás */
-#doge-modal-backdrop{
-  position: fixed;
-  inset: 0;
-  display: none;                /* começa fechado */
-  z-index: 10000;
-  justify-content: center;      /* centra horizontal */
-  align-items: center;          /* centra vertical   */
-  background: rgba(13,17,23,0.35);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-  backdrop-filter: blur(14px) saturate(120%);
-}
+  /* Progress bar */
+  .q-linear-progress{ display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:10px; background:rgba(240,246,252,0.06); border:1px solid rgba(240,246,252,0.10); }
+  .q-linear-progress__track{ position:relative; flex:1; height:6px; background:rgba(240,246,252,0.08); border:1px solid rgba(240,246,252,0.10); border-radius:999px; overflow:hidden; }
+  .q-linear-progress__bar{ position:absolute; inset:0 100% 0 0; background:currentColor; transition:width .45s ease; }
+  .q-linear-progress__label{ font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; font-size:11px; }
+  .line-progress{ display:flex; align-items:center; gap:10px; }
+  .line-progress .q-linear-progress{ margin-left:auto; min-width:96px; max-width:140px; }
 
-/* Modal: NADA de top/left/transform. Sem blur. Centralizado pelo flex do backdrop */
-#doge-modal{
-  position: relative;           /* importante: não fixed/absolute */
-  box-sizing: border-box;
-  width: clamp(280px, 90vw, 520px);
-  max-height: 80vh;
-  overflow: auto;
-  margin: 0;                    /* sem margens extras */
-  padding: 22px;
-  border-radius: 16px;
+  /* ===== Responsividade adicional ===== */
+  @media (min-width: 900px){
+    #hud{ flex-wrap: nowrap; padding: 8px 10px; gap: 10px; }
+  }
+  @media (max-width: 480px){
+    #hud{ gap: 6px; padding: 6px 8px; }
+    #hud .row{ gap: 6px; }
+    #fvsSelect{ width: min(70vw, 360px); }
+  }
+</style>
 
-  /* Visual (igual ao index, com variáveis de tinta) */
-  background:
-    linear-gradient(135deg, var(--modal-tint-strong, rgba(88,166,255,0.20)), transparent 60%),
-    linear-gradient( 45deg, var(--modal-tint-soft,   rgba(88,166,255,0.10)), transparent 55%),
-    rgba(22,27,34,0.40);
-  border: 1px solid var(--modal-border, rgba(240,246,252,0.08));
-  box-shadow: 0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
-  color: #c9d1d9;
-  font-size: 14px;
-
-  /* 🔴 REMOVIDO intencionalmente:
-     top/left/transform
-     -webkit-backdrop-filter / backdrop-filter
-  */
-}
-
-/* Título/botão/tabela — mantém como já estava no bloco anterior */
-#doge-modal h3{
-  margin:0 0 12px;
-  font-weight:600; font-size:18px; color:#f0f6fc;
-  border-bottom:1px solid rgba(240,246,252,0.06);
-  padding-bottom:8px;
-  text-align:left;
-}
-#doge-modal .close{
-  position:absolute; top:10px; right:10px;
-  background:rgba(240,246,252,0.04);
-  border:1px solid rgba(240,246,252,0.08);
-  color:#f0f6fc; font-size:16px; cursor:pointer; font-weight:700; line-height:1;
-  padding:6px 10px; border-radius:10px;
-}
-#doge-modal table{ width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
-#doge-modal th, #doge-modal td{
-  text-align:left; padding:4px 2px;
-  font-size: 12px;
-  border-bottom:1px solid rgba(240,246,252,0.06);
-}
-#doge-modal th{ color:#8b949e; font-weight:500 }
-#doge-modal td{ color:#c9d1d9 }
-
-/* ==== Progress bar (mesmo do index) ==== */
-.q-linear-progress{ display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:10px; background:rgba(240,246,252,0.06); border:1px solid rgba(240,246,252,0.10); }
-.q-linear-progress__track{ position:relative; flex:1; height:8px; background:rgba(240,246,252,0.08); border:1px solid rgba(240,246,252,0.10); border-radius:999px; overflow:hidden; }
-.q-linear-progress__bar{ position:absolute; inset:0 100% 0 0; background:currentColor; transition:width .45s ease; }
-.q-linear-progress__label{ font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; }
-.line-progress{ display:flex; align-items:center; gap:12px; }
-.line-progress .q-linear-progress{ margin-left:auto; min-width:96px; max-width:140px; }
-.q-linear-progress--sm{ padding:2px 4px; gap:6px; }
-.q-linear-progress--sm .q-linear-progress__track{ height:6px; }
-.q-linear-progress--sm .q-linear-progress__label{ font-size:11px; font-weight:500; min-width:2.6ch; opacity:.9; }
-@media (min-width: 720px){
-  .line-progress .q-linear-progress{ min-width:110px; max-width:130px; }
-  .q-linear-progress--sm .q-linear-progress__track{ height:4px; }
-}
-
-/* Link “Última inspeção” (mesmo do index) */
-#doge-modal a.link-row{ color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:2px 6px; border-radius:8px; transition:background-color .15s ease, transform .05s ease; vertical-align:middle; }
-#doge-modal a.link-row:hover{ background-color:rgba(240,246,252,0.06); text-decoration:none; }
-#doge-modal a.link-row:active{ transform:scale(0.99) }
-#doge-modal a.link-row svg{ width:14px; height:14px; display:inline-block; flex:0 0 auto; stroke:currentColor; }
-
-
-  </style>
 </head>
 <body>
   <div id="app"><div id="cards2d"></div></div>
@@ -624,6 +504,7 @@ const _modalTitle    = document.getElementById('doge-modal-title');
 const _modalPill     = document.getElementById('doge-modal-pill');
 const _modalContent  = document.getElementById('doge-modal-content');
 const _modalClose    = document.getElementById('doge-modal-close');
+let _modalJustOpenedAt = 0;
 
 // Estado inicial sempre fechado
 if (_modalBackdrop) _modalBackdrop.style.display = 'none';
@@ -719,43 +600,56 @@ function findAptRowByName_strict(aptoName){
 }
 
 // ==== Substitua sua openAptModal por ESTA ====
+// em escopo superior (uma vez)
+// let _modalJustOpenedAt = 0;
+
 function openAptModal({ id, floor }){
   const aptName = String(id||'').trim();
   const row = findAptRowByName_strict(aptName);
 
-  // título e cor/tint iguais ao index (usamos a mesma regra de cor por FVS)
+  // título + tint/gradiente iguais ao index
   const hex = pickFVSColor(aptName, floor ?? row?.pavimento_origem ?? null);
   _modalTitle.textContent = aptName || 'Apartamento';
   applyModalTint(hex);
-  _modal.querySelector('header').style.background = tintFromColor(hex);
+  const headerEl = _modal.querySelector('header');
+  if (headerEl) headerEl.style.background = tintFromColor(hex);
 
-  // helpers de formatação (mesmos do index)
+  // helpers
   const fmtInt  = (v)=> (v==null || v==='') ? '—' : String(v);
   const fmtBool = (b)=> b ? 'Sim' : 'Não';
 
-  // Se não achou dados, mostra mensagem e abre o modal mesmo assim
+  // conteúdo básico quando não há dados
   if (!row){
-    _modalContent.innerHTML = `<p>Sem dados para o apartamento ${aptName}.</p>`;
     _modalPill.textContent = '';
+    _modalContent.innerHTML = `<p>Sem dados para o apartamento ${aptName}.</p>`;
+
+    // abrir (com anti-ghost)
     _modalBackdrop.style.display = 'flex';
     _modal.style.display         = 'block';
+    _modalBackdrop.style.pointerEvents = 'none';
+    _modal.style.pointerEvents         = 'none';
+    _modalJustOpenedAt = performance.now();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      _modalBackdrop.style.pointerEvents = 'auto';
+      _modal.style.pointerEvents         = 'auto';
+    }));
     void _modal.offsetHeight;
     if (renderer?.domElement) renderer.domElement.style.pointerEvents = 'none';
     return;
   }
-  // ====== Campos usados pelo index ======
-  // Fallbacks/cálculos idênticos ao main.js
-  let codUlt = row.codigo_ultima_inspecao;
+
+  // ===== Campos usados no index =====
+  let codUlt  = row.codigo_ultima_inspecao;
   let pendUlt = row.qtd_pend_ultima_inspecao;
-  if(codUlt == null){
+  if (codUlt == null){
     const aux = getUltimaInspecaoInfo(row.reaberturas);
-    codUlt = aux.codigo_ultima_inspecao;
+    codUlt  = aux.codigo_ultima_inspecao;
     pendUlt = aux.qtd_pend_ultima_inspecao;
   }
 
-  // NC da última inspeção (fallback: última reabertura)
+  // NC da última inspeção
   let ncUlt = row.qtd_nao_conformidades_ultima_inspecao;
-  if (ncUlt == null && Array.isArray(row.reaberturas) && row.reaberturas.length) {
+  if (ncUlt == null && Array.isArray(row.reaberturas) && row.reaberturas.length){
     const lastReab = row.reaberturas[row.reaberturas.length - 1];
     ncUlt = Number(lastReab.qtd_nao_conformidades);
   }
@@ -765,43 +659,43 @@ function openAptModal({ id, floor }){
     ? `https://app.inmeta.com.br/app/360/servico/inspecoes/realizadas?inspecao=${encodeURIComponent(idLink)}`
     : null;
 
-  // PILL no header (mesmo comportamento do index: não é fixa; usamos principal “Duração inicial” + progresso)
-  // No index, o “pill” não é obrigatório; aqui podemos mostrar um resumo simples:
-  _modalPill.textContent = (row.duracao_real != null)
-    ? `Duração: ${row.duracao_real} dia${Number(row.duracao_real)===1?'':'s'}`
-    : (row.percentual_ultima_inspecao != null ? `Progresso: ${row.percentual_ultima_inspecao}%` : '');
+  // Pill no header (curto)
+  _modalPill.textContent =
+    (row.duracao_real != null)
+      ? `Duração: ${row.duracao_real} dia${Number(row.duracao_real)===1?'':'s'}`
+      : (row.percentual_ultima_inspecao != null ? `Progresso: ${row.percentual_ultima_inspecao}%` : '');
 
-  // ===== HTML do conteúdo — replicando o index =====
+  // ===== HTML do conteúdo =====
   let html = '';
   html += `<p><strong>Apartamento:</strong> ${row.apartamento}</p>`;
-  if (row.pavimento_origem) {
+  if (row.pavimento_origem){
     html += `<p><strong>Pavimento origem:</strong> ${row.pavimento_origem}</p>`;
   }
   html += `<p><strong>Início:</strong> ${formatDateBR(row.data_abertura)}</p>`;
-  if(row.data_termino_inicial){
+  if (row.data_termino_inicial){
     html += `<p><strong>Término:</strong> ${formatDateBR(row.data_termino_inicial)}</p>`;
   }
 
   // Progress bar (mesma lógica de cor)
   let progressMarkup = '';
   const pct = Number(row.percentual_ultima_inspecao);
-  if (!Number.isNaN(pct)) {
-    if (!row.data_termino_inicial) {
+  if (!Number.isNaN(pct)){
+    if (!row.data_termino_inicial){
       progressMarkup = linearProgress(pct, 'var(--blue)');
-    } else if ((Number((row.qtd_pend_ultima_inspecao||0))>0) || (Number((ncUlt||0))>0) || pct<100) {
+    } else if ((Number(row.qtd_pend_ultima_inspecao||0)>0) || (Number(ncUlt||0)>0) || pct<100){
       progressMarkup = linearProgress(pct, 'var(--yellow)');
     }
   }
   html += `<p class="line-progress"><span><strong>Duração inicial:</strong> ${row.duracao_inicial}</span>${progressMarkup}</p>`;
 
-  if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0) {
+  if (ncUlt != null && !Number.isNaN(Number(ncUlt)) && Number(ncUlt) > 0){
     html += `<p><strong>Não conformidades:</strong> ${Number(ncUlt)}</p>`;
   }
 
-  // Reinspeções — mesma ordenação do index
-  if(row.reaberturas?.length){
+  // Reinspeções (ordenadas)
+  if (row.reaberturas?.length){
     const toTime = (d) => {
-      const [yy, mm, dd] = (d || '').split('-').map(x => parseInt(x, 10));
+      const [yy, mm, dd] = (d || '').split('-').map(x => parseInt(x,10));
       const t = new Date(yy, (mm||1)-1, dd||1).getTime();
       return Number.isFinite(t) ? t : 0;
     };
@@ -814,11 +708,11 @@ function openAptModal({ id, floor }){
       const na = Number(a.qtd_nao_conformidades) || 0;
       const nb = Number(b.qtd_nao_conformidades) || 0;
       if (na !== nb) return na - nb;
-      return String(a.codigo ?? '').localeCompare(String(b.codigo ?? ''), 'pt-BR', { numeric: true });
+      return String(a.codigo ?? '').localeCompare(String(b.codigo ?? ''), 'pt-BR', { numeric:true });
     });
 
     html += `<hr><table><tr><th>Código</th><th>Data Abertura</th><th>Pendências</th><th>Não conformidades</th></tr>`;
-    reabs.forEach(r => {
+    reabs.forEach(r=>{
       html += `<tr>
         <td>${r.codigo ?? '-'}</td>
         <td>${formatDateBR(r.data_abertura)}</td>
@@ -830,34 +724,42 @@ function openAptModal({ id, floor }){
     html += `<p><strong>Duração reinspeções:</strong> ${row.duracao_reaberturas || 0}</p>`;
   }
 
-  // Link para a última inspeção (mesmo componente do index)
-  if(inmetaUrl){
+  // Link da última inspeção
+  if (inmetaUrl){
     html += `
-    <p>
-      <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
-        <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
-        </svg>
-      </a>
-    </p>`;
+      <p>
+        <a class="link-row" href="${inmetaUrl}" target="_blank" rel="noopener noreferrer">
+          <span><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1-2-2h6"/>
+          </svg>
+        </a>
+      </p>`;
   } else {
     html += `<p><strong>Última inspeção:</strong> código ${codUlt ?? '-'} | pendências ${pendUlt ?? '-'}${(ncUlt!=null)?` | NC ${ncUlt}`:''}</p>`;
   }
 
   html += `<p><strong>Duração total:</strong> ${row.duracao_real}</p>`;
-  if(row.termino_final){
+  if (row.termino_final){
     html += `<p><strong>Término final:</strong> ${formatDateBR(row.termino_final)}</p>`;
   }
 
   _modalContent.innerHTML = html;
   animateProgressBars(_modalContent);
 
-  // abrir
+  // abrir (com anti-ghost)
   _modalBackdrop.style.display = 'flex';
   _modal.style.display         = 'block';
+  _modalBackdrop.style.pointerEvents = 'none';
+  _modal.style.pointerEvents         = 'none';
+  _modalJustOpenedAt = performance.now();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    _modalBackdrop.style.pointerEvents = 'auto';
+    _modal.style.pointerEvents         = 'auto';
+  }));
   void _modal.offsetHeight;
+
   if (renderer?.domElement) renderer.domElement.style.pointerEvents = 'none';
 }
 
@@ -916,6 +818,17 @@ _modalBackdrop.addEventListener('click', (e)=>{
 });
 _modalClose.addEventListener('click', closeAptModal);
 addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeAptModal(); });
+function suppressGhostClick(e){
+  if (_modal.style.display !== 'block') return;
+  const dt = performance.now() - _modalJustOpenedAt;
+  if (dt < 400) {  // ~0.4s é um bom colchão em iOS/Android
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}
+// Captura no backdrop e no conteúdo do modal
+_modalBackdrop.addEventListener('click', suppressGhostClick, true);
+_modal.addEventListener('click', suppressGhostClick, true);
 
 
 
@@ -2242,7 +2155,7 @@ function build2DCards(){
       const key = normAptoKey(aptLabel);
       const info = META_MAP?.get ? META_MAP.get(key) : null;
       if (!NC_MODE && info?.duracao != null) {
-        durEl.textContent = `${info.duracao}d`;
+        durEl.textContent = `${info.duracao}`;
       } else {
         durEl.style.display = 'none';
       }
@@ -2275,7 +2188,7 @@ function build2DCards(){
       const aptId = String(A.meta?.id || A.meta?.name || A.root.userData.nome || '').trim();
       const key = normAptoKey(aptId);
       const info = META_MAP.get ? META_MAP.get(key) : null;
-      const dur = (!NC_MODE && info?.duracao != null) ? ` • ${info.duracao}d` : '';
+      const dur = (!NC_MODE && info?.duracao != null) ? ` • ${info.duracao}` : '';
       showTip(ev.clientX, ev.clientY, aptId + dur);
     }, { passive: true });
 
@@ -2296,11 +2209,11 @@ function build2DCards(){
   // Heurística: duracao_real > (duracao_inicial + duracao_reaberturas) > duracao_inicial
   if (!info) return null;
   const real = info?.duracao;
-  if (real != null) return `${real}d`;
+  if (real != null) return `${real}`;
   const ini  = Number(info?.raw?.duracao_inicial ?? NaN);
   const reab = Number(info?.raw?.duracao_reaberturas ?? NaN);
-  if (!Number.isNaN(ini) && !Number.isNaN(reab)) return `${ini + reab}d`;
-  if (!Number.isNaN(ini)) return `${ini}d`;
+  if (!Number.isNaN(ini) && !Number.isNaN(reab)) return `${ini + reab}`;
+  if (!Number.isNaN(ini)) return `${ini}`;
   return null;
 }
 function refreshCardsWithMeta(){
@@ -2418,9 +2331,22 @@ function refreshCardsWithMeta(){
       let cardH = Math.floor((availH - Math.max(0, rows-1)*vGap) / Math.max(1, sumSlots));
       cardH = Math.max(MIN_H, cardH);
       let cardW = Math.max(MIN_W, Math.floor(cardH * RATIO));
+        // >>> gap vertical ENTRE cards empilhados na MESMA coluna/piso
+  let cardGapY = Math.max(6, Math.floor(cardH * 0.12)); // ~12% da altura do card
 
       const totalW = () => colsLen*cardW + Math.max(0, colsLen-1)*hGap;
-      const totalH = () => sumSlots*cardH + Math.max(0, rows-1)*vGap;
+      
+       // Altura total agora considera o gap entre cards empilhados
+  const totalH = () => {
+    let H = 0;
+    for (let r=0; r<rows; r++){
+      const slots = slotsPerFloor[r];
+      const bandH = slots*cardH + Math.max(0, slots-1)*cardGapY;
+      H += bandH + (r < rows-1 ? vGap : 0);
+    }
+    return H;
+  };
+  
 
       let TW = totalW(), TH = totalH();
       if (TW > availW){
@@ -2430,14 +2356,16 @@ function refreshCardsWithMeta(){
         TW = totalW(); TH = totalH();
       }
 
-      let useScroll = false, guard = 400;
-      while (TH > availH && guard-- > 0){
-        if (vGap > 2) vGap -= 1;
-        else if (cardH > MIN_H) cardH -= 1;
-        else { useScroll = true; break; }
-        TW = totalW(); TH = totalH();
-      }
-      pane.style.overflowY = useScroll ? 'auto' : 'hidden';
+  // se estourar na altura, tenta reduzir gaps/altura
+  let useScroll = false, guard = 400;
+  while (TH > availH && guard-- > 0){
+    if (vGap > 2) vGap -= 1;
+    else if (cardGapY > 2) cardGapY -= 1;
+    else if (cardH > MIN_H) cardH -= 1;
+    else { useScroll = true; break; }
+    TW = totalW(); TH = totalH();
+  }
+  pane.style.overflowY = useScroll ? 'auto' : 'hidden';
 
       const originX = Math.floor(availW/2);
       const padTop = 8;
@@ -2455,34 +2383,41 @@ function refreshCardsWithMeta(){
         el.style.opacity   = String(0.15 + 0.85*tFade);
       }
 
-      let cursorY = useScroll ? (originY - Math.floor(cardH/2)) : (originY - TH/2);
-      for (let r=0; r<rows; r++){
-        const f = floors[r];
-        const bandH = slotsPerFloor[r] * cardH;
-        const rowCenterY = cursorY + bandH/2;
+let cursorY = useScroll ? (originY - Math.floor(cardH/2)) : (originY - TH/2);
 
-        for (let cx=0; cx<colsLen; cx++){
-          const key = `${f}|${cols[cx]}`;
-          const arr = map.get(key) || [];
-          const slots = Math.max(1, arr.length);
+for (let r = 0; r < rows; r++) {
+  const f = floors[r];
 
-          const colCenterX = originX - (TW/2) + cx*(cardW + hGap) + cardW/2;
-          const topBand = rowCenterY - (slots*cardH)/2;
+  // altura da faixa do piso r (com gap entre cards empilhados)
+  const slotsR = slotsPerFloor[r];
+  const bandH  = slotsR * cardH + Math.max(0, slotsR - 1) * cardGapY;
+  const rowCenterY = cursorY + bandH / 2;
 
-          for (let k=0; k<arr.length; k++){
-            const A = arr[k];
-            const el = A.root.userData?._cardEl;
-            if (!el) continue;
+  for (let cx = 0; cx < colsLen; cx++) {
+    const key  = `${f}|${cols[cx]}`;
+    const arr  = map.get(key) || [];
+    const slots = Math.max(1, arr.length);
 
-            const x = colCenterX;
-            const y = topBand + cardH*(k + 0.5);
+    const colCenterX = originX - (TW / 2) + cx * (cardW + hGap) + cardW / 2;
+    const topBand = rowCenterY - (bandH / 2); // topo da banda do piso
 
-            el.style.left = `${x}px`;
-            el.style.top  = `${y}px`;
-          }
-        }
-        cursorY += bandH + (r < rows-1 ? vGap : 0);
-      }
+    for (let k = 0; k < arr.length; k++) {
+      const A  = arr[k];
+      const el = A.root.userData?._cardEl;
+      if (!el) continue;
+
+      const x = colCenterX;
+      // cada card desce cardH + cardGapY
+      const y = topBand + k * (cardH + cardGapY) + cardH / 2;
+
+      el.style.left = `${x}px`;
+      el.style.top  = `${y}px`;
+    }
+  }
+
+  cursorY += bandH + (r < rows - 1 ? vGap : 0);
+}
+
 
       if (useScroll) pane.scrollTop = 0;
     }
