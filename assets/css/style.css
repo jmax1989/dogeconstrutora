@@ -425,3 +425,13 @@ canvas{ display:block; touch-action:none; }
 .q-linear-progress__label{ font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; font-size:11px; }
 .line-progress{ display:flex; align-items:center; gap:10px; }
 .line-progress .q-linear-progress{ margin-left:auto; min-width:96px; max-width:140px; }
+
+/* evita gestos nativos do navegador (pinch / double-tap) */
+#app canvas, #cards2d {
+  touch-action: none;
+}
+
+/* evita bounce/overscroll e gestos de navegação por swipe */
+html, body, #app {
+  overscroll-behavior: none;
+}
