@@ -1,0 +1,382 @@
+/* ===========================
+   Tema base / Tokens
+   =========================== */
+:root{
+  --bg:#0d1117;
+  --panel:#0b1220;
+  --line:#1c2433;
+  --text:#e6edf3;
+  --muted:#9fb0c3;
+
+  --accent:#58a6ff;
+  --green:#2ea043;
+  --yellow:#d29922;
+  --red:#f85149;
+  --gray:#6e7681;
+
+  --glass-bg: rgba(13,17,23,.6);
+  --glass-stroke: rgba(240,246,252,.12);
+  --blur: 10px;
+
+  --shadow-1: 0 2px 10px rgba(0,0,0,.35);
+  --shadow-2: 0 8px 30px rgba(0,0,0,.45);
+
+  --radius: 12px;
+  --radius-lg: 16px;
+
+  --hud-w: min(720px, 96vw);
+  --hud-gap: 10px;
+
+  --tip-bg: rgba(22,27,34,.85);
+  --tip-stroke: rgba(240,246,252,.12);
+}
+
+/* Reset mínimo */
+*{ box-sizing: border-box; }
+html, body{ height:100%; }
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===========================
+   Área 3D + overlay 2D
+   =========================== */
+#app{
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+canvas{ display:block; outline:none; }
+
+/* Grade/Cartões 2D (renderizados por JS) */
+#cards2d{
+  position:absolute;
+  inset:0;
+  pointer-events:auto; /* JS alterna quando o 3D está ativo */
+  overflow:auto;
+  padding: 16px;
+  display:none; /* mostrado quando modo 2D ativo */
+}
+#cards2d.active{ display:block; }
+#cards2d .grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap:12px;
+}
+#cards2d .card{
+  background: rgba(17,22,31,.76);
+  border:1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-1);
+  padding:10px;
+  cursor:pointer;
+  transition: transform .15s ease, border-color .15s ease;
+}
+#cards2d .card:hover{
+  transform: translateY(-2px);
+  border-color: rgba(88,166,255,.4);
+}
+#cards2d .card h4{
+  margin:0 0 6px;
+  font-weight:600;
+  font-size:13px;
+}
+#cards2d .card .meta{
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ===========================
+   Loading overlay
+   =========================== */
+#doge-loading{
+  position: fixed;
+  inset: 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: radial-gradient(1200px 800px at 50% 30%, rgba(88,166,255,.07), transparent),
+              linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,.55));
+  color: var(--text);
+  font-size: 16px;
+  letter-spacing:.2px;
+  z-index: 50;
+  backdrop-filter: blur(2px);
+}
+
+/* ===========================
+   Modal (vidro esfumado)
+   =========================== */
+#doge-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  backdrop-filter: blur(2px);
+  opacity:0; pointer-events:none;
+  transition: opacity .18s ease;
+  z-index: 60;
+}
+#doge-modal-backdrop.show{
+  opacity:1; pointer-events:auto;
+}
+#doge-modal{
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  transform: translate(-50%, -50%);
+  width: min(680px, 92vw);
+  max-height: min(76vh, 820px);
+  display:flex; flex-direction:column;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-stroke);
+  backdrop-filter: blur(var(--blur));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+}
+#doge-modal > header{
+  display:flex; align-items:center; gap:10px;
+  padding: 12px 14px;
+  border-bottom:1px solid var(--glass-stroke);
+  background: linear-gradient(180deg, rgba(240,246,252,.04), rgba(240,246,252,0));
+  position: sticky; top:0; z-index:2;
+}
+#doge-modal-title{
+  margin:0; font-size:16px; font-weight:700; letter-spacing:.2px;
+}
+#doge-modal .pill{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:3px 10px;
+  border-radius:999px;
+  font-size:12px; color: var(--text);
+  border:1px solid rgba(240,246,252,.10);
+  background: rgba(240,246,252,.06);
+}
+#doge-modal .close{
+  margin-left:auto;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--glass-stroke);
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor:pointer;
+}
+#doge-modal .close:hover{
+  border-color: rgba(240,246,252,.22);
+  background: rgba(240,246,252,.06);
+}
+#doge-modal .content{
+  padding: 14px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.2) transparent;
+}
+#doge-modal .content h4{
+  margin: 10px 0 6px;
+  font-size:13px;
+}
+#doge-modal .row{
+  display:flex; flex-wrap:wrap; gap:8px;
+  margin: 6px 0;
+}
+
+/* ===========================
+   Tooltip global
+   =========================== */
+#doge-tip{
+  position: fixed;
+  top: 0; left: 0;
+  transform: translate(-50%,-120%);
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--tip-bg);
+  border:1px solid var(--tip-stroke);
+  border-radius: 8px;
+  box-shadow: var(--shadow-1);
+  pointer-events:none;
+  opacity:0;
+  transition: opacity .12s ease, transform .12s ease, left .0s linear, top .0s linear;
+  z-index: 70;
+}
+#doge-tip.show{
+  opacity:1;
+  transform: translate(-50%,-140%);
+}
+
+/* ===========================
+   HUD (rodapé)
+   =========================== */
+#hud{
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 10px;
+  width: var(--hud-w);
+  background: var(--glass-bg);
+  border:1px solid var(--glass-stroke);
+  backdrop-filter: blur(var(--blur));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  z-index: 55;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--hud-gap);
+  padding: 10px 10px 12px;
+}
+#hud .row{
+  display:flex; align-items:center; gap:10px;
+}
+#hud .row.handle{
+  cursor: default;
+  user-select: none;
+  display:flex; align-items:center;
+  gap:10px;
+  border-bottom: 1px solid var(--glass-stroke);
+  padding-bottom: 8px;
+}
+#hud .grabber{
+  width: 36px; height: 6px;
+  border-radius: 6px;
+  background: rgba(240,246,252,.18);
+  margin-right: 6px;
+}
+#hud .title{
+  font-weight: 600; letter-spacing:.2px;
+}
+#hud #hudToggle{
+  margin-left:auto;
+  background: transparent;
+  color: var(--text);
+  border:1px solid var(--glass-stroke);
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor:pointer;
+}
+#hud #hudToggle[aria-expanded="false"]{ opacity:.85; }
+
+#hud label{
+  color: var(--muted);
+  font-size: 13px;
+  min-width: 28px;
+  text-align: center;
+}
+
+/* Botões */
+#hud button{
+  background: rgba(240,246,252,.06);
+  border:1px solid var(--glass-stroke);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor:pointer;
+  transition: border-color .15s ease, background .15s ease, transform .06s ease;
+}
+#hud button:hover{
+  background: rgba(240,246,252,.10);
+  border-color: rgba(240,246,252,.22);
+}
+#hud button:active{ transform: translateY(1px); }
+#btnNC[aria-pressed="true"]{
+  background: rgba(216, 108, 28, .25);
+  border-color: rgba(216,108,28,.5);
+}
+
+/* Inputs range */
+#hud input[type="range"]{
+  -webkit-appearance: none;
+  width: 220px;
+  height: 6px;
+  background: linear-gradient(90deg, rgba(240,246,252,.22), rgba(240,246,252,.06));
+  border-radius: 999px;
+  outline: none;
+}
+#hud input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.35);
+  cursor: pointer;
+}
+#hud input[type="range"]::-moz-range-thumb{
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+
+/* Botão 2D (badge svg) */
+#btn2D svg{
+  width: 34px; height: 34px;
+  display:block;
+}
+#btn2D .badge{
+  fill: rgba(240,246,252,.06);
+  stroke: var(--glass-stroke);
+  stroke-width: 2;
+}
+#btn2D .label{
+  fill: var(--text);
+  font: 700 14px/1 Inter, system-ui, sans-serif;
+}
+#btn2D[aria-pressed="true"] .badge{
+  fill: rgba(88,166,255,.18);
+  stroke: rgba(88,166,255,.55);
+}
+
+/* ===========================
+   Utilidades
+   =========================== */
+.hidden{ display:none !important; }
+.sr-only{
+  position:absolute!important;
+  width:1px!important;height:1px!important;
+  padding:0!important;margin:-1px!important;
+  overflow:hidden!important;clip:rect(0,0,0,0)!important;border:0!important;
+}
+
+/* ===========================
+   Responsividade
+   =========================== */
+@media (max-width: 680px){
+  #hud{
+    width: 96vw;
+    bottom: 8px;
+  }
+  #hud input[type="range"]{
+    width: 160px;
+  }
+  #doge-modal{
+    top: 54%;
+    width: 94vw;
+    max-height: 72vh;
+  }
+}
+
+/* ===========================
+   Scrollbars (suave)
+   =========================== */
+#cards2d, #doge-modal .content{
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.25) transparent;
+}
+#cards2d::-webkit-scrollbar,
+#doge-modal .content::-webkit-scrollbar{
+  width: 10px; height: 10px;
+}
+#cards2d::-webkit-scrollbar-thumb,
+#doge-modal .content::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.2);
+  border-radius: 999px;
+}
+#cards2d::-webkit-scrollbar-track,
+#doge-modal .content::-webkit-scrollbar-track{
+  background: transparent;
+}
