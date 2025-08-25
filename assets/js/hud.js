@@ -133,9 +133,24 @@ export function initHUD(){
   btn2D           = document.getElementById('btn2D');
   btnRecenter     = document.getElementById('recenter');
   btnResetRot     = document.getElementById('resetRot');
-
+  
+  
   // Prefs + QS iniciais
-  const prefs = loadPrefs();
+  const btnHudToggle = document.getElementById('hudToggle');
+const prefs = loadPrefs() || {};
+if (prefs.hudCollapsed) {
+  hudEl.classList.add('collapsed');
+}
+
+btnHudToggle?.addEventListener('click', ()=>{
+  hudEl.classList.toggle('collapsed');
+  const p = loadPrefs() || {};
+  p.hudCollapsed = hudEl.classList.contains('collapsed');
+  savePrefs(p);
+  // Reposiciona o 2D (ele usa a altura do HUD para bottom)
+  if (State.flatten2D >= 0.95) render2DCards();
+});
+
   const qsFvs = getQS('fvs'); // pode ser KEY antiga ou label
   const qsNc  = getQS('nc');
   State.NC_MODE = (qsNc != null) ? (qsNc === '1' || qsNc === 'true') : !!prefs.nc;
