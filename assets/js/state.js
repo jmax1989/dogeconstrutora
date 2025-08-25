@@ -8,6 +8,12 @@ export const STORAGE_KEYS = {
 };
 
 export const State = {
+  // ==== Grid 2D (zoom/linhas/alpha) ====
+  grid2DZoom: 1,          // fator contínuo de zoom do grid 2D (usado no overlay2d)
+  grid2DRows: 8,          // linhas alvo quando grid2DZoom = 1 (overlay usa para TARGET_ROWS)
+  grid2DAlpha: 0.5,       // alpha padrão do fundo dos cards 2D (overlay respeita se existir)
+
+  // ==== Filtros / cores ====
   CURRENT_FVS: '',
   NC_MODE: false,
   COLOR_MAP: { default: '#6e7681', colors: {}, byFloor: {} },
@@ -66,4 +72,8 @@ export function loadPrefs(){
     nc : (nc === 'true')
   };
 }
-State.grid2DRows = State.grid2DRows ?? 8; 
+
+// garante defaults se este arquivo for carregado após outro trecho que define State
+State.grid2DRows = State.grid2DRows ?? 8;
+State.grid2DZoom = State.grid2DZoom ?? 1;
+State.grid2DAlpha = State.grid2DAlpha ?? 0.5;
