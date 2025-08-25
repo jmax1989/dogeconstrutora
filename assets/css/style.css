@@ -111,6 +111,10 @@ canvas{ display:block; touch-action:none; }
 #hud.collapsed .row:not(.handle){ display:none; }
 #hud button, #hud input, #hud label { touch-action: manipulation; }
 
+/* HUD colapsável */
+#hud.collapsed .row { display: none; }
+#hud.collapsed .row.head { display: flex; } /* mantenha só a primeira linha visível */
+
 /* Sliders */
 #hud input[type="range"]{
   width: clamp(120px, 35vw, 180px);
@@ -364,6 +368,9 @@ canvas{ display:block; touch-action:none; }
 }
 #cards2d::-webkit-scrollbar{ width:0; height:0 }
 #cards2d{ scrollbar-width: none; -ms-overflow-style: none; }
+/* Grid 2D: deixa o browser rolar só na vertical; pinch/zoom é nosso */
+#cards2d{ touch-action: pan-y; overscroll-behavior: contain; }
+
 
 /* ===== Badges (2 linhas; 1ª: pend à esquerda / nc à direita; 2ª: dur à esquerda / % à direita) ===== */
 #cards2d{
@@ -435,3 +442,54 @@ canvas{ display:block; touch-action:none; }
 html, body, #app {
   overscroll-behavior: none;
 }
+#app canvas{ touch-action: none; }
+
+/* Layout do HUD */
+#hud{
+  position: fixed; left: 0; right: 0; bottom: 0;
+  padding: 8px 10px;
+  background: rgba(20,24,32,.92);
+  backdrop-filter: blur(6px);
+  z-index: 20;
+}
+#hud .row{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+
+/* 1ª linha: dropdown + NC */
+#hud .row.head #fvsSelect{ flex: 1 1 260px; min-width: 180px; }
+#hud .row.head #btnNC{ flex: 0 0 auto; }
+
+/* 2ª linha: recenter + resetRot + reset + 2D */
+#hud .row.actions button{ height: 30px; padding: 0 10px; }
+
+/* 3ª linha: sliders (mais finos) */
+#hud .row.sliders{
+  gap: 12px;
+}
+#hud .row.sliders input[type="range"]{
+  height: 4px;
+  padding: 0;
+  accent-color: #6e7681;
+  min-width: 140px;
+}
+
+/* Compactação em telas menores */
+@media (max-width: 640px){
+  #hud{ padding: 6px 8px; }
+  #hud .row{ gap: 6px; }
+  #hud .row.actions button{ height: 28px; padding: 0 8px; }
+  #hud .row.sliders input[type="range"]{ height: 3px; min-width: 120px; }
+}
+
+/* HUD colapsado (mantém só a head) */
+#hud.collapsed .row{ display: none; }
+#hud.collapsed .row.head{ display: flex; }
+
+/* Botões/inputs base */
+#hud button{ cursor: pointer; }
+#hud select, #hud button{ font: inherit; }
