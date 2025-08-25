@@ -9,7 +9,7 @@ import { render2DCards, recolorCards2D, show2D, hide2D,
 import { buildColorMapForFVS, buildColorMapForFVS_NC } from './colors.js';
 import { syncSelectedColor } from './picking.js';
 import { recenterCamera, resetRotation, render } from './scene.js';
-import { normFVSKey, normNameKey } from './utils.js';
+import { normFVSKey} from './utils.js';
 import { apartamentos } from './data.js';
 import { setRowsResolver as setRowsResolver2D } from './overlay2d.js';
 import { setRowResolver  as setRowResolver3D } from './picking.js';
@@ -40,10 +40,8 @@ function buildFVSIndex(rows){
 
     const nc = Number(r?.qtd_nao_conformidades_ultima_inspecao ?? r?.nao_conformidades ?? 0) || 0;
     if (nc > 0) bucket.counts.withNC++;
-
-    const nome = String(r?.nome ?? r?.apartamento ?? r?.apto ?? '').trim();
-    const nk = normNameKey(nome);
-    if (nk && !bucket.rowsByNameKey.has(nk)) bucket.rowsByNameKey.set(nk, r);
+    const kApart = String(r?.apartamento ?? '').trim(); // <-- SOMENTE apartamento
+    if (kApart && !bucket.rowsByNameKey.has(kApart)) bucket.rowsByNameKey.set(kApart, r);
   }
   return byFVS;
 }
@@ -100,7 +98,7 @@ function applyFVSSelection(fvsKey, fvsIndex){
 
   setRowsResolver2D(() => rows);
   const byName = bucket?.rowsByNameKey || new Map();
-  setRowResolver3D((nameKey)=> byName.get(nameKey) || null);
+  setRowResolver3D((raw)=> byName.get(String(raw).trim()) || null); // sem normalização
 
   State.COLOR_MAP = State.NC_MODE
     ? buildColorMapForFVS_NC(rows)
