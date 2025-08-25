@@ -8,18 +8,7 @@ import { pickFVSColor } from './colors.js';
 import { apartamentos } from './data.js';
 import { openAptModal } from './modal.js';
 
-// Zoom do grid 2D (fator global)
-if (State.grid2DZoom == null) State.grid2DZoom = 1;
-const ZOOM_MIN = 0.6, ZOOM_MAX = 2.2;
-const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
-
-let _zoomHandlersAttached = false;
-
-// Elemento host
 let host = null;
-
-// Resolver injetado (opcional) que retorna as linhas da FVS ativa,
-// usado apenas para enriquecer cor/NC dos cards (sem filtrar grade)
 let getRowsForCurrentFVS = null;
 
 /** Permite injetar o resolvedor de linhas da FVS ativa */
@@ -29,82 +18,37 @@ export function setRowsResolver(fn){
 
 export function initOverlay2D(){
   host = document.getElementById('cards2d');
-  if (!_zoomHandlersAttached && host){
-    attach2DZoomHandlers(host);
-    _zoomHandlersAttached = true;
+
+  // === Zoom horizontal: ajusta número de linhas (TARGET_ROWS) ===
+  if (host && !host._zoomBound){
+    host._zoomBound = true;
+
+    host.addEventListener('wheel', (e)=>{
+      if (!e.ctrlKey && !e.metaKey){
+        // se não for pinch-zoom do navegador, tratamos como zoom horizontal
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)){
+          e.preventDefault();
+
+          // ajusta State.zoom2D baseado no deltaX
+          const dir = Math.sign(e.deltaX);
+          State.zoom2D = (State.zoom2D || 1) + dir*0.05;
+          State.zoom2D = Math.max(0.5, Math.min(2.0, State.zoom2D));
+
+          render2DCards();
+        }
+      }
+    }, { passive:false });
   }
 }
 
-/* ===== Zoom do grid (nº de linhas) ===== */
-const GRID_MIN_ROWS = 4;
-const GRID_MAX_ROWS = 24;
-let _zoomHandlersWired = false;
-
-function getGridRows(){
-  if (!Number.isFinite(State.grid2DRows)) State.grid2DRows = 8;
-  return Math.max(GRID_MIN_ROWS, Math.min(GRID_MAX_ROWS, Math.round(State.grid2DRows)));
-}
-function setGridRows(n){
-  State.grid2DRows = Math.max(GRID_MIN_ROWS, Math.min(GRID_MAX_ROWS, Math.round(n)));
-  render2DCards();
-}
-
-/** Exibe o 2D */
 export function show2D(){
   if (!host) initOverlay2D();
   if (!host) return;
   host.classList.add('active');
   host.style.pointerEvents = 'auto';
   render2DCards();
-
-  // Wire de zoom (desktop + mobile) apenas uma vez
-  if (!_zoomHandlersWired){
-    _zoomHandlersWired = true;
-
-    // Desktop/trackpad: Ctrl + roda (no trackpad, pinch vira wheel com ctrlKey=true)
-    host.addEventListener('wheel', (e)=>{
-      if (!host.classList.contains('active')) return;
-      if (!e.ctrlKey) return; // sem Ctrl deixa rolar normalmente
-      e.preventDefault();
-      const cur = getGridRows();
-      const step = (e.deltaY > 0) ? +1 : -1; // down = mais linhas (mais cards)
-      setGridRows(cur + step);
-    }, { passive:false });
-
-    // Mobile: pinch com 2 dedos
-    let pinchStartDist = 0;
-    let pinchStartRows = 0;
-    let pinchActive = false;
-    const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-
-    host.addEventListener('touchstart', (e)=>{
-      if (!host.classList.contains('active')) return;
-      if (e.touches.length === 2){
-        pinchActive = true;
-        pinchStartDist = dist(e.touches[0], e.touches[1]);
-        pinchStartRows = getGridRows();
-      }
-    }, { passive:true });
-
-    host.addEventListener('touchmove', (e)=>{
-      if (!pinchActive) return;
-      if (e.touches.length !== 2) return;
-      e.preventDefault(); // evita zoom do browser/scroll
-      const d = dist(e.touches[0], e.touches[1]);
-      if (pinchStartDist <= 0) return;
-      const scale = d / pinchStartDist;     // >1 = zoom in
-      const rows = pinchStartRows / Math.pow(scale, 1.0); // zoom in -> menos linhas
-      setGridRows(rows);
-    }, { passive:false });
-
-    host.addEventListener('touchend', ()=>{
-      pinchActive = false;
-      pinchStartDist = 0;
-    }, { passive:true });
-  }
 }
 
-/** Oculta o 2D */
 export function hide2D(){
   if (!host) initOverlay2D();
   if (!host) return;
@@ -113,7 +57,6 @@ export function hide2D(){
 }
 
 /* ===== Helpers ===== */
-
 function compareApt(a, b){
   const rx = /(\d+)/g;
   const ax = String(a||'').toUpperCase();
@@ -129,15 +72,13 @@ function compareApt(a, b){
 function floorOrderValue(floorStr, fallbackIndex){
   const s = String(floorStr ?? '').trim().toUpperCase();
   const n = Number(s);
-  if (Number.isFinite(n)) return 10_000 + n; // maior = mais alto, vamos ordenar desc
+  if (Number.isFinite(n)) return 10_000 + n;
   const map = { AT: 50_000, COB: 50_000, PH: 50_000, LAZ: 100, TER: 0, TÉR: 0, GAR: -100 };
   if (s in map) return map[s];
   return -1_000_000 + (fallbackIndex||0);
 }
 
-/** Monta mapa pavimento -> lista completa de apartamentos daquele pavimento (sem duplicatas) */
 function buildFloorsFromApartamentos(){
-  // floor -> Map(aptoKey -> { apt, floor, ordemcol, firstIndex })
   const floorsMap = new Map();
   const seenOrder = new Map();
 
@@ -145,7 +86,6 @@ function buildFloorsFromApartamentos(){
     const aptRaw  = String(ap.nome ?? ap.apartamento ?? ap.apto ?? '').trim();
     const floor   = String(ap.pavimento ?? ap.pavimento_origem ?? ap.pav ?? '').trim();
     if (!aptRaw || !floor) return;
-
     const aptKey = normNameKey(aptRaw);
     if (!aptKey) return;
 
@@ -187,7 +127,6 @@ function buildFloorsFromApartamentos(){
   return floors.map(f => ({ floor: f, items: floorsMap.get(f) || [] }));
 }
 
-/** Constrói lookup das linhas da FVS ativa: nomeKey -> row (para cor/NC) */
 function buildRowsLookup(){
   const rows = (getRowsForCurrentFVS ? (getRowsForCurrentFVS() || []) : []);
   const map = new Map();
@@ -200,7 +139,6 @@ function buildRowsLookup(){
   return map;
 }
 
-/** NC estrita (apenas NC > 0 conta) */
 function hasNC(row){
   if (!row) return false;
   const nc = Number(row.qtd_nao_conformidades_ultima_inspecao ?? row.nao_conformidades ?? 0) || 0;
@@ -208,12 +146,10 @@ function hasNC(row){
 }
 
 /* ===== Render ===== */
-
 export function render2DCards(){
   if (!host) initOverlay2D();
   if (!host) return;
 
-  // host ocupa viewport (acima do HUD)
   const hud = document.getElementById('hud');
   const hudH = hud ? hud.offsetHeight : 0;
   host.style.position = 'fixed';
@@ -223,14 +159,10 @@ export function render2DCards(){
   host.style.setProperty('bottom', `${hudH}px`, 'important');
   host.style.overflow = 'hidden';
 
-  // Base da grade
   const perFloor = buildFloorsFromApartamentos();
-
-  // Dados da FVS ativa
   const rowsMap = buildRowsLookup();
   const NC_MODE = !!State.NC_MODE;
 
-  // (re)constrói DOM
   host.innerHTML = '';
   const frag = document.createDocumentFragment();
 
@@ -243,223 +175,56 @@ export function render2DCards(){
       el.className = 'card';
       el.dataset.apto = it.apt;
       el.dataset.pav  = it.floor;
-      el.dataset.key = key;
+      el.dataset.key  = key;
       el._row = row;
       el._hasData = !!row;
 
-      // Label do apto (hover)
       const numEl = document.createElement('div');
       numEl.className = 'num';
       numEl.textContent = it.apt;
       el.appendChild(numEl);
 
-      // (antigo) duração no canto — mantido oculto
-      const durEl = document.createElement('div');
-      durEl.className = 'dur';
-      durEl.style.display = 'none';
-      el.appendChild(durEl);
-
-      // Dados brutos para badges
+      // badges
       const nc   = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0;
       const pend = Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0;
       const perc = Number(row?.percentual_ultima_inspecao ?? row?.percentual);
       const durN = Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0;
-
-      // === NC mode: só mostra badges se TIVER NC; senão “sem dados” e sem clique
       const showData = !NC_MODE || hasNC(row);
 
-      // Badges
       const badges = document.createElement('div');
       badges.className = 'badges';
       if (showData){
-        // 1ª linha: PEND (esq) | NC (dir)
-        {
-          const rowTop = document.createElement('div');
-          rowTop.className = 'badge-row';
-
-          const left  = document.createElement('div'); left.className  = 'slot left';
-          const right = document.createElement('div'); right.className = 'slot right';
-
-          if (pend > 0){
-            const b = document.createElement('span');
-            b.className = 'badge pend';
-            b.textContent = String(pend);
-            b.title = `Pendências: ${pend}`;
-            left.appendChild(b);
-          }
-          if (nc > 0){
-            const b = document.createElement('span');
-            b.className = 'badge nc';
-            b.textContent = String(nc);
-            b.title = `Não conformidades: ${nc}`;
-            right.appendChild(b);
-          }
-
-          if (left.childElementCount || right.childElementCount){
-            rowTop.append(left, right);
-            badges.appendChild(rowTop);
-          }
-        }
-
-        // 2ª linha: DURAÇÃO (esq) | PERCENTUAL (dir)
-        {
-          const rowBottom = document.createElement('div');
-          rowBottom.className = 'badge-row';
-
-          const left  = document.createElement('div'); left.className  = 'slot left';
-          const right = document.createElement('div'); right.className = 'slot right';
-
-          if (durN > 0){
-            const b = document.createElement('span');
-            b.className = 'badge dur';
-            b.textContent = String(Math.round(durN));
-            b.title = `Duração (dias): ${Math.round(durN)}`;
-            left.appendChild(b);
-          }
-          if (Number.isFinite(perc)){
-            const b = document.createElement('span');
-            b.className = 'badge percent';
-            b.textContent = `${Math.round(perc)}%`;
-            b.title = `Percentual executado`;
-            right.appendChild(b);
-          }
-
-          if (left.childElementCount || right.childElementCount){
-            rowBottom.append(left, right);
-            badges.appendChild(rowBottom);
-          }
+        if (pend > 0 || nc > 0 || Number.isFinite(perc) || durN>0){
+          const b = document.createElement('span');
+          b.className = 'badge nc';
+          b.textContent = nc>0 ? `NC:${nc}` : perc ? `${perc}%` : '';
+          badges.appendChild(b);
         }
       }
       if (badges.childElementCount) el.appendChild(badges);
 
-      // Visual / clicabilidade
-      if (row){
+      if (row && showData){
         const color = pickFVSColor(it.apt, it.floor, State.COLOR_MAP);
-        if (showData){
-          // normal
-          const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
-          el.style.borderColor = color;
-          el.style.backgroundColor = hexToRgba(color, a);
-          el.style.opacity = '1';
-          el.style.pointerEvents = 'auto';
-          el.style.cursor = 'pointer';
-          el.classList.remove('disabled');
-          el.title = it.apt;
-        }else{
-          // “sem dados” + não clicável
-          el.style.borderColor = 'rgba(110,118,129,.6)';
-          el.style.backgroundColor  = 'rgba(34,40,53,.60)';
-          el.style.opacity     = '0.85';
-          el.style.pointerEvents = 'none';
-          el.style.cursor = 'default';
-          el.classList.add('disabled');
-          el.title = '';
-        }
-      }else{
-        // sem dados mesmo fora do NC
+        const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
+        el.style.borderColor = color;
+        el.style.backgroundColor = hexToRgba(color, a);
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+        el.style.cursor = 'pointer';
+        el.classList.remove('disabled');
+      } else {
         el.style.borderColor = 'rgba(110,118,129,.6)';
         el.style.backgroundColor  = 'rgba(34,40,53,.60)';
         el.style.opacity     = '0.85';
-        el.style.pointerEvents = NC_MODE ? 'none' : 'auto';
-        el.style.cursor = NC_MODE ? 'default' : 'pointer';
-        if (NC_MODE) el.classList.add('disabled'); else el.classList.remove('disabled');
-      }
-
-      // Realce NC-mode apenas para quem tem NC
-      if (NC_MODE){
-        if (hasNC(row)){
-          el.style.filter = 'none';
-          el.style.opacity = '1';
-          el.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
-        }else{
-          el.style.filter = 'none';
-          el.style.boxShadow = 'none';
-        }
-      }else{
-        el.style.filter = 'none';
-        el.style.boxShadow = 'none';
+        el.style.pointerEvents = 'none';
+        el.classList.add('disabled');
       }
 
       frag.appendChild(el);
-      it._el = el; // para layout
+      it._el = el;
     }
   }
-
   host.appendChild(frag);
-  // Delegação de clique: abre o modal com a ROW correta (mesmo em 2D/NC)
-  host.onclick = (e) => {
-    const card = e.target.closest('.card');
-    if (!card || card.classList.contains('disabled')) return; // sem clique nos “cinza”
-
-    // 1) preferir a row guardada no card
-    let row = card._row || null;
-
-    // 2) fallback: lookup fresco pela key do card
-    if (!row) {
-      const rowsMap2 = buildRowsLookup();
-      row = rowsMap2.get(card.dataset.key || '') || null;
-      if (!row) row = rowsMap2.get(normNameKey(card.dataset.apto || '')) || null;
-    }
-
-    const apt = card.dataset.apto || '';
-    const pav = card.dataset.pav  || '';
-    const hex = pickFVSColor(apt, pav, State.COLOR_MAP);
-    openAptModal({ id: apt, floor: pav, row, tintHex: hex });
-  };
-
-  // ==== ZOOM do GRID: wheel e pinch (Pointer Events) ====
-attach2DZoomHandlers(host);
-
-function setRows(n){
-  const r = Math.max(3, Math.min(20, Math.round(n)));
-  if (r !== State.grid2DRows){
-    State.grid2DRows = r;
-    render2DCards();
-  }
-}
-
-function attach2DZoomHandlers(el){
-  // wheel (desktop) — mais linhas quando rola pra cima (mais conteúdo), menos linhas ao rolar pra baixo
-  el.addEventListener('wheel', (e)=>{
-    e.preventDefault();
-    const dir = Math.sign(e.deltaY);
-    setRows((State.grid2DRows || 8) + dir); // delta de 1 linha por notch
-  }, { passive:false });
-
-  // Pointer Events para pinch
-  const ptrs = new Map();
-  let start = null; // { d, rows0 }
-
-  el.addEventListener('pointerdown', (e)=>{
-    el.setPointerCapture(e.pointerId);
-    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    if (ptrs.size === 2){
-      const a = [...ptrs.values()];
-      const dx = a[1].x - a[0].x, dy = a[1].y - a[0].y;
-      start = { d: Math.hypot(dx,dy) || 1, rows0: (State.grid2DRows || 8) };
-    }
-  });
-  el.addEventListener('pointermove', (e)=>{
-    if (!ptrs.has(e.pointerId)) return;
-    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
-
-    if (ptrs.size === 2 && start){
-      const a = [...ptrs.values()];
-      const dx = a[1].x - a[0].x, dy = a[1].y - a[0].y;
-      const d = Math.hypot(dx,dy) || 1;
-      const scale = d / (start.d || 1);
-
-      // scale > 1  => "aproxima" => menos linhas (cards maiores)
-      // scale < 1  => "afasta"   => mais linhas
-      const newRows = start.rows0 / Math.max(0.25, Math.min(4, scale));
-      setRows(newRows);
-    }
-  }, { passive:true });
-  function end(id){ ptrs.delete(id); if (ptrs.size < 2) start = null; }
-  el.addEventListener('pointerup', end, { passive:true });
-  el.addEventListener('pointercancel', end, { passive:true });
-}
-
 
   // ====== Layout ======
   const paneW = Math.max(240, host.clientWidth);
@@ -471,9 +236,10 @@ function attach2DZoomHandlers(el){
   let hGap = Math.max(12, Math.floor(paneW * 0.014));
   let vGap = Math.max(10, Math.floor(paneH * 0.014));
 
- const BASE_ROWS    = 8;
-const TARGET_ROWS  = Math.max(3, Math.min(20, Math.round(BASE_ROWS / (State.grid2DZoom || 1))));
-
+  // TARGET_ROWS agora ajustado por zoom2D
+  const baseRows = 8;
+  const zoom = State.zoom2D || 1;
+  const TARGET_ROWS = Math.max(3, Math.round(baseRows / zoom));
 
   let cardH = Math.floor((paneH - (TARGET_ROWS-1)*vGap) / TARGET_ROWS);
   cardH = Math.max(MIN_H, Math.min(cardH, MAX_H));
@@ -495,23 +261,7 @@ const TARGET_ROWS  = Math.max(3, Math.min(20, Math.round(BASE_ROWS / (State.grid
     el.style.width = `${cardW}px`;
     el.style.height = `${cardH}px`;
     el.style.fontSize = `${fontPx}px`;
-    el.style.opacity = el.style.opacity || '0.95';
   });
-
-  // CSS vars para dimensionar badges
-  const badgeFont = Math.max(8,  Math.min(16, Math.round(cardH * 0.15)));
-  const badgePadV = Math.max(2,  Math.round(cardH * 0.055));
-  const badgePadH = Math.max(4,  Math.round(cardW * 0.08));
-  const badgeMinW = Math.max(18, Math.round(cardW * 0.18));
-  const badgeGap  = Math.max(3,  Math.round(cardW * 0.04));
-  const badgeTop  = Math.max(3,  Math.round(cardH * 0.05));
-
-  host.style.setProperty('--badge-font', `${badgeFont}px`);
-  host.style.setProperty('--badge-pad-v', `${badgePadV}px`);
-  host.style.setProperty('--badge-pad-h', `${badgePadH}px`);
-  host.style.setProperty('--badge-minw', `${badgeMinW}px`);
-  host.style.setProperty('--badge-gap',  `${badgeGap}px`);
-  host.style.setProperty('--badge-top',  `${badgeTop}px`);
 
   const originX = Math.floor(paneW/2);
   const topPad  = 16;
@@ -538,202 +288,11 @@ const TARGET_ROWS  = Math.max(3, Math.min(20, Math.round(BASE_ROWS / (State.grid
 
   host.style.overflowY = 'auto';
   host.style.overflowX = 'hidden';
-}
 
-function attach2DZoomHandlers(el){
-  // Permite scroll vertical do host, mas a gente controla pinch/zoom
-  el.style.touchAction = 'pan-y';
-  el.style.overscrollBehavior = 'contain';
-
-  const ptrs = new Map(); // id -> {x,y}
-  let prevDist = null;
-
-  const dist = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
-
-  // Pointer Events (Android/Chrome/Edge)
-  el.addEventListener('pointerdown', (e)=>{
-    if (e.pointerType === 'touch'){
-      el.setPointerCapture?.(e.pointerId);
-      ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    }
-  }, { passive:false });
-
-  el.addEventListener('pointermove', (e)=>{
-    if (!ptrs.has(e.pointerId)) return;
-    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
-
-    if (ptrs.size >= 2){
-      const [p0,p1] = [...ptrs.values()];
-      const d = dist(p0,p1);
-      if (prevDist){
-        const s = d / prevDist;
-        State.grid2DZoom = clamp((State.grid2DZoom||1) * s, ZOOM_MIN, ZOOM_MAX);
-        render2DCards();
-      }
-      prevDist = d;
-      e.preventDefault(); // evita zoom nativo e scroll lateral
-    }
-  }, { passive:false });
-
-  const clear = ()=>{
-    ptrs.clear();
-    prevDist = null;
+  // clique -> abre modal
+  host.onclick = (e)=>{
+    const card = e.target.closest('.card');
+    if (!card || card.classList.contains('disabled')) return;
+    openAptModal({ id: card.dataset.apto, floor: card.dataset.pav, row: card._row, tintHex: null });
   };
-  el.addEventListener('pointerup', clear, { passive:true });
-  el.addEventListener('pointercancel', clear, { passive:true });
-
-  // Trackpad: ctrl+wheel (pinch) ou rolagem horizontal mais forte que a vertical
-  el.addEventListener('wheel', (e)=>{
-    const horiz = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-    const pinch = e.ctrlKey === true;
-    if (horiz || pinch){
-      e.preventDefault();
-      const delta = pinch ? e.deltaY : -e.deltaX; // deltaX direita -> zoom in
-      const factor = Math.exp(-delta * 0.0018);
-      State.grid2DZoom = clamp((State.grid2DZoom||1) * factor, ZOOM_MIN, ZOOM_MAX);
-      render2DCards();
-    }
-  }, { passive:false });
-
-  // Safari iOS (eventos de gesto proprietários)
-  el.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, { passive:false });
-  el.addEventListener('gesturechange', (e)=>{
-    e.preventDefault();
-    // e.scale é relativo; usamos como alvo aproximado
-    State.grid2DZoom = clamp(e.scale, ZOOM_MIN, ZOOM_MAX);
-    render2DCards();
-  }, { passive:false });
-}
-
-/** Recolore apenas (quando trocar FVS/tema) mantendo grade fixa */
-export function recolorCards2D(){
-  if (!host) return;
-
-  const rowsMap = buildRowsLookup();
-  const NC_MODE = !!State.NC_MODE;
-
-  const cards = host.querySelectorAll('.card');
-  cards.forEach(card=>{
-    const apt = card.dataset.apto || '';
-    const pav = card.dataset.pav  || '';
-    const key = normNameKey(apt);
-    const row = rowsMap.get(key) || null;
-
-    card._row = row;
-    card._hasData = !!row;
-
-    // dados para badges
-    const nc   = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0;
-    const pend = Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0;
-    const perc = Number(row?.percentual_ultima_inspecao ?? row?.percentual);
-    const durN = Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0;
-
-    // NC estrito
-    const showData = !NC_MODE || hasNC(row);
-
-    // badges
-    let badges = card.querySelector('.badges');
-    if (!badges){
-      badges = document.createElement('div');
-      badges.className = 'badges';
-      card.appendChild(badges);
-    }
-    badges.innerHTML = '';
-
-    if (showData){
-      // 1ª linha
-      const rowTop = document.createElement('div');
-      rowTop.className = 'badge-row';
-      const left  = document.createElement('div'); left.className  = 'slot left';
-      const right = document.createElement('div'); right.className = 'slot right';
-
-      if (pend > 0){
-        const b = document.createElement('span');
-        b.className = 'badge pend';
-        b.textContent = String(pend);
-        b.title = `Pendências: ${pend}`;
-        left.appendChild(b);
-      }
-      if (nc > 0){
-        const b = document.createElement('span');
-        b.className = 'badge nc';
-        b.textContent = String(nc);
-        b.title = `Não conformidades: ${nc}`;
-        right.appendChild(b);
-      }
-      if (left.childElementCount || right.childElementCount){
-        rowTop.append(left, right);
-        badges.appendChild(rowTop);
-      }
-
-      // 2ª linha
-      const rowBottom = document.createElement('div');
-      rowBottom.className = 'badge-row';
-      const left2  = document.createElement('div'); left2.className  = 'slot left';
-      const right2 = document.createElement('div'); right2.className = 'slot right';
-      if (durN > 0){
-        const b = document.createElement('span');
-        b.className = 'badge dur';
-        b.textContent = String(Math.round(durN));
-        b.title = `Duração (dias): ${Math.round(durN)}`;
-        left2.appendChild(b);
-      }
-      if (Number.isFinite(perc)){
-        const b = document.createElement('span');
-        b.className = 'badge percent';
-        b.textContent = `${Math.round(perc)}%`;
-        b.title = `Percentual executado`;
-        right2.appendChild(b);
-      }
-      if (left2.childElementCount || right2.childElementCount){
-        rowBottom.append(left2, right2);
-        badges.appendChild(rowBottom);
-      }
-    }
-
-    // Recolorir borda + fundo translúcido
-    if (row){
-      if (showData){
-        const color = pickFVSColor(apt, pav, State.COLOR_MAP);
-        const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
-        card.style.borderColor = color;
-        card.style.backgroundColor = hexToRgba(color, a);
-        card.style.opacity = '1';
-        card.style.pointerEvents = 'auto';
-        card.style.cursor = 'pointer';
-        card.classList.remove('disabled');
-        card.title = apt;
-      }else{
-        card.style.borderColor = 'rgba(110,118,129,.6)';
-        card.style.backgroundColor = 'rgba(34,40,53,.60)';
-        card.style.opacity = '0.85';
-        card.style.pointerEvents = 'none';
-        card.style.cursor = 'default';
-        card.classList.add('disabled');
-        card.title = '';
-      }
-    }else{
-      card.style.borderColor = 'rgba(110,118,129,.6)';
-      card.style.backgroundColor = 'rgba(34,40,53,.60)';
-      card.style.opacity = '0.85';
-      card.style.pointerEvents = NC_MODE ? 'none' : 'auto';
-      card.style.cursor = NC_MODE ? 'default' : 'pointer';
-      if (NC_MODE) card.classList.add('disabled'); else card.classList.remove('disabled');
-    }
-
-    // NC-mode: realce somente nos que têm NC
-    if (NC_MODE){
-      if (hasNC(row)){
-        card.style.filter = 'none';
-        card.style.opacity = '1';
-        card.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
-      }else{
-        card.style.filter = 'none';
-        card.style.boxShadow = 'none';
-      }
-    }else{
-      card.style.filter = 'none';
-      card.style.boxShadow = 'none';
-    }
-  });
 }
