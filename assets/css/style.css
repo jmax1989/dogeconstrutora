@@ -11,6 +11,10 @@
   --gray:#6e7681;
   --red:#f85149;
   --red-strong:#ff3b30; /* realce ON para NC */
+  /* modal tint defaults (podem ser sobrescritas via JS) */
+  --modal-tint-strong: rgba(88,166,255,0.20);
+  --modal-tint-soft:   rgba(88,166,255,0.10);
+  --modal-border:      rgba(240,246,252,0.08);
 }
 
 /* ===== Base ===== */
@@ -22,7 +26,10 @@ body{
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif;
 }
 #app{ position: fixed; inset: 0; }
-canvas{ display:block; touch-action:none; }
+canvas{ display:block; }
+
+/* O canvas usa gestos 100% custom → desabilita gestos nativos */
+#app canvas{ touch-action: none; }
 
 /* ===== Tooltip ===== */
 #doge-tip{
@@ -43,15 +50,24 @@ canvas{ display:block; touch-action:none; }
 
 /* ===== Overlay 2D ===== */
 #cards2d{
-  position: fixed;   /* cobre a viewport toda */
+  position: fixed;
   inset: 0;
   z-index: 9;
-  display: none;     /* aparece só quando ativo */
-  pointer-events: none;
-  overflow: hidden;  /* JS controla scroll quando precisa */
-  padding: 0;        /* tira padding que deslocava */
+  display: none;          /* aparece só quando ativo */
+  pointer-events: none;   /* liga no .active */
+  overflow-y: auto;       /* rolagem vertical sem interferir no zoom custom */
+  overflow-x: hidden;
+  padding: 0;
+  /* Permite scroll vertical nativo; pinch/zoom horizontal fica com o JS */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
-#cards2d.active{ display: block; }
+#cards2d.active{
+  display: block;
+  pointer-events: auto;
+}
+#cards2d::-webkit-scrollbar{ width:0; height:0 }
+#cards2d{ scrollbar-width: none; -ms-overflow-style: none; }
 
 #cards2d .card{
   position: absolute;
@@ -65,6 +81,9 @@ canvas{ display:block; touch-action:none; }
   box-shadow: 0 8px 24px rgba(0,0,0,.35);
   font: 12px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,Inter,Arial;
   user-select: none; cursor: pointer; pointer-events: auto;
+}
+#cards2d .card.disabled{
+  opacity: 0.6; cursor: default; pointer-events: none;
 }
 
 #cards2d .card .num{
@@ -80,26 +99,78 @@ canvas{ display:block; touch-action:none; }
 #cards2d .card > .dur{ display:none !important; }
 #cards2d .card:hover .badges { opacity: 0; }
 
+/* ===== Badges (2 linhas; 1ª: pend esq / nc dir; 2ª: dur esq / % dir) ===== */
+#cards2d{
+  --badge-font: 10px;
+  --badge-pad-v: 2px;
+  --badge-pad-h: 6px;
+  --badge-minw: 22px;
+  --badge-gap: 4px;
+  --badge-top: 4px;
+}
+#cards2d .card .badges{
+  position: absolute;
+  left: 50%; top: var(--badge-top);
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: var(--badge-gap);
+  pointer-events: none;
+  width: 92%; max-width: 92%;
+}
+#cards2d .card .badge-row{
+  display: flex; align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: var(--badge-gap);
+}
+#cards2d .card .badge-row .slot{
+  display: inline-flex; align-items: center; gap: var(--badge-gap);
+  min-width: 0;
+}
+#cards2d .card .badge-row .slot.left  { justify-content: flex-start; }
+#cards2d .card .badge-row .slot.right { justify-content: flex-end; }
+#cards2d .card .badge{
+  pointer-events: none;
+  font: 700 var(--badge-font)/1.05 system-ui,-apple-system,"Segoe UI",Roboto,Inter,Arial;
+  padding: var(--badge-pad-v) var(--badge-pad-h);
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(0,0,0,.25);
+  color: #e6eef7;
+  opacity: .95;
+  min-width: var(--badge-minw);
+  text-align: center;
+}
+/* cores dos tipos */
+#cards2d .card .badge.dur     { border-color: rgba(88,166,255,.55);  background: rgba(88,166,255,.14);  color: #d6e8ff; }
+#cards2d .card .badge.pend    { border-color: rgba(210,153,34,.55);  background: rgba(210,153,34,.16);  color: #ffe8b3; }
+#cards2d .card .badge.nc      { border-color: rgba(248,81,73,.6);    background: rgba(248,81,73,.16);   color: #ffd9d6; }
+#cards2d .card .badge.percent { border-color: rgba(110,118,129,.55); background: rgba(110,118,129,.15); color: #e6eef7; }
+
 /* ===== HUD (rodapé) ===== */
 #hud{
   position: fixed; left: 0; right: 0; bottom: 0;
   z-index: 20;
-  display: flex; flex-wrap: wrap;
-  gap: 6px;
-  align-items: center; justify-content: center;
-  padding: 6px 8px;
   background: rgba(0,0,0,.45);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
-  color: #fff;
   border-top: 1px solid var(--border);
   border-radius: 10px 10px 0 0;
+  color: #fff;
   font-size: 13px;
-  touch-action: pan-y;
+
+  /* 3 linhas fixas, adaptável */
+  display: grid;
+  grid-auto-rows: min-content;
+  grid-template-rows: auto auto auto;
+  gap: 8px;
+  padding: 8px;
+  justify-items: center;
 }
 #hud .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-#hud .handle{ display:flex; align-items:center; gap:8px; cursor:grab; user-select:none; }
+#hud .handle{ display:flex; align-items:center; gap:8px; user-select:none; }
 #hud .grabber{ width:40px; height:5px; border-radius:4px; background:#58606b; opacity:.85; margin-right:4px; }
+
+/* Botão de recolher HUD */
 #hudToggle{
   border: 1px solid var(--border);
   background: var(--bg);
@@ -107,19 +178,23 @@ canvas{ display:block; touch-action:none; }
   border-radius: 8px;
   padding: 3px 6px;
   font-size: 12px; line-height: 1;
+  cursor: pointer;
 }
+
 #hud.collapsed .row:not(.handle){ display:none; }
+
 #hud button, #hud input, #hud label { touch-action: manipulation; }
 
-/* HUD colapsável */
-#hud.collapsed .row { display: none; }
-#hud.collapsed .row.head { display: flex; } /* mantenha só a primeira linha visível */
-
-/* Sliders */
+/* Sliders compactos */
 #hud input[type="range"]{
   width: clamp(120px, 35vw, 180px);
   height: 4px;
 }
+#hud input[type="range"].slim{
+  height: 4px;
+}
+#hud input[type="range"].slim::-webkit-slider-runnable-track{ height: 4px; }
+#hud input[type="range"].slim::-moz-range-track{ height: 4px; }
 
 /* ===== Botões padrão do HUD ===== */
 #hud .row > button{
@@ -144,7 +219,7 @@ canvas{ display:block; touch-action:none; }
 #hud .row > button:focus{ outline: none; }
 #hud .row > button:focus-visible{ box-shadow: 0 0 0 2px rgba(88,166,255,.25); }
 
-/* ===== Botão 2D (com estado ativo) ===== */
+/* ===== Botão 2D (estado ativo) ===== */
 :root{ --c-2d-off:#8b949e; --c-2d-on:#ff3b30; }
 #btn2D.mode2d{
   display:inline-flex; align-items:center; justify-content:center;
@@ -192,11 +267,12 @@ canvas{ display:block; touch-action:none; }
 }
 #btnNC:hover{ background: rgba(240,246,252,0.10); }
 #btnNC:active{ transform: scale(0.98); }
+#btnNC[aria-pressed="true"],
 #btnNC.active{
-  background: var(--red-strong);
+  background: var(--red);
   color: #fff;
-  border-color: var(--red-strong);
-  box-shadow: 0 0 12px rgba(255,59,48,0.35);
+  border-color: rgba(248,81,73,.9);
+  box-shadow: 0 0 0 2px rgba(248,81,73,.25);
 }
 
 /* ===== Dropdown FVS ===== */
@@ -250,6 +326,7 @@ canvas{ display:block; touch-action:none; }
   backdrop-filter: blur(14px) saturate(120%);
   animation: fadeIn .25s ease;
 }
+#doge-modal-backdrop.show{ display: flex; }
 @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
 
 #doge-modal{
@@ -262,10 +339,10 @@ canvas{ display:block; touch-action:none; }
   line-height: 1.35;
   border-radius: 16px;
   background:
-    linear-gradient(135deg, var(--modal-tint-strong, rgba(88,166,255,0.20)), transparent 60%),
-    linear-gradient( 45deg, var(--modal-tint-soft,   rgba(88,166,255,0.10)), transparent 55%),
+    linear-gradient(135deg, var(--modal-tint-strong), transparent 60%),
+    linear-gradient( 45deg, var(--modal-tint-soft),   transparent 55%),
     rgba(22,27,34,0.40);
-  border: 1px solid var(--modal-border, rgba(240,246,252,0.08));
+  border: 1px solid var(--modal-border);
   box-shadow: 0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
   color: var(--text);
   font-size: 14px;
@@ -317,10 +394,6 @@ canvas{ display:block; touch-action:none; }
 #doge-modal a.link-row:active{ transform: scale(0.99); }
 #doge-modal a.link-row svg{ width:14px; height:14px; stroke:currentColor; }
 
-#doge-modal-backdrop{ display: none; /* resto do estilo já está no seu CSS */ }
-#doge-modal-backdrop.show{ display: flex; }
-
-
 /* ===== Legend (se usado) ===== */
 #legend{
   position: fixed; right: 10px; top: 10px;
@@ -333,99 +406,7 @@ canvas{ display:block; touch-action:none; }
   font: 12px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,Inter,Arial;
 }
 
-/* ===== Responsividade ===== */
-@media (min-width: 900px){
-  #hud{ flex-wrap: nowrap; padding: 8px 10px; gap: 10px; }
-}
-@media (max-width: 480px){
-  #hud{ gap: 6px; padding: 6px 8px; }
-  #hud .row{ gap: 6px; }
-  #fvsSelect{ width: min(70vw, 360px); }
-}
-
-/* === States ativos em vermelho para NC e 2D === */
-#btnNC[aria-pressed="true"],
-#btnNC.active{
-  background: var(--red);
-  color: #fff;
-  border-color: rgba(248,81,73,.9);
-  box-shadow: 0 0 0 2px rgba(248,81,73,.25);
-}
-#btn2D[aria-pressed="true"] .badge,
-#btn2D.active .badge{
-  fill: rgba(248,81,73,.18);
-  stroke: rgba(248,81,73,.75);
-}
-#btn2D[aria-pressed="true"] .label,
-#btn2D.active .label{
-  fill: var(--red);
-}
-
-/* ===== Grid 2D com rolagem vertical (barra oculta) ===== */
-#cards2d{
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-#cards2d::-webkit-scrollbar{ width:0; height:0 }
-#cards2d{ scrollbar-width: none; -ms-overflow-style: none; }
-/* Grid 2D: deixa o browser rolar só na vertical; pinch/zoom é nosso */
-#cards2d{ touch-action: pan-y; overscroll-behavior: contain; }
-
-
-/* ===== Badges (2 linhas; 1ª: pend à esquerda / nc à direita; 2ª: dur à esquerda / % à direita) ===== */
-#cards2d{
-  /* defaults pequenos (JS sobrescreve) */
-  --badge-font: 10px;
-  --badge-pad-v: 2px;
-  --badge-pad-h: 6px;
-  --badge-minw: 22px;
-  --badge-gap: 4px;
-  --badge-top: 4px;
-}
-
-#cards2d .card .badges{
-  position: absolute;
-  left: 50%; top: var(--badge-top);
-  transform: translateX(-50%);
-  display: flex; flex-direction: column; gap: var(--badge-gap);
-  pointer-events: none;
-  width: 92%; max-width: 92%;
-}
-
-#cards2d .card .badge-row{
-  display: flex; align-items: center;
-  justify-content: space-between;   /* esquerda / direita */
-  width: 100%;
-  gap: var(--badge-gap);
-}
-
-#cards2d .card .badge-row .slot{
-  display: inline-flex; align-items: center; gap: var(--badge-gap);
-  min-width: 0;
-}
-#cards2d .card .badge-row .slot.left  { justify-content: flex-start; }
-#cards2d .card .badge-row .slot.right { justify-content: flex-end; }
-
-#cards2d .card .badge{
-  pointer-events: none;
-  font: 700 var(--badge-font)/1.05 system-ui,-apple-system,"Segoe UI",Roboto,Inter,Arial;
-  padding: var(--badge-pad-v) var(--badge-pad-h);
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.16);
-  background: rgba(0,0,0,.25);
-  color: #e6eef7;
-  opacity: .95;
-  min-width: var(--badge-minw);
-  text-align: center;
-}
-
-/* cores dos tipos */
-#cards2d .card .badge.dur     { border-color: rgba(88,166,255,.55);  background: rgba(88,166,255,.14);  color: #d6e8ff; }
-#cards2d .card .badge.pend    { border-color: rgba(210,153,34,.55);  background: rgba(210,153,34,.16);  color: #ffe8b3; }
-#cards2d .card .badge.nc      { border-color: rgba(248,81,73,.6);    background: rgba(248,81,73,.16);   color: #ffd9d6; }
-#cards2d .card .badge.percent { border-color: rgba(110,118,129,.55); background: rgba(110,118,129,.15); color: #e6eef7; }
-
-/* Progress bar (igual viewer.html) */
+/* ===== Progress bar (igual viewer.html) ===== */
 .q-linear-progress{ display:flex; align-items:center; gap:8px; }
 .q-linear-progress__track{ position:relative; flex:1; height:6px; background:rgba(240,246,252,0.10); border-radius:999px; overflow:hidden; }
 .q-linear-progress__bar{ position:absolute; inset:0 100% 0 0; background:currentColor; transition:width .45s ease; }
@@ -433,63 +414,12 @@ canvas{ display:block; touch-action:none; }
 .line-progress{ display:flex; align-items:center; gap:10px; }
 .line-progress .q-linear-progress{ margin-left:auto; min-width:96px; max-width:140px; }
 
-/* evita gestos nativos do navegador (pinch / double-tap) */
-#app canvas, #cards2d {
-  touch-action: none;
+/* ===== Responsividade ===== */
+@media (min-width: 900px){
+  #hud{ gap: 10px; padding: 8px 10px; }
 }
-
-/* evita bounce/overscroll e gestos de navegação por swipe */
-html, body, #app {
-  overscroll-behavior: none;
-}
-#app canvas{ touch-action: none; }
-
-/* Layout do HUD */
-#hud{
-  position: fixed; left: 0; right: 0; bottom: 0;
-  padding: 8px 10px;
-  background: rgba(20,24,32,.92);
-  backdrop-filter: blur(6px);
-  z-index: 20;
-}
-#hud .row{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 4px 0;
-}
-
-/* 1ª linha: dropdown + NC */
-#hud .row.head #fvsSelect{ flex: 1 1 260px; min-width: 180px; }
-#hud .row.head #btnNC{ flex: 0 0 auto; }
-
-/* 2ª linha: recenter + resetRot + reset + 2D */
-#hud .row.actions button{ height: 30px; padding: 0 10px; }
-
-/* 3ª linha: sliders (mais finos) */
-#hud .row.sliders{
-  gap: 12px;
-}
-#hud .row.sliders input[type="range"]{
-  height: 4px;
-  padding: 0;
-  accent-color: #6e7681;
-  min-width: 140px;
-}
-
-/* Compactação em telas menores */
-@media (max-width: 640px){
-  #hud{ padding: 6px 8px; }
+@media (max-width: 480px){
+  #hud{ gap: 6px; padding: 6px 8px; }
   #hud .row{ gap: 6px; }
-  #hud .row.actions button{ height: 28px; padding: 0 8px; }
-  #hud .row.sliders input[type="range"]{ height: 3px; min-width: 120px; }
+  #fvsSelect{ width: min(70vw, 360px); }
 }
-
-/* HUD colapsado (mantém só a head) */
-#hud.collapsed .row{ display: none; }
-#hud.collapsed .row.head{ display: flex; }
-
-/* Botões/inputs base */
-#hud button{ cursor: pointer; }
-#hud select, #hud button{ font: inherit; }
