@@ -195,6 +195,18 @@ canvas{ display:block; }
   gap:6px;
 }
 
+/* aumenta a altura e a área de toque da linha 3 (sliders) */
+#hud .hud-row-3 {
+  min-height: 44px;       /* altura mínima confortável para o dedo */
+  padding: 6px 0;         /* mais espaço em cima/baixo */
+  align-items: center;    /* garante centralização vertical */
+}
+#hud .hud-row-3 input[type="range"] {
+  height: 6px;            /* engrossa a barrinha */
+}
+#hud .hud-row-3 label {
+  font-size: 16px;        /* deixa o emoji/ícone um pouco maior */
+}
 /* Sliders compactos + alinhamento com emoji */
 #hud input[type="range"]{
   width: clamp(70px, 22vw, 120px);
