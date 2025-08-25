@@ -4,7 +4,8 @@
 
 import { State, savePrefs, loadPrefs, getQS, setQS } from './state.js';
 import { setFaceOpacity, applyExplode, recolorMeshes3D, apply2DVisual } from './geometry.js';
-import { render2DCards, recolorCards2D, show2D, hide2D } from './overlay2d.js';
+import { render2DCards, recolorCards2D, show2D, hide2D,
+         zoom2DStep, resetGridZoom, getMaxGridZoom, setGridZoom } from './overlay2d.js';
 import { buildColorMapForFVS, buildColorMapForFVS_NC } from './colors.js';
 import { syncSelectedColor } from './picking.js';
 import { recenterCamera, resetRotation, render } from './scene.js';
@@ -16,9 +17,10 @@ import { setRowResolver  as setRowResolver3D } from './picking.js';
 // ---- elementos
 let hudEl, fvsSelect, btnNC, opacityRange, explodeXYRange, explodeYRange, resetExplodeBtn, btn2D, btnRecenter, btnResetRot;
 let collapseBtn;
+let btnZoom2D; // NOVO
 
 // ============================
-// Índice FVS -> rows / lookup por nome (NC estrita = apenas NC>0)
+// Índice FVS -> rows / lookup por nome
 // ============================
 function buildFVSIndex(rows){
   const byFVS = new Map();
@@ -147,13 +149,11 @@ export function initHUD(){
   btn2D?.setAttribute('aria-pressed', String(is2D));
   btn2D?.classList.toggle('active', is2D);
 
-  // Índice FVS
+  // Dropdown FVS
   const fvsIndex = buildFVSIndex(apartamentos || []);
-
-  // Dropdown FVS (respeita NC on/off)
   populateFVSSelect(fvsSelect, fvsIndex, /*showNCOnly=*/State.NC_MODE);
 
-  // Seleção inicial (QS/prefs -> key)
+  // Seleção inicial
   let initialKey = '';
   const prefKey  = prefs?.fvs ? normFVSKey(prefs.fvs) : '';
   const qsKey    = qsFvs ? normFVSKey(qsFvs) : '';
@@ -173,7 +173,7 @@ export function initHUD(){
   setupHudResizeObserver();
 }
 
-// cria 3 linhas de layout + botão de colapsar
+// cria 3 linhas de layout + botão de colapsar + botão de zoom 2D
 function ensureHudLayout(){
   // handle + toggle
   let handle = hudEl.querySelector('.hud-handle');
@@ -181,39 +181,26 @@ function ensureHudLayout(){
     handle = document.createElement('div');
     handle.className = 'hud-handle';
     handle.innerHTML = `
-      <button id="hudToggle" class="btn sm" aria-expanded="true" title="Recolher HUD">▾</button>
+      <div class="row handle" id="hudHandle">
+        <div class="grabber" aria-hidden="true"></div>
+      </div>
     `;
     hudEl.prepend(handle);
   }
-  collapseBtn = handle.querySelector('#hudToggle');
-  // --- Toggle HUD pelo "grabber" (barrinha) ---
+  // Acessibilidade do handle (barrinha)
   const hudHandle = document.getElementById('hudHandle');
   if (hudHandle && hudEl) {
-    // acessibilidade + UX
     hudHandle.setAttribute('role', 'button');
     hudHandle.setAttribute('tabindex', '0');
     hudHandle.setAttribute('aria-label', 'Mostrar ou ocultar controles');
     hudHandle.style.cursor = 'pointer';
-
     const syncExpanded = () => {
       const collapsed = hudEl.classList.contains('collapsed');
       hudHandle.setAttribute('aria-expanded', String(!collapsed));
     };
-
-    const toggleHud = () => {
-      hudEl.classList.toggle('collapsed');
-      syncExpanded();
-    };
-
+    const toggleHud = () => { hudEl.classList.toggle('collapsed'); syncExpanded(); };
     hudHandle.addEventListener('click', toggleHud, { passive: true });
-    hudHandle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggleHud();
-      }
-    }, { passive: false });
-
-    // estado inicial
+    hudHandle.addEventListener('keydown', (e)=>{ if (e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleHud(); } }, { passive:false });
     syncExpanded();
   }
 
@@ -227,52 +214,46 @@ function ensureHudLayout(){
   if (!row3){ row3 = document.createElement('div'); row3.className = 'row hud-row-3 nowrap'; hudEl.appendChild(row3); }
   else { row3.classList.add('nowrap'); }
 
-    // --- PURGA de contêineres antigos que ficaram vazios (roubam espaço) ---
-  const leftovers = [
-    'row-sliders-opacity',
-    'row-camera',
-    'row-fvs',
-    'row-sliders-explodexy',
-    'row-sliders-explodey'
-  ];
-
-  leftovers.forEach(id => {
+  // PURGA de wrappers antigos
+  ['row-sliders-opacity','row-camera','row-fvs','row-sliders-explodexy','row-sliders-explodey'].forEach(id=>{
     const el = document.getElementById(id);
     if (!el) return;
-
-    // Se ainda houver algum filho útil, puxamos para dentro do HUD e removemos o wrapper.
-    // (em geral já movemos tudo com "put", mas por segurança:)
-    while (el.firstElementChild) {
-      hudEl.appendChild(el.firstElementChild);
-    }
-
-    // Remove nós de texto em branco para não “sobrar” nada
-    Array.from(el.childNodes).forEach(n => {
-      if (n.nodeType === 3 && !/\S/.test(n.nodeValue || '')) n.remove();
-    });
-
-    // Se ficar vazio (esperado), some com ele
-    if (!el.firstElementChild) {
-      el.remove();
-    }
+    while (el.firstElementChild) hudEl.appendChild(el.firstElementChild);
+    Array.from(el.childNodes).forEach(n=>{ if (n.nodeType===3 && !/\S/.test(n.nodeValue||'')) n.remove(); });
+    if (!el.firstElementChild) el.remove();
   });
 
   // util
   const put = (el, row) => { if (el && row && el.parentElement !== row) row.appendChild(el); };
 
-  // ===== 1ª linha: label da FVS + dropdown + NC =====
+  // 1ª linha: label da FVS + dropdown + NC
   const lblFvs = hudEl.querySelector('label[for="fvsSelect"]');
-  put(lblFvs,                 row1);
+  put(lblFvs, row1);
   put(document.getElementById('fvsSelect'), row1);
-  put(document.getElementById('btnNC'),     row1);
+  put(document.getElementById('btnNC'), row1);
 
-  // ===== 2ª linha: recentrar + resetRot + Reset Explode + 2D =====
+  // 2ª linha: recentrar + resetRot + Reset Explode + 2D + (NOVO) Zoom 2D
   put(document.getElementById('recenter'),     row2);
   put(document.getElementById('resetRot'),     row2);
   put(document.getElementById('resetExplode'), row2);
   put(document.getElementById('btn2D'),        row2);
 
-  // ===== 3ª linha: sliders com seus labels (emoji + slider lado a lado) =====
+  // cria o botão de zoom 2D ao lado do 2D (se ainda não existir)
+  btnZoom2D = document.getElementById('btnZoom2D');
+  if (!btnZoom2D){
+    btnZoom2D = document.createElement('button');
+    btnZoom2D.id = 'btnZoom2D';
+    btnZoom2D.type = 'button';
+    btnZoom2D.className = 'zoom2d';
+    btnZoom2D.title = 'Zoom do grid 2D';
+    btnZoom2D.setAttribute('aria-label','Zoom do grid 2D');
+    btnZoom2D.dataset.mode = 'plus'; // plus | minus
+    btnZoom2D.textContent = '🔍+';   // ícone inicial
+    btnZoom2D.style.display = 'none'; // só aparece no modo 2D
+    row2.appendChild(btnZoom2D);
+  }
+
+  // 3ª linha: sliders com seus labels
   const op = document.getElementById('opacity');
   const ex = document.getElementById('explodeXY');
   const ey = document.getElementById('explodeY');
@@ -283,28 +264,19 @@ function ensureHudLayout(){
 
   [op, ex, ey].forEach(r => r && r.classList.add('slim'));
 
-  // ordem: (emoji -> slider), repetido para cada controle
   put(lblOp, row3); put(op, row3);
   put(lblEx, row3); put(ex, row3);
   put(lblEy, row3); put(ey, row3);
 
-  // (opcional) remover a palavra "Controles" e algum botão antigo "HUD", se existirem
+  // remove texto "Controles" e botão HUD antigo (se existirem)
   hudEl.querySelector('.handle .title')?.remove();
   document.getElementById('hudToggle')?.remove();
-
 }
 
 // ============================
 // Eventos do HUD
 // ============================
 function wireEvents(fvsIndex){
-  // collapse
-  collapseBtn?.addEventListener('click', ()=>{
-    const collapsed = hudEl.classList.toggle('collapsed');
-    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-    collapseBtn.textContent = collapsed ? '▸' : '▾';
-  });
-
   // FVS change
   fvsSelect?.addEventListener('change', ()=>{
     const key = normFVSKey(fvsSelect.value);
@@ -381,11 +353,12 @@ function wireEvents(fvsIndex){
 
     // Sai do 2D
     State.flatten2D = 0;
-    const btn2D = document.getElementById('btn2D');
     btn2D?.setAttribute('aria-pressed','false');
     btn2D?.classList.remove('active');
     hide2D();
-    apply2DVisual(false);
+    // esconde o botão de zoom 2D
+    if (btnZoom2D) btnZoom2D.style.display = 'none';
+    btnZoom2D && (btnZoom2D.dataset.mode = 'plus', btnZoom2D.textContent = '🔍+');
 
     // Opacidade 100%
     State.faceOpacity = 1;
@@ -402,19 +375,46 @@ function wireEvents(fvsIndex){
     const turningOn = !(State.flatten2D >= 0.95);
 
     State.flatten2D = turningOn ? 1 : 0;
-    const btn2D = document.getElementById('btn2D');
     btn2D.setAttribute('aria-pressed', turningOn ? 'true' : 'false');
     btn2D.classList.toggle('active', turningOn);
 
     if (turningOn){
       apply2DVisual(true);
       show2D();
+      // mostra botão de zoom 2D
+      if (btnZoom2D){
+        btnZoom2D.style.display = 'inline-flex';
+        btnZoom2D.dataset.mode = 'plus';
+        btnZoom2D.textContent = '🔍+';
+      }
+      // garante começar em 1× quando ativa o 2D
+      setGridZoom(1);
       render2DCards();
     }else{
       apply2DVisual(false);
       hide2D();
+      if (btnZoom2D) btnZoom2D.style.display = 'none';
     }
     render();
+  });
+
+  // Botão de Zoom 2D
+  btnZoom2D?.addEventListener('click', ()=>{
+    if (!btnZoom2D) return;
+    const mode = btnZoom2D.dataset.mode || 'plus';
+    const ZMAX = getMaxGridZoom();
+
+    if (mode === 'plus'){
+      const z = Number(State.grid2DZoom || 1);
+      if (z < 1.5){ setGridZoom(2); }
+      else if (z < 3){ setGridZoom(4); }
+      else { setGridZoom(ZMAX); btnZoom2D.dataset.mode = 'minus'; btnZoom2D.textContent = '🔍−'; }
+    }else{
+      // minus → volta para o mínimo
+      resetGridZoom();
+      btnZoom2D.dataset.mode = 'plus';
+      btnZoom2D.textContent = '🔍+';
+    }
   });
 
   // Câmera
