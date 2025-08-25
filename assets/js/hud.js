@@ -170,11 +170,13 @@ export function initHUD(){
     applyFVSSelection(initialKey, fvsIndex);
   }
 
+  
   // Listeners
   wireEvents(fvsIndex);
 
   // Observer para mudanças no HUD (recalcula cards 2D)
   setupHudResizeObserver();
+  
 }
 
 // ============================
