@@ -3,11 +3,11 @@
 // ============================
 
 import { State, savePrefs, loadPrefs, getQS, setQS } from './state.js';
-import { setFaceOpacity, applyExplode, recolorMeshes3D, apply2DVisual, getTorre } from './geometry.js';
+import { setFaceOpacity, applyExplode, recolorMeshes3D, apply2DVisual } from './geometry.js';
 import { render2DCards, recolorCards2D, show2D, hide2D } from './overlay2d.js';
 import { buildColorMapForFVS, buildColorMapForFVS_NC } from './colors.js';
 import { syncSelectedColor } from './picking.js';
-import { applyOrbitToCamera, recenterCamera, resetRotation, render } from './scene.js';
+import { recenterCamera, resetRotation, render } from './scene.js';
 import { normFVSKey, normNameKey } from './utils.js';
 import { apartamentos } from './data.js';
 import { setRowsResolver as setRowsResolver2D } from './overlay2d.js';
@@ -15,9 +15,10 @@ import { setRowResolver  as setRowResolver3D } from './picking.js';
 
 // ---- elementos
 let hudEl, fvsSelect, btnNC, opacityRange, explodeXYRange, explodeYRange, resetExplodeBtn, btn2D, btnRecenter, btnResetRot;
+let collapseBtn;
 
 // ============================
-// Índice FVS -> rows / lookup por nome
+// Índice FVS -> rows / lookup por nome (NC estrita = apenas NC>0)
 // ============================
 function buildFVSIndex(rows){
   const byFVS = new Map();
@@ -35,11 +36,9 @@ function buildFVSIndex(rows){
     bucket.rows.push(r);
     bucket.counts.total++;
 
-    // NC reais (não considera pendências nem "em andamento")
     const nc = Number(r?.qtd_nao_conformidades_ultima_inspecao ?? r?.nao_conformidades ?? 0) || 0;
     if (nc > 0) bucket.counts.withNC++;
 
-    // lookup por NOME (chave normalizada)
     const nome = String(r?.nome ?? r?.apartamento ?? r?.apto ?? '').trim();
     const nk = normNameKey(nome);
     if (nk && !bucket.rowsByNameKey.has(nk)) bucket.rowsByNameKey.set(nk, r);
@@ -51,12 +50,10 @@ function buildFVSIndex(rows){
 export function applyFVSAndRefresh(){
   const fvsIndex = buildFVSIndex(apartamentos || []);
 
-  // Tenta usar a KEY atual; cai para a LABEL antiga; senão pega a primeira disponível
   let key = State.CURRENT_FVS_KEY || '';
   if (!key && State.CURRENT_FVS_LABEL) key = normFVSKey(State.CURRENT_FVS_LABEL);
   if (!key || !fvsIndex.has(key)) key = fvsIndex.keys().next().value || '';
 
-  // Garante <select> populado corretamente (respeitando NC on/off)
   if (fvsSelect) {
     populateFVSSelect(fvsSelect, fvsIndex, /*showNCOnly=*/!!State.NC_MODE);
     if (key && fvsIndex.has(key)) fvsSelect.value = key;
@@ -79,8 +76,6 @@ function populateFVSSelect(selectEl, fvsIndex, showNCOnly=false){
   for (const k of keys){
     const b = fvsIndex.get(k);
     const c = b?.counts || { total:0, withNC:0 };
-
-    // Em modo NC, **só** mostra FVS com pelo menos 1 NC
     if (showNCOnly && (c.withNC || 0) === 0) continue;
 
     const label = showNCOnly
@@ -88,7 +83,7 @@ function populateFVSSelect(selectEl, fvsIndex, showNCOnly=false){
       : `${b.label} (${c.total||0})`;
 
     const opt = document.createElement('option');
-    opt.value = k;          // value = KEY normalizada
+    opt.value = k;
     opt.textContent = label;
     selectEl.appendChild(opt);
   }
@@ -98,21 +93,17 @@ function applyFVSSelection(fvsKey, fvsIndex){
   const bucket = fvsIndex.get(fvsKey);
   const rows   = bucket?.rows || [];
 
-  // Atualiza estado da FVS
   State.CURRENT_FVS_KEY   = fvsKey;
   State.CURRENT_FVS_LABEL = bucket?.label || '';
 
-  // Injetar resolvers
-  setRowsResolver2D(() => rows); // 2D usa a lista completa da FVS
+  setRowsResolver2D(() => rows);
   const byName = bucket?.rowsByNameKey || new Map();
   setRowResolver3D((nameKey)=> byName.get(nameKey) || null);
 
-  // COLOR_MAP conforme modo
   State.COLOR_MAP = State.NC_MODE
-    ? buildColorMapForFVS_NC(rows)      // só vermelho onde há NC; demais cinza
+    ? buildColorMapForFVS_NC(rows)
     : buildColorMapForFVS(rows);
 
-  // Recolor/refresh
   recolorMeshes3D();
   recolorCards2D();
   syncSelectedColor();
@@ -133,38 +124,28 @@ export function initHUD(){
   btn2D           = document.getElementById('btn2D');
   btnRecenter     = document.getElementById('recenter');
   btnResetRot     = document.getElementById('resetRot');
-  
-  
+
+  if (!hudEl) return;
+
+  // --- cria layout em 3 linhas + handle/colapse (idempotente) ---
+  ensureHudLayout();
+
   // Prefs + QS iniciais
-  const btnHudToggle = document.getElementById('hudToggle');
-const prefs = loadPrefs() || {};
-if (prefs.hudCollapsed) {
-  hudEl.classList.add('collapsed');
-}
-
-btnHudToggle?.addEventListener('click', ()=>{
-  hudEl.classList.toggle('collapsed');
-  const p = loadPrefs() || {};
-  p.hudCollapsed = hudEl.classList.contains('collapsed');
-  savePrefs(p);
-  // Reposiciona o 2D (ele usa a altura do HUD para bottom)
-  if (State.flatten2D >= 0.95) render2DCards();
-});
-
-  const qsFvs = getQS('fvs'); // pode ser KEY antiga ou label
+  const prefs = loadPrefs();
+  const qsFvs = getQS('fvs');
   const qsNc  = getQS('nc');
   State.NC_MODE = (qsNc != null) ? (qsNc === '1' || qsNc === 'true') : !!prefs.nc;
 
   // estados visuais iniciais
-  btnNC.setAttribute('aria-pressed', String(!!State.NC_MODE));
-  btnNC.classList.toggle('active', !!State.NC_MODE);
+  btnNC?.setAttribute('aria-pressed', String(!!State.NC_MODE));
+  btnNC?.classList.toggle('active', !!State.NC_MODE);
 
   if (explodeXYRange) explodeXYRange.value = String(State.explodeXY ?? 0);
   if (explodeYRange)  explodeYRange.value  = String(State.explodeY  ?? 0);
 
   const is2D = (State.flatten2D >= 0.95);
-  btn2D.setAttribute('aria-pressed', String(is2D));
-  btn2D.classList.toggle('active', is2D);
+  btn2D?.setAttribute('aria-pressed', String(is2D));
+  btn2D?.classList.toggle('active', is2D);
 
   // Índice FVS
   const fvsIndex = buildFVSIndex(apartamentos || []);
@@ -174,7 +155,7 @@ btnHudToggle?.addEventListener('click', ()=>{
 
   // Seleção inicial (QS/prefs -> key)
   let initialKey = '';
-  const prefKey  = prefs.fvs ? normFVSKey(prefs.fvs) : '';
+  const prefKey  = prefs?.fvs ? normFVSKey(prefs.fvs) : '';
   const qsKey    = qsFvs ? normFVSKey(qsFvs) : '';
   if (qsKey && fvsIndex.has(qsKey)) initialKey = qsKey;
   else if (prefKey && fvsIndex.has(prefKey)) initialKey = prefKey;
@@ -185,25 +166,76 @@ btnHudToggle?.addEventListener('click', ()=>{
     applyFVSSelection(initialKey, fvsIndex);
   }
 
-  
   // Listeners
   wireEvents(fvsIndex);
 
   // Observer para mudanças no HUD (recalcula cards 2D)
   setupHudResizeObserver();
-  
+}
+
+// cria 3 linhas de layout + botão de colapsar
+function ensureHudLayout(){
+  // handle + toggle
+  let handle = hudEl.querySelector('.hud-handle');
+  if (!handle){
+    handle = document.createElement('div');
+    handle.className = 'hud-handle';
+    handle.innerHTML = `
+      <button id="hudToggle" class="btn sm" aria-expanded="true" title="Recolher HUD">▾</button>
+    `;
+    hudEl.prepend(handle);
+  }
+  collapseBtn = handle.querySelector('#hudToggle');
+
+  // linhas
+  let row1 = hudEl.querySelector('.hud-row-1');
+  let row2 = hudEl.querySelector('.hud-row-2');
+  let row3 = hudEl.querySelector('.hud-row-3');
+
+  if (!row1){ row1 = document.createElement('div'); row1.className = 'row hud-row-1'; hudEl.appendChild(row1); }
+  if (!row2){ row2 = document.createElement('div'); row2.className = 'row hud-row-2'; hudEl.appendChild(row2); }
+  if (!row3){ row3 = document.createElement('div'); row3.className = 'row hud-row-3'; hudEl.appendChild(row3); }
+
+  // move elementos para as linhas (se existirem)
+  const put = (el, row) => { if (el && row && el.parentElement !== row) row.appendChild(el); };
+
+  // 1ª linha: dropdown + NC
+  put(document.getElementById('fvsSelect'), row1);
+  put(document.getElementById('btnNC'),     row1);
+
+  // 2ª linha: recentrar + resetRot + Reset Explode + 2D
+  put(document.getElementById('recenter'),     row2);
+  put(document.getElementById('resetRot'),     row2);
+  put(document.getElementById('resetExplode'), row2);
+  put(document.getElementById('btn2D'),        row2);
+
+  // 3ª linha: sliders (opacidade / explodeXY / explodeY)
+  // encurta visualmente com classes
+  const op = document.getElementById('opacity');
+  const ex = document.getElementById('explodeXY');
+  const ey = document.getElementById('explodeY');
+  [op,ex,ey].forEach(r => r && r.classList.add('slim'));
+
+  put(op, row3); put(ex, row3); put(ey, row3);
 }
 
 // ============================
 // Eventos do HUD
 // ============================
 function wireEvents(fvsIndex){
+  // collapse
+  collapseBtn?.addEventListener('click', ()=>{
+    const collapsed = hudEl.classList.toggle('collapsed');
+    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+    collapseBtn.textContent = collapsed ? '▸' : '▾';
+  });
+
   // FVS change
   fvsSelect?.addEventListener('change', ()=>{
     const key = normFVSKey(fvsSelect.value);
     setQS({ fvs: key || null });
     const prefs = loadPrefs() || {};
-    prefs.fvs = key;                // salva KEY
+    prefs.fvs = key;
     savePrefs(prefs);
 
     applyFVSSelection(key, fvsIndex);
@@ -222,12 +254,9 @@ function wireEvents(fvsIndex){
     prefs.nc = on;
     savePrefs(prefs);
 
-    // Recarrega dropdown filtrando por FVS com NC>0 quando ON
     populateFVSSelect(fvsSelect, fvsIndex, /*showNCOnly=*/on);
 
-    // Mantém seleção coerente
     if (State.CURRENT_FVS_KEY && fvsIndex.has(State.CURRENT_FVS_KEY)){
-      // se a FVS atual sumiu no modo NC (sem NC), pega a primeira disponível
       if (![...fvsSelect.options].some(o=>o.value===State.CURRENT_FVS_KEY)){
         State.CURRENT_FVS_KEY = fvsSelect.options[0]?.value || '';
       }
@@ -248,8 +277,8 @@ function wireEvents(fvsIndex){
   // Opacidade
   opacityRange?.addEventListener('input', ()=>{
     const v = Math.max(0, Math.min(100, Number(opacityRange.value)||0)) / 100;
-    State.faceOpacity = v;          // guarda no estado
-    setFaceOpacity(v);              // aplica no 3D
+    State.faceOpacity = v;
+    setFaceOpacity(v);
     render();
   });
 
@@ -277,6 +306,7 @@ function wireEvents(fvsIndex){
 
     // Sai do 2D
     State.flatten2D = 0;
+    const btn2D = document.getElementById('btn2D');
     btn2D?.setAttribute('aria-pressed','false');
     btn2D?.classList.remove('active');
     hide2D();
@@ -293,21 +323,19 @@ function wireEvents(fvsIndex){
   });
 
   // Toggle 2D
-  btn2D?.addEventListener('click', ()=>{
+  document.getElementById('btn2D')?.addEventListener('click', ()=>{
     const turningOn = !(State.flatten2D >= 0.95);
 
     State.flatten2D = turningOn ? 1 : 0;
+    const btn2D = document.getElementById('btn2D');
     btn2D.setAttribute('aria-pressed', turningOn ? 'true' : 'false');
     btn2D.classList.toggle('active', turningOn);
 
     if (turningOn){
-      // 3D: faces 0 e linhas discretas (sem brilho branco)
       apply2DVisual(true);
-      // 2D overlay: por cima
       show2D();
       render2DCards();
     }else{
-      // 3D: restaura opacidade anterior e linhas padrão + recolor
       apply2DVisual(false);
       hide2D();
     }
@@ -315,31 +343,11 @@ function wireEvents(fvsIndex){
   });
 
   // Câmera
-// Câmera
-btnRecenter?.addEventListener('click', ()=>{
-  // Se tivermos a torre carregada, recalcula o enquadramento igual ao boot
-  const torre = getTorre?.();
-  if (torre) {
-    const bb = new THREE.Box3().setFromObject(torre);
-    const c  = bb.getCenter(new THREE.Vector3());
-    const s  = bb.getSize(new THREE.Vector3());
-
-    // alvo no centro, com “desce um pouco” (12% da altura)
-    State.orbitTarget.copy(c);
-    State.orbitTarget.y += s.y * 0.12;
-
-    // raio para caber no viewport (mesma heurística do boot)
-    const diag = Math.hypot(s.x, s.z);
-    State.radius = Math.max(12, diag * 1.6);
-
-    applyOrbitToCamera();
-  } else {
-    // fallback (se algo der errado, usa o recenter antigo)
+  document.getElementById('recenter')?.addEventListener('click', ()=>{
     recenterCamera(null, 28);
-  }
-  render();
-});
-  btnResetRot?.addEventListener('click', ()=>{
+    render();
+  });
+  document.getElementById('resetRot')?.addEventListener('click', ()=>{
     resetRotation();
     render();
   });
