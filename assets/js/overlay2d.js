@@ -144,6 +144,149 @@ function hasNC(row){
   const nc = Number(row.qtd_nao_conformidades_ultima_inspecao ?? row.nao_conformidades ?? 0) || 0;
   return nc > 0;
 }
+// Recolore apenas (quando trocar FVS/tema) mantendo grade fixa
+export function recolorCards2D(){
+  if (!host) return;
+
+  // lookup das linhas da FVS atual
+  const rowsMap = (function buildRowsLookup(){
+    const rows = (getRowsForCurrentFVS ? (getRowsForCurrentFVS() || []) : []);
+    const map = new Map();
+    for (const r of rows){
+      const aptName = String(r.nome ?? r.apartamento ?? r.apto ?? '').trim();
+      const key = normNameKey(aptName);
+      if (!key) continue;
+      map.set(key, r);
+    }
+    return map;
+  })();
+
+  const NC_MODE = !!State.NC_MODE;
+
+  const cards = host.querySelectorAll('.card');
+  cards.forEach(card=>{
+    const apt = card.dataset.apto || '';
+    const pav = card.dataset.pav  || '';
+    const key = card.dataset.key || normNameKey(apt);
+    const row = rowsMap.get(key) || null;
+
+    // guarda a row para o clique abrir o modal com dados corretos
+    card._row = row;
+    card._hasData = !!row;
+
+    // dados para badges/visual
+    const nc   = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0;
+    const pend = Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0;
+    const perc = Number(row?.percentual_ultima_inspecao ?? row?.percentual);
+    const durN = Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0;
+
+    // Em modo NC, só mostra badges para quem tem NC
+    const showData = !NC_MODE || (nc > 0);
+
+    // ----- badges -----
+    let badges = card.querySelector('.badges');
+    if (!badges){
+      badges = document.createElement('div');
+      badges.className = 'badges';
+      card.appendChild(badges);
+    }
+    badges.innerHTML = '';
+
+    if (showData){
+      // 1ª linha: Pend (esq) | NC (dir)
+      const rowTop = document.createElement('div');
+      rowTop.className = 'badge-row';
+      const left  = document.createElement('div'); left.className = 'slot left';
+      const right = document.createElement('div'); right.className = 'slot right';
+
+      if (pend > 0){
+        const b = document.createElement('span');
+        b.className = 'badge pend';
+        b.textContent = String(pend);
+        b.title = `Pendências: ${pend}`;
+        left.appendChild(b);
+      }
+      if (nc > 0){
+        const b = document.createElement('span');
+        b.className = 'badge nc';
+        b.textContent = String(nc);
+        b.title = `Não conformidades: ${nc}`;
+        right.appendChild(b);
+      }
+      if (left.childElementCount || right.childElementCount){
+        rowTop.append(left, right);
+        badges.appendChild(rowTop);
+      }
+
+      // 2ª linha: Duração (esq) | % (dir)
+      const rowBottom = document.createElement('div');
+      rowBottom.className = 'badge-row';
+      const left2  = document.createElement('div'); left2.className = 'slot left';
+      const right2 = document.createElement('div'); right2.className = 'slot right';
+
+      if (durN > 0){
+        const b = document.createElement('span');
+        b.className = 'badge dur';
+        b.textContent = String(Math.round(durN));
+        b.title = `Duração (dias): ${Math.round(durN)}`;
+        left2.appendChild(b);
+      }
+      if (Number.isFinite(perc)){
+        const b = document.createElement('span');
+        b.className = 'badge percent';
+        b.textContent = `${Math.round(perc)}%`;
+        b.title = `Percentual executado`;
+        right2.appendChild(b);
+      }
+      if (left2.childElementCount || right2.childElementCount){
+        rowBottom.append(left2, right2);
+        badges.appendChild(rowBottom);
+      }
+    }
+
+    // ----- visual / clicabilidade -----
+    if (row){
+      if (showData){
+        const color = pickFVSColor(apt, pav, State.COLOR_MAP);
+        const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
+        card.style.borderColor = color;
+        card.style.backgroundColor = hexToRgba(color, a);
+        card.style.opacity = '1';
+        card.style.pointerEvents = 'auto';
+        card.style.cursor = 'pointer';
+        card.classList.remove('disabled');
+        card.title = apt;
+      }else{
+        // “sem dados” para quem não tem NC no modo NC
+        card.style.borderColor = 'rgba(110,118,129,.6)';
+        card.style.backgroundColor = 'rgba(34,40,53,.60)';
+        card.style.opacity = '0.85';
+        card.style.pointerEvents = 'none';
+        card.style.cursor = 'default';
+        card.classList.add('disabled');
+        card.title = '';
+      }
+    }else{
+      // sem dados de verdade
+      card.style.borderColor = 'rgba(110,118,129,.6)';
+      card.style.backgroundColor = 'rgba(34,40,53,.60)';
+      card.style.opacity = '0.85';
+      card.style.pointerEvents = NC_MODE ? 'none' : 'auto';
+      card.style.cursor = NC_MODE ? 'default' : 'pointer';
+      if (NC_MODE) card.classList.add('disabled'); else card.classList.remove('disabled');
+    }
+
+    // realce NC no modo NC
+    if (NC_MODE && nc > 0){
+      card.style.filter = 'none';
+      card.style.opacity = '1';
+      card.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
+    }else{
+      card.style.filter = 'none';
+      card.style.boxShadow = 'none';
+    }
+  });
+}
 
 /* ===== Render ===== */
 export function render2DCards(){
