@@ -8,6 +8,9 @@ import { State } from './state.js';
 let backdrop, modal, titleEl, pillEl, contentEl, closeBtn;
 let lastFocused = null;
 
+// protege contra “clique fantasma” ao abrir
+let _modalJustOpenedAt = 0;
+
 // ---------------
 // Inicialização
 // ---------------
@@ -41,6 +44,21 @@ export function initModal(){
     if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
     else if (!e.shiftKey && document.activeElement === last){ first.focus(); e.preventDefault(); }
   });
+
+  // --- Bloqueio de “clique fantasma” nos primeiros ~400ms após abrir ---
+  function suppressGhostClick(e){
+    if (!backdrop.classList.contains('show')) return;
+    const dt = performance.now() - _modalJustOpenedAt;
+    if (dt < 400){
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }
+  // captura: garante que roda antes de qualquer outro handler
+  backdrop.addEventListener('click',        suppressGhostClick, true);
+  modal.addEventListener('click',           suppressGhostClick, true);
+  backdrop.addEventListener('pointerdown',  suppressGhostClick, true);
+  modal.addEventListener('pointerdown',     suppressGhostClick, true);
 }
 
 // ---------------
@@ -63,8 +81,9 @@ export function openAptModal({ id, floor=null, row=null, tintHex=null }){
   const aptKey  = normAptoId(aptName);
 
   // Título = número do apto (sem FVS)
-const aptNameForTitle = row?.nome ?? row?.apartamento ?? id ?? 'Apartamento';
-titleEl.textContent = aptNameForTitle;
+  const aptNameForTitle = row?.nome ?? row?.apartamento ?? id ?? 'Apartamento';
+  titleEl.textContent = aptNameForTitle;
+
   // Pill curto (igual viewer): mostra Duração OU Progresso
   const pill = buildHeaderPill(row);
   pillEl.textContent = pill;
@@ -82,6 +101,19 @@ titleEl.textContent = aptNameForTitle;
   backdrop.classList.add('show');
   backdrop.setAttribute('aria-hidden','false');
   setTimeout(()=> closeBtn?.focus(), 0);
+
+  // 🔒 Bloquear eventos por 2 frames para matar click fantasma
+  _modalJustOpenedAt = performance.now();
+  backdrop.style.pointerEvents = 'none';
+  modal.style.pointerEvents = 'none';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    backdrop.style.pointerEvents = 'auto';
+    modal.style.pointerEvents = 'auto';
+  }));
+
+  // Desabilita eventos no canvas 3D enquanto o modal está aberto
+  const canvas = document.querySelector('#app canvas');
+  if (canvas) canvas.style.pointerEvents = 'none';
 }
 
 /** Fecha o modal e restaura foco */
@@ -89,6 +121,11 @@ export function closeModal(){
   if (!backdrop) return;
   backdrop.classList.remove('show');
   backdrop.setAttribute('aria-hidden','true');
+
+  // reabilita canvas 3D
+  const canvas = document.querySelector('#app canvas');
+  if (canvas) canvas.style.pointerEvents = 'auto';
+
   if (lastFocused && typeof lastFocused.focus === 'function'){
     setTimeout(()=> lastFocused.focus(), 0);
   }
