@@ -3,7 +3,7 @@
 // ============================
 
 import { State } from './state.js';
-
+import { clamp } from './utils.js';
 export let scene, renderer, camera;
 
 // Alvo do orbit (reutiliza State.orbitTarget)
@@ -57,6 +57,14 @@ export function initScene(){
     userSelect: 'none',
     msTouchAction: 'none'
   });
+  // Defaults seguros antes de qualquer uso
+if (!State.orbitTarget || typeof State.orbitTarget.x !== 'number') {
+  State.orbitTarget = new THREE.Vector3(0, 0, 0);
+}
+if (!Number.isFinite(State.theta))  State.theta  = Math.PI * 0.25; // ~45°
+if (!Number.isFinite(State.phi))    State.phi    = Math.PI * 0.35; // inclinação
+if (!Number.isFinite(State.radius)) State.radius = 28;             // distância
+
 
   // Container
   const app = getAppEl();
