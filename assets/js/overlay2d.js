@@ -8,6 +8,13 @@ import { pickFVSColor } from './colors.js';
 import { apartamentos } from './data.js';
 import { openAptModal } from './modal.js';
 
+// Zoom do grid 2D (fator global)
+if (State.grid2DZoom == null) State.grid2DZoom = 1;
+const ZOOM_MIN = 0.6, ZOOM_MAX = 2.2;
+const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
+
+let _zoomHandlersAttached = false;
+
 // Elemento host
 let host = null;
 
@@ -20,9 +27,12 @@ export function setRowsResolver(fn){
   getRowsForCurrentFVS = (typeof fn === 'function') ? fn : null;
 }
 
-/** Inicializa referencias do overlay 2D */
 export function initOverlay2D(){
   host = document.getElementById('cards2d');
+  if (!_zoomHandlersAttached && host){
+    attach2DZoomHandlers(host);
+    _zoomHandlersAttached = true;
+  }
 }
 
 /* ===== Zoom do grid (nº de linhas) ===== */
@@ -461,7 +471,8 @@ function attach2DZoomHandlers(el){
   let hGap = Math.max(12, Math.floor(paneW * 0.014));
   let vGap = Math.max(10, Math.floor(paneH * 0.014));
 
- const TARGET_ROWS = Math.max(3, Math.min(20, Math.round(State.grid2DRows || 8)));
+ const BASE_ROWS    = 8;
+const TARGET_ROWS  = Math.max(3, Math.min(20, Math.round(BASE_ROWS / (State.grid2DZoom || 1))));
 
 
   let cardH = Math.floor((paneH - (TARGET_ROWS-1)*vGap) / TARGET_ROWS);
@@ -527,6 +538,71 @@ function attach2DZoomHandlers(el){
 
   host.style.overflowY = 'auto';
   host.style.overflowX = 'hidden';
+}
+
+function attach2DZoomHandlers(el){
+  // Permite scroll vertical do host, mas a gente controla pinch/zoom
+  el.style.touchAction = 'pan-y';
+  el.style.overscrollBehavior = 'contain';
+
+  const ptrs = new Map(); // id -> {x,y}
+  let prevDist = null;
+
+  const dist = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
+
+  // Pointer Events (Android/Chrome/Edge)
+  el.addEventListener('pointerdown', (e)=>{
+    if (e.pointerType === 'touch'){
+      el.setPointerCapture?.(e.pointerId);
+      ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    }
+  }, { passive:false });
+
+  el.addEventListener('pointermove', (e)=>{
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
+
+    if (ptrs.size >= 2){
+      const [p0,p1] = [...ptrs.values()];
+      const d = dist(p0,p1);
+      if (prevDist){
+        const s = d / prevDist;
+        State.grid2DZoom = clamp((State.grid2DZoom||1) * s, ZOOM_MIN, ZOOM_MAX);
+        render2DCards();
+      }
+      prevDist = d;
+      e.preventDefault(); // evita zoom nativo e scroll lateral
+    }
+  }, { passive:false });
+
+  const clear = ()=>{
+    ptrs.clear();
+    prevDist = null;
+  };
+  el.addEventListener('pointerup', clear, { passive:true });
+  el.addEventListener('pointercancel', clear, { passive:true });
+
+  // Trackpad: ctrl+wheel (pinch) ou rolagem horizontal mais forte que a vertical
+  el.addEventListener('wheel', (e)=>{
+    const horiz = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    const pinch = e.ctrlKey === true;
+    if (horiz || pinch){
+      e.preventDefault();
+      const delta = pinch ? e.deltaY : -e.deltaX; // deltaX direita -> zoom in
+      const factor = Math.exp(-delta * 0.0018);
+      State.grid2DZoom = clamp((State.grid2DZoom||1) * factor, ZOOM_MIN, ZOOM_MAX);
+      render2DCards();
+    }
+  }, { passive:false });
+
+  // Safari iOS (eventos de gesto proprietários)
+  el.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, { passive:false });
+  el.addEventListener('gesturechange', (e)=>{
+    e.preventDefault();
+    // e.scale é relativo; usamos como alvo aproximado
+    State.grid2DZoom = clamp(e.scale, ZOOM_MIN, ZOOM_MAX);
+    render2DCards();
+  }, { passive:false });
 }
 
 /** Recolore apenas (quando trocar FVS/tema) mantendo grade fixa */
