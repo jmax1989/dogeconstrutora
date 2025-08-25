@@ -1,9 +1,11 @@
 // ============================
 // Picking (raycast), Hover (tooltip) e Seleção
+// Regra TRAVADA: usamos SEMPRE userData.nome (string exata) para buscar os dados.
+// NADA de normalização. O setRowResolver(fn) deve receber/retornar por chave exata.
 // ============================
 
 import { State } from './state.js';
-import { showTip, hideTip, normNameKey } from './utils.js';
+import { showTip, hideTip } from './utils.js'; // <- sem normNameKey aqui
 import { pickFVSColor } from './colors.js';
 import { camera, renderer } from './scene.js';
 import { getPickTargets, stepX, stepZ } from './geometry.js';
@@ -12,7 +14,8 @@ import { openAptModal } from './modal.js';
 let raycaster = null;
 let mouse = null;
 
-// Resolver injetável: recebe nomeKey normalizado -> row | null
+// Resolver injetável: recebe o **nome exato** (ex.: "301") -> row | null
+// IMPORTANTE: em quem injeta (hud.js), construa o mapa por "nome"/"apartamento" EXATO.
 let getRowForApt = null;
 export function setRowResolver(fn){
   getRowForApt = (typeof fn === 'function') ? fn : null;
@@ -22,6 +25,41 @@ export function setRowResolver(fn){
 function isNCRow(row){
   const nc = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0;
   return nc > 0;
+}
+
+// Logger de depuração (liga/desliga com window.__PICK_DEBUG = true/false)
+function debugLogPick(hit){
+  try{
+    if (!window.__PICK_DEBUG) return;
+    if (!hit) return;
+    const o = hit.object;
+    const g = o?.parent;
+
+    // caminho hierárquico até a raiz
+    const path = [];
+    let p = o;
+    while (p) { path.push(p.name || p.type); p = p.parent; }
+    const pathStr = path.reverse().join(' ▸ ');
+
+    const nomeUD = String(g?.userData?.nome ?? '').trim();
+    const pavUD  = String(g?.userData?.pavimento_origem ?? g?.userData?.levelIndex ?? '').trim();
+
+    console.groupCollapsed('%c[PICK 3D]', 'background:#eef;padding:2px 6px;border-radius:6px;color:#123');
+    console.log('Objeto clicado (mesh):', o);
+    console.log('Grupo do apto (parent):', g);
+    console.table({
+      mesh_uuid: o?.uuid,
+      mesh_name: o?.name || '(sem name)',
+      group_name: g?.name || '(sem name)',
+      apto_nome_usado: nomeUD || '(vazio)',
+      pavimento_userData: pavUD || '(vazio)',
+      instanceId: ('instanceId' in hit) ? hit.instanceId : null,
+      faceIndex: ('faceIndex' in hit) ? hit.faceIndex : null
+    });
+    console.log('userData do GRUPO:', { ...g?.userData });
+    console.log('hierarquia:', pathStr);
+    console.groupEnd();
+  }catch(_){}
 }
 
 // =========== init ===========
@@ -70,13 +108,26 @@ function onPointerClick(e){
   // Em 2D, o click abre modal pelos cards — não pelo 3D
   if (State.flatten2D >= 0.95) { hideTip(0); return; }
 
-  const g = pickAtClientXY(e.clientX, e.clientY);
-  if (!g) { hideTip(0); return; }
+  const pick = pickAtClientXY(e.clientX, e.clientY);
+  if (!pick) { hideTip(0); return; }
 
-  const nome = String(g.userData?.nome || g.userData?.apto || g.name || '').trim();
-  const pav  = String(g.userData?.pavimento_origem ?? g.userData?.levelIndex ?? '');
-  const nameKey = normNameKey(nome);
-  const row  = getRowForApt ? (getRowForApt(nameKey) || null) : null;
+  // O grupo retornado tem os dados “oficiais” do apto em userData
+  const g = pick.g;
+  const hit = pick.hit;
+
+  debugLogPick(hit);
+
+  // REGRAS TRAVADAS: usar SEMPRE userData.nome (string exata)
+  const nome = String(g.userData?.nome ?? '').trim();
+  const pav  = String(g.userData?.pavimento_origem ?? g.userData?.levelIndex ?? '').trim();
+
+  if (!nome){
+    console.warn('[picking] userData.nome ausente no grupo clicado; abortando.');
+    hideTip(0);
+    return;
+  }
+
+  const row  = getRowForApt ? (getRowForApt(nome) || null) : null;
 
   // NC MODE: só pode clicar se tiver NC>0
   if (State.NC_MODE && !isNCRow(row)) {
@@ -86,9 +137,7 @@ function onPointerClick(e){
 
   const hex  = pickFVSColor(nome, pav, State.COLOR_MAP);
 
-  // (opcional) destacar leve sem “brilho branco”: mantemos edges como estão
   selectGroup(g);
-
   openAptModal({ id: nome, floor: pav, row, tintHex: hex });
 }
 
@@ -101,19 +150,21 @@ function onPointerMove(e){
   if (now - lastHoverTS < HOVER_THROTTLE_MS) return;
   lastHoverTS = now;
 
-  const g = pickAtClientXY(e.clientX, e.clientY, /*forHover=*/true);
-  if (!g) { hideTip(60); return; }
+  const pick = pickAtClientXY(e.clientX, e.clientY, /*forHover=*/true);
+  if (!pick) { hideTip(60); return; }
 
-  const nome = String(g.userData?.nome || g.userData?.apto || g.name || '').trim();
+  const g = pick.g;
+  const nome = String(g.userData?.nome ?? '').trim();
 
-  // Em NC, não exibir tooltip para itens sem NC (coerente com “não clicável”)
+  if (!nome){ hideTip(60); return; }
+
+  // Em NC, não exibir tooltip para itens sem NC
   if (State.NC_MODE){
-    const nameKey = normNameKey(nome);
-    const row = getRowForApt ? (getRowForApt(nameKey) || null) : null;
+    const row = getRowForApt ? (getRowForApt(nome) || null) : null;
     if (!isNCRow(row)) { hideTip(60); return; }
   }
 
-  showTip(e.clientX, e.clientY, nome || 'apt');
+  showTip(e.clientX, e.clientY, nome);
 }
 
 // ========== núcleo de raycast ==========
@@ -141,24 +192,28 @@ export function pickAtClientXY(clientX, clientY, forHover=false){
 
   if (!inter.length) return null;
 
-  const obj = inter[0].object;
+  const hit = inter[0];
+  const obj = hit.object;
   const g = obj.parent;
   if (!g || !g.userData) return null;
-  return g;
+
+  // Sanidade: exigimos userData.nome (regra travada)
+  if (!('nome' in g.userData)) return null;
+
+  return { g, hit };
 }
 
 // ========== seleção (sem brilho branco) ==========
 export function selectGroup(g){
   if (!g) return;
-  // Não alteramos cor das edges para “branco”; apenas marcamos no estado
   State.__SEL_GROUP__ = g;
 }
 
 export function syncSelectedColor(){
   const g = State.__SEL_GROUP__;
   if (!g) return;
-  const nome = String(g.userData?.nome || g.userData?.apto || g.name || '').trim();
-  const pav  = String(g.userData?.pavimento_origem ?? g.userData?.levelIndex ?? '');
+  const nome = String(g.userData?.nome ?? '').trim();
+  const pav  = String(g.userData?.pavimento_origem ?? g.userData?.levelIndex ?? '').trim();
   const hex  = pickFVSColor(nome, pav, State.COLOR_MAP);
   const m = g.userData?.mesh?.material;
   if (m && hex){
