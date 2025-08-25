@@ -1,242 +1,187 @@
 // ============================
-// Cena / Câmera / Renderizador (Three.js)
+// Cena 3D / Câmera / Renderer
 // ============================
 
 import { State } from './state.js';
-import { clamp } from './utils.js';
 
-export let scene = null;
-export let camera = null;
-export let renderer = null;
+export let scene, renderer, camera;
 
-const DEFAULT_TARGET = { x: 0, y: 0, z: 0 };
+// Alvo do orbit (reutiliza State.orbitTarget)
+const ORBIT_MIN_PHI = 0.05;
+const ORBIT_MAX_PHI = Math.PI - 0.05;
 
-// Luzes
-let ambientLight = null, dirLight1 = null, dirLight2 = null;
+// Sensibilidades (ajustadas p/ ficar "leve" no mobile e igual ao 2D)
+const ROT_SPEED_DESKTOP = 0.012;   // antes 0.005
+const ROT_SPEED_TOUCH   = 0.012;
+const PAN_FACTOR        = 1.8;     // pan mais solto
+const ZOOM_STEP_FACTOR  = 0.08;    // mantido
 
-// ===== Render invalidation (repaint sob demanda) =====
-let _rafId = 0;
-let _needsRender = false;
-function invalidate(){
-  _needsRender = true;
-  if (_rafId) return;
-  _rafId = requestAnimationFrame(()=>{
-    _rafId = 0;
-    if (_needsRender){
-      _needsRender = false;
-      render();
-    }
-  });
+// Canvas host
+function getAppEl(){
+  const el = document.getElementById('app');
+  if (!el) throw new Error('[scene] #app não encontrado');
+  return el;
 }
 
-// ===== Controles =====
-let isDragging = false;
-let dragMode   = 'orbit'; // 'orbit' | 'pan'
-let lastX = 0, lastY = 0;
-let startX = 0, startY = 0;
-let moved  = false;
-
-// ----------------------
-// Inicialização
-// ----------------------
 export function initScene(){
-  const host = document.getElementById('app');
-  if (!host) throw new Error('[scene] #app não encontrado');
-
+  // Cena + câmera
   scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f141b);
 
-  const { width, height } = _getAppSize(host);
-  camera = new THREE.PerspectiveCamera(55, width/height, 0.1, 2000);
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 2000);
+  camera.position.set(8, 8, 8);
+  camera.up.set(0,1,0);
 
-  // Estados padrão de órbita
-  if (!Number.isFinite(State.radius)) State.radius = 60;
-  if (!Number.isFinite(State.theta))  State.theta  = Math.PI * 0.25;
-  if (!Number.isFinite(State.phi))    State.phi    = Math.PI * 0.35;
-  State.orbitTarget = new THREE.Vector3(DEFAULT_TARGET.x, DEFAULT_TARGET.y, DEFAULT_TARGET.z);
+  // Luzes mínimas
+  const amb = new THREE.AmbientLight(0xffffff, 0.75);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.65);
+  dir.position.set(8, 12, 6);
+  scene.add(dir);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-  renderer.setSize(width, height);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.domElement.style.touchAction = 'none';
-  renderer.domElement.style.userSelect  = 'none';
-  host.appendChild(renderer.domElement);
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
 
-  _setupLights();
-  applyOrbitToCamera(); // já invalida
+  // Canvas: desabilita gestos do navegador (pinch-zoom, duplo toque, etc.)
+  const cvs = renderer.domElement;
+  cvs.id = 'doge-canvas';
+  Object.assign(cvs.style, {
+    display: 'block',
+    width: '100%',
+    height: '100%',
+    touchAction: 'none',             // <-- impede gestures nativos
+    WebkitTouchCallout: 'none',
+    WebkitUserSelect: 'none',
+    userSelect: 'none',
+    msTouchAction: 'none'
+  });
 
-  _attachControls();
+  // Container
+  const app = getAppEl();
+  app.prepend(cvs); // canvas fica atrás do grid 2D
 
-  window.addEventListener('resize', () => onResize(host), { passive:true });
+  // Redimensiona
+  window.addEventListener('resize', onResize, { passive:true });
+  onResize();
+
+  // Primeira aplicação de câmera a partir do estado
+  applyOrbitToCamera();
+
+  return { scene, renderer, camera };
 }
 
-// ----------------------
-// Luzes
-// ----------------------
-function _setupLights(){
-  ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-
-  dirLight1 = new THREE.DirectionalLight(0xffffff, 0.7);
-  dirLight1.position.set(10, 18, 14);
-  scene.add(dirLight1);
-
-  dirLight2 = new THREE.DirectionalLight(0xffffff, 0.35);
-  dirLight2.position.set(-12, 10, -8);
-  scene.add(dirLight2);
-}
-
-// ----------------------
-// Resize
-// ----------------------
-function _getAppSize(host){
-  const rect = host.getBoundingClientRect();
-  return { width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
-}
-
-export function onResize(host = document.getElementById('app')){
-  if (!renderer || !camera || !host) return;
-  const { width, height } = _getAppSize(host);
-  camera.aspect = width / height;
+function onResize(){
+  if (!renderer || !camera) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(width, height);
-  invalidate();
+  render();
 }
 
-// ----------------------
-// Orbit “lite”
-// ----------------------
+// ----------------------------
+// Câmera orbital (usa State.*)
+// ----------------------------
 export function applyOrbitToCamera(){
-  if (!camera) return;
-  const r   = Math.max(0.1, State.radius);
-  const th  = State.theta;
-  const ph  = clamp(State.phi, 0.01, Math.PI - 0.01);
-  const tgt = State.orbitTarget || new THREE.Vector3();
+  const r = Math.max(0.1, State.radius || 20);
+  const th = State.theta || 0;
+  const ph = Math.max(ORBIT_MIN_PHI, Math.min(ORBIT_MAX_PHI, State.phi || 1.1));
 
-  const x = tgt.x + r * Math.sin(ph) * Math.cos(th);
-  const y = tgt.y + r * Math.cos(ph);
-  const z = tgt.z + r * Math.sin(ph) * Math.sin(th);
+  const target = State.orbitTarget;
+  const x = target.x + r * Math.sin(ph) * Math.cos(th);
+  const y = target.y + r * Math.cos(ph);
+  const z = target.z + r * Math.sin(ph) * Math.sin(th);
 
   camera.position.set(x, y, z);
-  camera.lookAt(tgt);
-  invalidate();
+  camera.lookAt(target);
 }
 
-export function recenterCamera(targetVec3 = null, radius = null){
-  const tgt = targetVec3 || new THREE.Vector3(DEFAULT_TARGET.x, DEFAULT_TARGET.y, DEFAULT_TARGET.z);
-  State.orbitTarget = tgt.clone();
-  if (radius != null) State.radius = Math.max(0.1, radius);
+export function recenterCamera({ bbox=null, verticalOffsetRatio=0.12 } = {}){
+  // recentra mirando a bounding box atual (ou passada)
+  const bb = bbox || computeCurrentBBox();
+  if (!bb) return;
+
+  const center = bb.getCenter(new THREE.Vector3());
+  const size   = bb.getSize(new THREE.Vector3());
+
+  State.orbitTarget.copy(center);
+  State.orbitTarget.y += size.y * verticalOffsetRatio;
+
+  const diag = Math.hypot(size.x, size.z);
+  State.radius = Math.max(12, diag * 1.6);
+
   applyOrbitToCamera();
+  render();
 }
 
 export function resetRotation(){
-  State.theta = Math.PI * 0.25;
-  State.phi   = Math.PI * 0.35;
+  // mantém alvo e raio; só reseta ângulos
+  State.theta = 0;
+  State.phi   = Math.min(Math.max(1.1, ORBIT_MIN_PHI), ORBIT_MAX_PHI);
   applyOrbitToCamera();
+  render();
 }
 
-// ----------------------
+function computeCurrentBBox(){
+  // procura um grupo "Torre" na cena
+  let torre = null;
+  scene?.traverse(n => { if (n.name === 'Torre' && !torre) torre = n; });
+  if (!torre) return null;
+  const bb = new THREE.Box3().setFromObject(torre);
+  if (!Number.isFinite(bb.min.x)) return null;
+  return bb;
+}
+
+// ----------------------------
 // Render
-// ----------------------
+// ----------------------------
 export function render(){
-  if (!renderer || !scene || !camera) return;
-  renderer.render(scene, camera);
-}
-
-// ==========================================================
-// Controles (mouse/touch)
-// ==========================================================
-function _attachControls(){
-  const dom = renderer.domElement;
-
-  dom.addEventListener('pointerdown', onPointerDown, { passive:false });
-  dom.addEventListener('pointermove', onPointerMove, { passive:false });
-  dom.addEventListener('pointerup',   onPointerUp,   { passive:false });
-  dom.addEventListener('pointercancel', onPointerUp, { passive:false });
-  dom.addEventListener('pointerleave',  onPointerUp, { passive:false });
-
-  dom.addEventListener('wheel', (e)=>{
-    const k = 0.0018;
-    const rMin = Number.isFinite(State.radiusMin) ? State.radiusMin : 2;
-    const rMax = Number.isFinite(State.radiusMax) ? State.radiusMax : 500;
-    const scale = Math.exp(e.deltaY * k);
-    State.radius = clamp(State.radius * scale, rMin, rMax);
-    applyOrbitToCamera(); // já invalida
-    e.preventDefault();
-  }, { passive:false });
-
-  dom.addEventListener('contextmenu', e => e.preventDefault());
-}
-
-function onPointerDown(e){
-  isDragging = true;
-  moved = false;
-  lastX = startX = e.clientX;
-  lastY = startY = e.clientY;
-
-  const isPanButton = (e.button === 1) || (e.button === 2);
-  const isPanModKey = e.shiftKey || e.ctrlKey || e.altKey;
-  dragMode = (isPanButton || isPanModKey) ? 'pan' : 'orbit';
-
-  try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
-  State.__IS_DRAGGING__ = true;
-
-  e.preventDefault();
-}
-
-function onPointerMove(e){
-  if (!isDragging) return;
-
-  const dx = e.clientX - lastX;
-  const dy = e.clientY - lastY;
-
-  if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) > Math.max(6, 4*(window.devicePixelRatio||1))){
-    moved = true;
+  if (renderer && scene && camera){
+    renderer.render(scene, camera);
   }
-
-  const doPan = (dragMode === 'pan') || e.shiftKey || e.ctrlKey || e.altKey;
-
-  if (doPan){
-    panByPixels(dx, dy); // já invalida
-  }else{
-    State.theta += dx * 0.005;
-    State.phi    = clamp(State.phi - dy * 0.005, 0.01, Math.PI - 0.01);
-    applyOrbitToCamera(); // já invalida
-  }
-
-  lastX = e.clientX; lastY = e.clientY;
-  e.preventDefault();
 }
 
-function onPointerUp(e){
-  if (!isDragging) return;
+// =====================================================
+// INPUT BASE (opcional): helper p/ quem quiser usar aqui
+// (A maior parte do input está no viewer.js; aqui deixo
+// utilitários caso seja necessário plugar algo local.)
+// =====================================================
 
-  isDragging = false;
-  State.__IS_DRAGGING__ = false;
-
-  if (moved){
-    State.__BLOCK_CLICKS_UNTIL = performance.now() + 180;
-  }
-  moved = false;
-
-  // garante um último repaint após soltar
-  invalidate();
-
-  e.preventDefault();
+// Aplica delta de ORBIT com sensibilidade correta
+export function orbitDelta(dx, dy, isTouch=false){
+  const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
+  State.theta += dx * ROT;
+  State.phi   -= dy * ROT;
+  State.phi = Math.max(ORBIT_MIN_PHI, Math.min(ORBIT_MAX_PHI, State.phi));
+  applyOrbitToCamera();
+  render();
 }
 
-// ===== util pan =====
-function panByPixels(dx, dy){
-  const panScale = (State.radius || 50) * 0.0025;
+// Aplica delta de PAN em pixels de tela
+export function panDelta(dx, dy){
+  const base = (State.radius || 20) * (0.0025 * PAN_FACTOR);
+  // Eixos aproximados em tela
+  const dir = new THREE.Vector3();
+  const right = new THREE.Vector3();
+  const up = new THREE.Vector3(0,1,0);
+  camera.getWorldDirection(dir);
+  right.crossVectors(dir, up).normalize();
+  const camUp = camera.up.clone().normalize();
 
-  const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
-  const right   = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-  const upv     = new THREE.Vector3().copy(camera.up).normalize();
+  State.orbitTarget.addScaledVector(right, -dx * base);
+  State.orbitTarget.addScaledVector(camUp,  dy * base);
+  applyOrbitToCamera();
+  render();
+}
 
-  const tgt = State.orbitTarget || new THREE.Vector3();
-  tgt.addScaledVector(right, -dx * panScale);
-  tgt.addScaledVector(upv,     dy * panScale);
-
-  State.orbitTarget = tgt;
-  applyOrbitToCamera(); // já invalida
+// Aplica zoom relativo (delta de wheel)
+export function zoomDelta(sign){
+  const step = Math.max(0.5, (State.radius || 20) * ZOOM_STEP_FACTOR);
+  State.radius += sign * step;
+  State.radius = Math.max(4, Math.min(400, State.radius));
+  applyOrbitToCamera();
+  render();
 }
