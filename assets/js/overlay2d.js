@@ -148,42 +148,28 @@ function hasNC(row){
 export function recolorCards2D(){
   if (!host) return;
 
-  // lookup das linhas da FVS atual
-  const rowsMap = (function buildRowsLookup(){
-    const rows = (getRowsForCurrentFVS ? (getRowsForCurrentFVS() || []) : []);
-    const map = new Map();
-    for (const r of rows){
-      const aptName = String(r.nome ?? r.apartamento ?? r.apto ?? '').trim();
-      const key = normNameKey(aptName);
-      if (!key) continue;
-      map.set(key, r);
-    }
-    return map;
-  })();
-
+  const rowsMap = buildRowsLookup();
   const NC_MODE = !!State.NC_MODE;
 
   const cards = host.querySelectorAll('.card');
   cards.forEach(card=>{
     const apt = card.dataset.apto || '';
     const pav = card.dataset.pav  || '';
-    const key = card.dataset.key || normNameKey(apt);
+    const key = normNameKey(apt);
     const row = rowsMap.get(key) || null;
 
-    // guarda a row para o clique abrir o modal com dados corretos
     card._row = row;
     card._hasData = !!row;
 
-    // dados para badges/visual
-    const nc   = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0;
-    const pend = Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0;
-    const perc = Number(row?.percentual_ultima_inspecao ?? row?.percentual);
-    const durN = Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0;
+    // valores normalizados (mostra 0 quando não vier)
+    const nc   = Math.max(0, Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0);
+    const pend = Math.max(0, Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0);
+    const perc = Math.max(0, Math.round(Number(row?.percentual_ultima_inspecao ?? row?.percentual ?? 0) || 0));
+    const durN = Math.max(0, Math.round(Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0));
 
-    // Em modo NC, só mostra badges para quem tem NC
-    const showData = !NC_MODE || (nc > 0);
+    const showData = !!row && (!NC_MODE || nc > 0);
 
-    // ----- badges -----
+    // badges (sempre 4 quando showData)
     let badges = card.querySelector('.badges');
     if (!badges){
       badges = document.createElement('div');
@@ -193,58 +179,50 @@ export function recolorCards2D(){
     badges.innerHTML = '';
 
     if (showData){
-      // 1ª linha: Pend (esq) | NC (dir)
+      // 1ª linha
       const rowTop = document.createElement('div');
       rowTop.className = 'badge-row';
-      const left  = document.createElement('div'); left.className = 'slot left';
+      const left  = document.createElement('div'); left.className  = 'slot left';
       const right = document.createElement('div'); right.className = 'slot right';
 
-      if (pend > 0){
-        const b = document.createElement('span');
-        b.className = 'badge pend';
-        b.textContent = String(pend);
-        b.title = `Pendências: ${pend}`;
-        left.appendChild(b);
-      }
-      if (nc > 0){
-        const b = document.createElement('span');
-        b.className = 'badge nc';
-        b.textContent = String(nc);
-        b.title = `Não conformidades: ${nc}`;
-        right.appendChild(b);
-      }
-      if (left.childElementCount || right.childElementCount){
-        rowTop.append(left, right);
-        badges.appendChild(rowTop);
-      }
+      const bPend = document.createElement('span');
+      bPend.className = 'badge pend';
+      bPend.textContent = String(pend);
+      bPend.title = `Pendências: ${pend}`;
+      left.appendChild(bPend);
 
-      // 2ª linha: Duração (esq) | % (dir)
+      const bNc = document.createElement('span');
+      bNc.className = 'badge nc';
+      bNc.textContent = String(nc);
+      bNc.title = `Não conformidades: ${nc}`;
+      right.appendChild(bNc);
+
+      rowTop.append(left, right);
+      badges.appendChild(rowTop);
+
+      // 2ª linha
       const rowBottom = document.createElement('div');
       rowBottom.className = 'badge-row';
-      const left2  = document.createElement('div'); left2.className = 'slot left';
+      const left2  = document.createElement('div'); left2.className  = 'slot left';
       const right2 = document.createElement('div'); right2.className = 'slot right';
 
-      if (durN > 0){
-        const b = document.createElement('span');
-        b.className = 'badge dur';
-        b.textContent = String(Math.round(durN));
-        b.title = `Duração (dias): ${Math.round(durN)}`;
-        left2.appendChild(b);
-      }
-      if (Number.isFinite(perc)){
-        const b = document.createElement('span');
-        b.className = 'badge percent';
-        b.textContent = `${Math.round(perc)}%`;
-        b.title = `Percentual executado`;
-        right2.appendChild(b);
-      }
-      if (left2.childElementCount || right2.childElementCount){
-        rowBottom.append(left2, right2);
-        badges.appendChild(rowBottom);
-      }
+      const bDur = document.createElement('span');
+      bDur.className = 'badge dur';
+      bDur.textContent = String(durN);
+      bDur.title = `Duração (dias): ${durN}`;
+      left2.appendChild(bDur);
+
+      const bPct = document.createElement('span');
+      bPct.className = 'badge percent';
+      bPct.textContent = `${perc}%`;
+      bPct.title = `Percentual executado`;
+      right2.appendChild(bPct);
+
+      rowBottom.append(left2, right2);
+      badges.appendChild(rowBottom);
     }
 
-    // ----- visual / clicabilidade -----
+    // Recolorir + clique
     if (row){
       if (showData){
         const color = pickFVSColor(apt, pav, State.COLOR_MAP);
@@ -257,7 +235,6 @@ export function recolorCards2D(){
         card.classList.remove('disabled');
         card.title = apt;
       }else{
-        // “sem dados” para quem não tem NC no modo NC
         card.style.borderColor = 'rgba(110,118,129,.6)';
         card.style.backgroundColor = 'rgba(34,40,53,.60)';
         card.style.opacity = '0.85';
@@ -267,7 +244,6 @@ export function recolorCards2D(){
         card.title = '';
       }
     }else{
-      // sem dados de verdade
       card.style.borderColor = 'rgba(110,118,129,.6)';
       card.style.backgroundColor = 'rgba(34,40,53,.60)';
       card.style.opacity = '0.85';
@@ -276,11 +252,16 @@ export function recolorCards2D(){
       if (NC_MODE) card.classList.add('disabled'); else card.classList.remove('disabled');
     }
 
-    // realce NC no modo NC
-    if (NC_MODE && nc > 0){
-      card.style.filter = 'none';
-      card.style.opacity = '1';
-      card.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
+    // NC-mode: realce somente nos que têm NC
+    if (NC_MODE){
+      if (nc > 0){
+        card.style.filter = 'none';
+        card.style.opacity = '1';
+        card.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
+      }else{
+        card.style.filter = 'none';
+        card.style.boxShadow = 'none';
+      }
     }else{
       card.style.filter = 'none';
       card.style.boxShadow = 'none';
@@ -288,11 +269,13 @@ export function recolorCards2D(){
   });
 }
 
+
 /* ===== Render ===== */
 export function render2DCards(){
   if (!host) initOverlay2D();
   if (!host) return;
 
+  // host ocupa viewport (acima do HUD)
   const hud = document.getElementById('hud');
   const hudH = hud ? hud.offsetHeight : 0;
   host.style.position = 'fixed';
@@ -302,10 +285,14 @@ export function render2DCards(){
   host.style.setProperty('bottom', `${hudH}px`, 'important');
   host.style.overflow = 'hidden';
 
+  // Base da grade
   const perFloor = buildFloorsFromApartamentos();
+
+  // Dados da FVS ativa
   const rowsMap = buildRowsLookup();
   const NC_MODE = !!State.NC_MODE;
 
+  // (re)constrói DOM
   host.innerHTML = '';
   const frag = document.createDocumentFragment();
 
@@ -318,58 +305,159 @@ export function render2DCards(){
       el.className = 'card';
       el.dataset.apto = it.apt;
       el.dataset.pav  = it.floor;
-      el.dataset.key  = key;
+      el.dataset.key = key;
       el._row = row;
       el._hasData = !!row;
 
+      // Label do apto (hover)
       const numEl = document.createElement('div');
       numEl.className = 'num';
       numEl.textContent = it.apt;
       el.appendChild(numEl);
 
-      // badges
-      const nc   = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0;
-      const pend = Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0;
-      const perc = Number(row?.percentual_ultima_inspecao ?? row?.percentual);
-      const durN = Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0;
-      const showData = !NC_MODE || hasNC(row);
+      // (antigo) duração no canto — mantido oculto
+      const durEl = document.createElement('div');
+      durEl.className = 'dur';
+      durEl.style.display = 'none';
+      el.appendChild(durEl);
 
-      const badges = document.createElement('div');
-      badges.className = 'badges';
+      // Dados brutos (normalizados para sempre exibir)
+      const nc   = Math.max(0, Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0);
+      const pend = Math.max(0, Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0);
+      const perc = Math.max(0, Math.round(Number(row?.percentual_ultima_inspecao ?? row?.percentual ?? 0) || 0));
+      const durN = Math.max(0, Math.round(Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0));
+
+      // NC-mode: só mostra badges se TIVER NC; senão “sem dados” e não clicável
+      const showData = !!row && (!NC_MODE || nc > 0);
+
+      // Badges (sempre 4 quando showData = true)
       if (showData){
-        if (pend > 0 || nc > 0 || Number.isFinite(perc) || durN>0){
-          const b = document.createElement('span');
-          b.className = 'badge nc';
-          b.textContent = nc>0 ? `NC:${nc}` : perc ? `${perc}%` : '';
-          badges.appendChild(b);
-        }
-      }
-      if (badges.childElementCount) el.appendChild(badges);
+        const badges = document.createElement('div');
+        badges.className = 'badges';
 
-      if (row && showData){
+        // 1ª linha: PEND (esq) | NC (dir)
+        {
+          const rowTop = document.createElement('div');
+          rowTop.className = 'badge-row';
+
+          const left  = document.createElement('div'); left.className  = 'slot left';
+          const right = document.createElement('div'); right.className = 'slot right';
+
+          const bPend = document.createElement('span');
+          bPend.className = 'badge pend';
+          bPend.textContent = String(pend);
+          bPend.title = `Pendências: ${pend}`;
+          left.appendChild(bPend);
+
+          const bNc = document.createElement('span');
+          bNc.className = 'badge nc';
+          bNc.textContent = String(nc);
+          bNc.title = `Não conformidades: ${nc}`;
+          right.appendChild(bNc);
+
+          rowTop.append(left, right);
+          badges.appendChild(rowTop);
+        }
+
+        // 2ª linha: DURAÇÃO (esq) | PERCENTUAL (dir)
+        {
+          const rowBottom = document.createElement('div');
+          rowBottom.className = 'badge-row';
+
+          const left  = document.createElement('div'); left.className  = 'slot left';
+          const right = document.createElement('div'); right.className = 'slot right';
+
+          const bDur = document.createElement('span');
+          bDur.className = 'badge dur';
+          bDur.textContent = String(durN);
+          bDur.title = `Duração (dias): ${durN}`;
+          left.appendChild(bDur);
+
+          const bPct = document.createElement('span');
+          bPct.className = 'badge percent';
+          bPct.textContent = `${perc}%`;
+          bPct.title = `Percentual executado`;
+          right.appendChild(bPct);
+
+          rowBottom.append(left, right);
+          badges.appendChild(rowBottom);
+        }
+
+        el.appendChild(badges);
+      }
+
+      // Visual / clicabilidade
+      if (row){
         const color = pickFVSColor(it.apt, it.floor, State.COLOR_MAP);
-        const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
-        el.style.borderColor = color;
-        el.style.backgroundColor = hexToRgba(color, a);
-        el.style.opacity = '1';
-        el.style.pointerEvents = 'auto';
-        el.style.cursor = 'pointer';
-        el.classList.remove('disabled');
-      } else {
+        if (showData){
+          const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
+          el.style.borderColor = color;
+          el.style.backgroundColor = hexToRgba(color, a);
+          el.style.opacity = '1';
+          el.style.pointerEvents = 'auto';
+          el.style.cursor = 'pointer';
+          el.classList.remove('disabled');
+          el.title = it.apt;
+        }else{
+          el.style.borderColor = 'rgba(110,118,129,.6)';
+          el.style.backgroundColor  = 'rgba(34,40,53,.60)';
+          el.style.opacity     = '0.85';
+          el.style.pointerEvents = 'none';
+          el.style.cursor = 'default';
+          el.classList.add('disabled');
+          el.title = '';
+        }
+      }else{
+        // sem dados (fora do NC) mantém clique normal apenas quando NC_MODE=false
         el.style.borderColor = 'rgba(110,118,129,.6)';
         el.style.backgroundColor  = 'rgba(34,40,53,.60)';
         el.style.opacity     = '0.85';
-        el.style.pointerEvents = 'none';
-        el.classList.add('disabled');
+        el.style.pointerEvents = NC_MODE ? 'none' : 'auto';
+        el.style.cursor = NC_MODE ? 'default' : 'pointer';
+        if (NC_MODE) el.classList.add('disabled'); else el.classList.remove('disabled');
+      }
+
+      // Realce NC-mode apenas para quem tem NC
+      if (NC_MODE){
+        if (nc > 0){
+          el.style.filter = 'none';
+          el.style.opacity = '1';
+          el.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
+        }else{
+          el.style.filter = 'none';
+          el.style.boxShadow = 'none';
+        }
+      }else{
+        el.style.filter = 'none';
+        el.style.boxShadow = 'none';
       }
 
       frag.appendChild(el);
-      it._el = el;
+      it._el = el; // para layout
     }
   }
+
   host.appendChild(frag);
 
-  // ====== Layout ======
+  // Delegação de clique (mantida)
+  host.onclick = (e) => {
+    const card = e.target.closest('.card');
+    if (!card || card.classList.contains('disabled')) return;
+
+    let row = card._row || null;
+    if (!row) {
+      const rowsMap2 = buildRowsLookup();
+      row = rowsMap2.get(card.dataset.key || '') || null;
+      if (!row) row = rowsMap2.get(normNameKey(card.dataset.apto || '')) || null;
+    }
+
+    const apt = card.dataset.apto || '';
+    const pav = card.dataset.pav  || '';
+    const hex = pickFVSColor(apt, pav, State.COLOR_MAP);
+    openAptModal({ id: apt, floor: pav, row, tintHex: hex });
+  };
+
+  // ====== Layout (inalterado) ======
   const paneW = Math.max(240, host.clientWidth);
   const paneH = Math.max(180, host.clientHeight);
 
@@ -379,11 +467,7 @@ export function render2DCards(){
   let hGap = Math.max(12, Math.floor(paneW * 0.014));
   let vGap = Math.max(10, Math.floor(paneH * 0.014));
 
-  // TARGET_ROWS agora ajustado por zoom2D
-  const baseRows = 8;
-  const zoom = State.zoom2D || 1;
-  const TARGET_ROWS = Math.max(3, Math.round(baseRows / zoom));
-
+  const TARGET_ROWS = Math.max(3, Math.round((State.grid2DZoom || 1) * 8)); // respeita zoom horizontal
   let cardH = Math.floor((paneH - (TARGET_ROWS-1)*vGap) / TARGET_ROWS);
   cardH = Math.max(MIN_H, Math.min(cardH, MAX_H));
   let cardW = Math.max(MIN_W, Math.floor(cardH * RATIO));
@@ -404,7 +488,23 @@ export function render2DCards(){
     el.style.width = `${cardW}px`;
     el.style.height = `${cardH}px`;
     el.style.fontSize = `${fontPx}px`;
+    el.style.opacity = el.style.opacity || '0.95';
   });
+
+  // CSS vars para dimensionar badges
+  const badgeFont = Math.max(8,  Math.min(16, Math.round(cardH * 0.15)));
+  const badgePadV = Math.max(2,  Math.round(cardH * 0.055));
+  const badgePadH = Math.max(4,  Math.round(cardW * 0.08));
+  const badgeMinW = Math.max(18, Math.round(cardW * 0.18));
+  const badgeGap  = Math.max(3,  Math.round(cardW * 0.04));
+  const badgeTop  = Math.max(3,  Math.round(cardH * 0.05));
+
+  host.style.setProperty('--badge-font', `${badgeFont}px`);
+  host.style.setProperty('--badge-pad-v', `${badgePadV}px`);
+  host.style.setProperty('--badge-pad-h', `${badgePadH}px`);
+  host.style.setProperty('--badge-minw', `${badgeMinW}px`);
+  host.style.setProperty('--badge-gap',  `${badgeGap}px`);
+  host.style.setProperty('--badge-top',  `${badgeTop}px`);
 
   const originX = Math.floor(paneW/2);
   const topPad  = 16;
@@ -431,11 +531,4 @@ export function render2DCards(){
 
   host.style.overflowY = 'auto';
   host.style.overflowX = 'hidden';
-
-  // clique -> abre modal
-  host.onclick = (e)=>{
-    const card = e.target.closest('.card');
-    if (!card || card.classList.contains('disabled')) return;
-    openAptModal({ id: card.dataset.apto, floor: card.dataset.pav, row: card._row, tintHex: null });
-  };
 }
