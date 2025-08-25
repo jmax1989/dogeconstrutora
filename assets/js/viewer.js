@@ -5,8 +5,21 @@
 import { initTooltip } from './utils.js';
 import { State } from './state.js';
 import { loadAllData, layoutData } from './data.js';
-import { initScene, applyOrbitToCamera, render, camera } from './scene.js';
-import { buildFromLayout, recolorMeshes3D, setFaceOpacity, applyExplode, getTorre, apply2DVisual } from './geometry.js';
+import {
+  initScene,
+  applyOrbitToCamera,
+  render,
+  camera,
+  orbitDelta,
+  panDelta,
+  zoomDelta,
+  recenterCamera
+} from './scene.js';
+import {
+  buildFromLayout,
+  getTorre,
+  apply2DVisual
+} from './geometry.js';
 import { initOverlay2D, render2DCards, hide2D } from './overlay2d.js';
 import { initPicking, selectGroup } from './picking.js';
 import { initModal } from './modal.js';
@@ -24,7 +37,7 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
   const loading = document.getElementById('doge-loading');
   loading?.classList.remove('hidden');
 
-  // 1) Carrega dados primeiro
+  // 1) Carrega dados
   await loadAllData();
 
   // 2) Cena / câmera / renderer
@@ -33,26 +46,17 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
   // 3) Monta a torre
   const { bbox } = buildFromLayout(layoutData || { meta:{}, placements:[] });
 
-  // 4) Ajuste inicial: mantém o tamanho atual e só desce um pouco o prédio no enquadramento
+  // 4) Ajuste inicial — mesmo enquadramento usado no recenter
   if (bbox && bbox.isBox3){
-    const center = bbox.getCenter(new THREE.Vector3());
-    const size   = bbox.getSize(new THREE.Vector3());
-
-    // mira no centro e sobe um pouco o alvo para o prédio “descer” na tela
-    State.orbitTarget.copy(center);
-    State.orbitTarget.y += size.y * 0.12;
-
-    // mantém seu raio existente (se já definido) ou calcula um baseado no XZ
-    const diag = Math.hypot(size.x, size.z);
-    State.radius = Math.max(State.radius || 12, diag * 1.6);
-
+    recenterCamera({ bbox, verticalOffsetRatio: 0.12 });
+  } else {
     applyOrbitToCamera();
   }
 
   // 5) HUD (dropdowns, botões, sliders)
   initHUD();
 
-  // 6) Aplica FVS/NC — isso também injeta resolvers para 2D/3D e atualiza COLOR_MAP
+  // 6) Aplica FVS/NC — injeta resolvers e COLOR_MAP
   applyFVSAndRefresh();
 
   // 7) Overlay 2D (render já com resolvers prontos)
@@ -63,27 +67,22 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
   initPicking();
 
   // 9) Loading off
-  if (loading) loading.classList.add('hidden');
+  loading?.classList.add('hidden');
 
   // 10) Render inicial
   render();
 
-  // 11) Reaplica o offset vertical do alvo em resize (mantendo o “descer”)
-  window.addEventListener('resize', ()=>{
+  // 11) Reaplica o offset vertical no resize mantendo enquadramento
+  window.addEventListener('resize', ()=> {
     const torre = getTorre();
     if (!torre) return;
     const bb = new THREE.Box3().setFromObject(torre);
     if (!bb || !bb.isBox3) return;
-
-    const c = bb.getCenter(new THREE.Vector3());
-    const s = bb.getSize(new THREE.Vector3());
-    State.orbitTarget.copy(c);
-    State.orbitTarget.y += s.y * 0.12;
-
-    applyOrbitToCamera();
-    render();
+    recenterCamera({ bbox: bb, verticalOffsetRatio: 0.12 });
   }, { passive:true });
 
+  // 12) Input unificado (mouse + touch) – suave no mobile
+  wireUnifiedInput();
 })().catch(err=>{
   console.error('[viewer] erro no boot:', err);
 });
@@ -112,142 +111,144 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
 })();
 
 // ============================
-// Controles de câmera (mouse/touch)
-// - Botão esquerdo: ORBIT (theta/phi)
-// - Botão direito: PAN (arrasta o alvo)
-// - Roda: ZOOM (raio)
+// Input unificado (Pointer Events)
+// - 1 ponteiro:
+//     * mouse esquerdo  -> ORBIT
+//     * mouse direito   -> PAN
+//     * touch           -> ORBIT
+// - 2 ponteiros (touch): PINCH para zoom + PAN pelo movimento do centro
+// - Wheel: zoom
 // ============================
-// ============================
-// Controles de câmera com Pointer Events
-// - Mouse:
-//   * Esquerdo: ORBIT
-//   * Direito:  PAN
-//   * Wheel:    ZOOM
-// - Touch:
-//   * 1 dedo:   ORBIT
-//   * 2 dedos:  PAN + PINCH (zoom)
-// ============================
-// ============================
-// Controles de câmera (Pointer Events) — mobile friendly
-// ============================
-(function wireCameraInput(){
-  const dom = document.querySelector('#app canvas');
-  if (!dom) return;
+function wireUnifiedInput(){
+  const cvs = document.getElementById('doge-canvas') || document.querySelector('#app canvas');
+  if (!cvs) return;
 
-  // Evita o browser interferir (scroll/gestos) no canvas
-  dom.style.touchAction = 'none';
+  // Importantíssimo: já definimos touch-action: none no scene.js
+  // Aqui só garantimos que não há seleção/zoom do navegador
+  cvs.addEventListener('gesturestart', e => e.preventDefault?.(), { passive:false });
+  cvs.addEventListener('gesturechange', e => e.preventDefault?.(), { passive:false });
+  cvs.addEventListener('gestureend', e => e.preventDefault?.(), { passive:false });
 
-  const pointers = new Map();     // id -> {x,y}
-  let single = { active:false, lastX:0, lastY:0 };
-  let two = null;                 // { prevDist, prevMid:{x,y} }
+  // Estado de ponteiros
+  const pointers = new Map(); // id -> {x,y,button,ptype,mode}
+  let pinchPrevDist = 0;
+  let pinchPrevMid  = null;
 
-  const dist = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
-  const mid  = (a,b)=> ({ x:(a.x+b.x)/2, y:(a.y+b.y)/2 });
+  const setModeForPointer = (pe) => {
+    // mouse: button 2 = pan; caso contrário orbit
+    if (pe.pointerType === 'mouse'){
+      return (pe.button === 2) ? 'pan' : 'orbit';
+    }
+    // touch: 1 dedo -> orbit (pan fica para gesto de 2 dedos)
+    return 'orbit';
+  };
 
-  function onDown(e){
-    dom.setPointerCapture?.(e.pointerId);
-    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  const getMidpoint = () => {
+    const arr = [...pointers.values()];
+    if (arr.length < 2) return null;
+    return {
+      x: (arr[0].x + arr[1].x) * 0.5,
+      y: (arr[0].y + arr[1].y) * 0.5
+    };
+  };
+  const getDistance = () => {
+    const arr = [...pointers.values()];
+    if (arr.length < 2) return 0;
+    const dx = arr[0].x - arr[1].x;
+    const dy = arr[0].y - arr[1].y;
+    return Math.hypot(dx, dy);
+  };
+
+  // Pointer Down
+  cvs.addEventListener('pointerdown', (e)=>{
+    // Captura o ponteiro para evitar "pulos" ao sair da área
+    cvs.setPointerCapture?.(e.pointerId);
+
+    pointers.set(e.pointerId, {
+      x: e.clientX, y: e.clientY,
+      button: e.button,
+      ptype: e.pointerType,
+      mode: setModeForPointer(e)
+    });
+
+    // Se virou pinch (2 dedos), inicializa estado
+    if (pointers.size === 2){
+      pinchPrevDist = getDistance();
+      pinchPrevMid  = getMidpoint();
+    }
+
+    // Evita texto/scroll do navegador
+    e.preventDefault();
+  }, { passive:false });
+
+  // Pointer Move
+  cvs.addEventListener('pointermove', (e)=>{
+    if (!pointers.has(e.pointerId)) return;
+
+    const p = pointers.get(e.pointerId);
+    const prevX = p.x, prevY = p.y;
+    p.x = e.clientX; p.y = e.clientY;
 
     if (pointers.size === 1){
-      single.active = true;
-      single.lastX  = e.clientX;
-      single.lastY  = e.clientY;
-      two = null;
+      // 1 ponteiro: ORBIT ou PAN
+      const dx = p.x - prevX;
+      const dy = p.y - prevY;
+
+      if (p.mode === 'pan'){
+        panDelta(dx, dy);
+      } else {
+        // ORBIT – usa sensibilidade mobile igual à do 2D
+        orbitDelta(dx, dy, p.ptype !== 'mouse');
+      }
     } else if (pointers.size === 2){
-      const [p0,p1] = [...pointers.values()];
-      two = { prevDist: dist(p0,p1), prevMid: mid(p0,p1) };
-      single.active = false;
-    }
-    e.preventDefault();
-  }
+      // 2 ponteiros: PINCH + PAN pelo centro
+      const dist = getDistance();
+      const mid  = getMidpoint();
 
-  function onMove(e){
-    if (!pointers.has(e.pointerId)) return;
-    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
-
-    // 1 dedo -> órbita
-    if (pointers.size === 1 && single.active){
-      const dx = e.clientX - single.lastX;
-      const dy = e.clientY - single.lastY;
-      single.lastX = e.clientX;
-      single.lastY = e.clientY;
-
-      const ROT_SPEED = 0.012;   // mais sensível
-      State.theta += dx * ROT_SPEED;
-      State.phi   -= dy * ROT_SPEED;
-      State.phi = Math.max(0.05, Math.min(Math.PI - 0.05, State.phi));
-      applyOrbitToCamera();
-      render();
-      e.preventDefault();
-      return;
-    }
-
-    // 2+ dedos -> pinça (zoom) + pan do alvo
-    if (pointers.size >= 2 && two){
-      const [p0,p1] = [...pointers.values()];
-
-      // pinch -> zoom (incremental para não "pular")
-      const d = dist(p0,p1);
-      const scale = d / (two.prevDist || d);
-      if (scale && isFinite(scale) && scale > 0){
-        const newRadius = (State.radius || 20) / scale;
-        State.radius = Math.max(4, Math.min(400, newRadius));
-        two.prevDist = d;
+      if (pinchPrevDist > 0){
+        const dScale = dist - pinchPrevDist;
+        if (Math.abs(dScale) > 0.5){
+          // aproximação suave: sinal do delta
+          zoomDelta(-Math.sign(dScale)); // gesto padrão: afastar dedos -> zoom out
+        }
+      }
+      if (pinchPrevMid){
+        const mdx = mid.x - pinchPrevMid.x;
+        const mdy = mid.y - pinchPrevMid.y;
+        if (Math.abs(mdx) > 0 || Math.abs(mdy) > 0){
+          panDelta(mdx, mdy);
+        }
       }
 
-      // pan a partir do deslocamento do ponto médio
-      const m   = mid(p0,p1);
-      const mdx = m.x - two.prevMid.x;
-      const mdy = m.y - two.prevMid.y;
-      two.prevMid = m;
-
-      const PAN_SPEED = (State.radius || 20) * 0.0022;
-      const dir   = new THREE.Vector3();
-      const right = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      right.crossVectors(dir, camera.up).normalize();
-      const camUp = camera.up.clone().normalize();
-
-      State.orbitTarget.addScaledVector(right, -mdx * PAN_SPEED);
-      State.orbitTarget.addScaledVector(camUp,   mdy * PAN_SPEED);
-
-      applyOrbitToCamera();
-      render();
-      e.preventDefault();
-      return;
+      pinchPrevDist = dist;
+      pinchPrevMid  = mid;
     }
-  }
 
-  function onUp(e){
-    pointers.delete(e.pointerId);
-    if (pointers.size === 1){
-      const only = [...pointers.values()][0];
-      single.active = true;
-      single.lastX = only.x;
-      single.lastY = only.y;
-      two = null;
-    } else if (pointers.size === 0){
-      single.active = false;
-      two = null;
-    }
-  }
-
-  dom.addEventListener('pointerdown',  onDown, { passive:false });
-  dom.addEventListener('pointermove',  onMove, { passive:false });
-  dom.addEventListener('pointerup',    onUp,   { passive:true  });
-  dom.addEventListener('pointercancel',onUp,   { passive:true  });
-
-  // Wheel/trackpad
-  dom.addEventListener('wheel', (e)=>{
     e.preventDefault();
-    const delta = Math.sign(e.deltaY);
-    const ZOOM_STEP = Math.max(0.25, (State.radius || 20) * 0.06);
-    State.radius += delta * ZOOM_STEP;
-    State.radius = Math.max(4, Math.min(400, State.radius));
-    applyOrbitToCamera();
-    render();
   }, { passive:false });
-})();
+
+  // Pointer Up/Cancel
+  const clearPointer = (e)=>{
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2){
+      pinchPrevDist = 0;
+      pinchPrevMid  = null;
+    }
+  };
+  cvs.addEventListener('pointerup', clearPointer, { passive:true });
+  cvs.addEventListener('pointercancel', clearPointer, { passive:true });
+  cvs.addEventListener('lostpointercapture', clearPointer, { passive:true });
+
+  // Wheel (desktop)
+  cvs.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const sign = Math.sign(e.deltaY);
+    zoomDelta(sign);
+  }, { passive:false });
+
+  // Botão direito = pan (somente mouse)
+  cvs.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
+}
 
 // ============================
 // ESC fecha 2D se ativo (quando o modal não está aberto)
