@@ -186,6 +186,36 @@ function ensureHudLayout(){
     hudEl.prepend(handle);
   }
   collapseBtn = handle.querySelector('#hudToggle');
+  // --- Toggle HUD pelo "grabber" (barrinha) ---
+  const hudHandle = document.getElementById('hudHandle');
+  if (hudHandle && hudEl) {
+    // acessibilidade + UX
+    hudHandle.setAttribute('role', 'button');
+    hudHandle.setAttribute('tabindex', '0');
+    hudHandle.setAttribute('aria-label', 'Mostrar ou ocultar controles');
+    hudHandle.style.cursor = 'pointer';
+
+    const syncExpanded = () => {
+      const collapsed = hudEl.classList.contains('collapsed');
+      hudHandle.setAttribute('aria-expanded', String(!collapsed));
+    };
+
+    const toggleHud = () => {
+      hudEl.classList.toggle('collapsed');
+      syncExpanded();
+    };
+
+    hudHandle.addEventListener('click', toggleHud, { passive: true });
+    hudHandle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleHud();
+      }
+    }, { passive: false });
+
+    // estado inicial
+    syncExpanded();
+  }
 
   // linhas
   let row1 = hudEl.querySelector('.hud-row-1');
@@ -194,29 +224,74 @@ function ensureHudLayout(){
 
   if (!row1){ row1 = document.createElement('div'); row1.className = 'row hud-row-1'; hudEl.appendChild(row1); }
   if (!row2){ row2 = document.createElement('div'); row2.className = 'row hud-row-2'; hudEl.appendChild(row2); }
-  if (!row3){ row3 = document.createElement('div'); row3.className = 'row hud-row-3'; hudEl.appendChild(row3); }
+  if (!row3){ row3 = document.createElement('div'); row3.className = 'row hud-row-3 nowrap'; hudEl.appendChild(row3); }
+  else { row3.classList.add('nowrap'); }
 
-  // move elementos para as linhas (se existirem)
+    // --- PURGA de contêineres antigos que ficaram vazios (roubam espaço) ---
+  const leftovers = [
+    'row-sliders-opacity',
+    'row-camera',
+    'row-fvs',
+    'row-sliders-explodexy',
+    'row-sliders-explodey'
+  ];
+
+  leftovers.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    // Se ainda houver algum filho útil, puxamos para dentro do HUD e removemos o wrapper.
+    // (em geral já movemos tudo com "put", mas por segurança:)
+    while (el.firstElementChild) {
+      hudEl.appendChild(el.firstElementChild);
+    }
+
+    // Remove nós de texto em branco para não “sobrar” nada
+    Array.from(el.childNodes).forEach(n => {
+      if (n.nodeType === 3 && !/\S/.test(n.nodeValue || '')) n.remove();
+    });
+
+    // Se ficar vazio (esperado), some com ele
+    if (!el.firstElementChild) {
+      el.remove();
+    }
+  });
+
+  // util
   const put = (el, row) => { if (el && row && el.parentElement !== row) row.appendChild(el); };
 
-  // 1ª linha: dropdown + NC
+  // ===== 1ª linha: label da FVS + dropdown + NC =====
+  const lblFvs = hudEl.querySelector('label[for="fvsSelect"]');
+  put(lblFvs,                 row1);
   put(document.getElementById('fvsSelect'), row1);
   put(document.getElementById('btnNC'),     row1);
 
-  // 2ª linha: recentrar + resetRot + Reset Explode + 2D
+  // ===== 2ª linha: recentrar + resetRot + Reset Explode + 2D =====
   put(document.getElementById('recenter'),     row2);
   put(document.getElementById('resetRot'),     row2);
   put(document.getElementById('resetExplode'), row2);
   put(document.getElementById('btn2D'),        row2);
 
-  // 3ª linha: sliders (opacidade / explodeXY / explodeY)
-  // encurta visualmente com classes
+  // ===== 3ª linha: sliders com seus labels (emoji + slider lado a lado) =====
   const op = document.getElementById('opacity');
   const ex = document.getElementById('explodeXY');
   const ey = document.getElementById('explodeY');
-  [op,ex,ey].forEach(r => r && r.classList.add('slim'));
 
-  put(op, row3); put(ex, row3); put(ey, row3);
+  const lblOp = hudEl.querySelector('label[for="opacity"]');
+  const lblEx = hudEl.querySelector('label[for="explodeXY"]');
+  const lblEy = hudEl.querySelector('label[for="explodeY"]');
+
+  [op, ex, ey].forEach(r => r && r.classList.add('slim'));
+
+  // ordem: (emoji -> slider), repetido para cada controle
+  put(lblOp, row3); put(op, row3);
+  put(lblEx, row3); put(ex, row3);
+  put(lblEy, row3); put(ey, row3);
+
+  // (opcional) remover a palavra "Controles" e algum botão antigo "HUD", se existirem
+  hudEl.querySelector('.handle .title')?.remove();
+  document.getElementById('hudToggle')?.remove();
+
 }
 
 // ============================
