@@ -132,12 +132,12 @@ function buildFloorsFromApartamentos(){
   const seenOrder = new Map();
 
   (apartamentos || []).forEach((ap, idx)=>{
-    const aptRaw  = String(ap.nome ?? ap.apartamento ?? ap.apto ?? '').trim();
+    const aptRaw  = String(ap.apartamento ?? '').trim();
     const floor   = String(ap.pavimento ?? ap.pavimento_origem ?? ap.pav ?? '').trim();
     if (!aptRaw || !floor) return;
-    const aptKey = normNameKey(aptRaw);
-    if (!aptKey) return;
-
+    //const aptKey = normNameKey(aptRaw);
+    //if (!aptKey) return;
+    const aptKey = aptRaw;
     if (!floorsMap.has(floor)) {
       floorsMap.set(floor, new Map());
       seenOrder.set(floor, floorsMap.size - 1);
@@ -180,8 +180,8 @@ function buildRowsLookup(){
   const rows = (getRowsForCurrentFVS ? (getRowsForCurrentFVS() || []) : []);
   const map = new Map();
   for (const r of rows){
-    const aptName = String(r.nome ?? r.apartamento ?? r.apto ?? '').trim();
-    const key = normNameKey(aptName);
+   const aptName = String(r.apartamento ?? '').trim();           // <-- SOMENTE apartamento
+   const key = aptName;
     if (!key) continue;
     map.set(key, r);
   }
@@ -205,7 +205,7 @@ export function recolorCards2D(){
   cards.forEach(card=>{
     const apt = card.dataset.apto || '';
     const pav = card.dataset.pav  || '';
-    const key = normNameKey(apt);
+    const key = apt;
     const row = rowsMap.get(key) || null;
 
     card._row = row;
@@ -347,7 +347,7 @@ export function render2DCards(){
 
   for (const band of perFloor){
     for (const it of band.items){
-      const key = normNameKey(it.apt);
+      const key = it.apt;
       const row = rowsMap.get(key) || null;
 
       const el = document.createElement('div');
@@ -496,8 +496,7 @@ export function render2DCards(){
     let row = card._row || null;
     if (!row) {
       const rowsMap2 = buildRowsLookup();
-      row = rowsMap2.get(card.dataset.key || '') || null;
-      if (!row) row = rowsMap2.get(normNameKey(card.dataset.apto || '')) || null;
+      row = rowsMap2.get(card.dataset.key || '') || rowsMap2.get(card.dataset.apto || '') || null;
     }
 
     const apt = card.dataset.apto || '';
