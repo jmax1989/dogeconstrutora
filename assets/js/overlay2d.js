@@ -11,6 +11,12 @@ import { openAptModal } from './modal.js';
 let host = null;
 let getRowsForCurrentFVS = null;
 
+// guarda valores para preservar posição durante mudanças de zoom programáticas
+let _preZoomScrollTop = 0;
+let _preZoomContentH  = 0;
+let _preZoomFocalY    = 0;  // posição dentro do host (px)
+let _pendingScrollRestore = false;
+
 /** Permite injetar o resolvedor de linhas da FVS ativa */
 export function setRowsResolver(fn){
   getRowsForCurrentFVS = (typeof fn === 'function') ? fn : null;
@@ -18,45 +24,88 @@ export function setRowsResolver(fn){
 
 export function initOverlay2D(){
   host = document.getElementById('cards2d');
+  if (!host) return;
 
-  // === Zoom horizontal: ajusta número de linhas (TARGET_ROWS) ===
-  if (host && !host._zoomBound){
-    host._zoomBound = true;
+  // comportamento de rolagem fixo (sem pinch/zoom nativo)
+  host.style.overflowY = 'auto';
+  host.style.overflowX = 'hidden';
+  host.style.touchAction = 'pan-y';
+  host.style.webkitOverflowScrolling = 'touch';
 
-    host.addEventListener('wheel', (e)=>{
-      if (!e.ctrlKey && !e.metaKey){
-        // se não for pinch-zoom do navegador, tratamos como zoom horizontal
-        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)){
-          e.preventDefault();
+  // defaults do estado de zoom
+  if (State.grid2DZoom == null) State.grid2DZoom = 1;
 
-          // ajusta State.zoom2D baseado no deltaX
-          const dir = Math.sign(e.deltaX);
-          State.zoom2D = (State.zoom2D || 1) + dir*0.05;
-          State.zoom2D = Math.max(0.5, Math.min(2.0, State.zoom2D));
+  // IMPORTANTE: desabilitado qualquer binding de pinch/wheel-zoom aqui.
+  // O zoom agora é apenas por botão (hud.js chamará setGridZoom/zoom2DStep).
+}
 
-          render2DCards();
-        }
-      }
-    }, { passive:false });
+/* ---------- API de zoom por botão ---------- */
+
+/** Retorna o fator máximo “útil” de zoom (1 linha). */
+export function getMaxGridZoom(){
+  // Nosso layout usa TARGET_ROWS = round(8 / Z). Para 1 linha → Z ≈ 8.
+  return 8;
+}
+
+/** Seta um zoom alvo com animação suave e preserva a posição de leitura. */
+export function setGridZoom(targetZ){
+  if (!host) initOverlay2D();
+  if (!host) return;
+
+  const ZMIN = 0.6;
+  const ZMAX = getMaxGridZoom();
+  const tz = Math.max(ZMIN, Math.min(ZMAX, Number(targetZ) || 1));
+
+  // capturar referência para restaurar scroll relative ao “ponto focal” (centro da viewport)
+  const rect = host.getBoundingClientRect();
+  _preZoomFocalY   = rect.height * 0.5;
+  _preZoomScrollTop = host.scrollTop;
+  _preZoomContentH  = host.scrollHeight;
+  _pendingScrollRestore = true;
+
+  // animação com easing leve
+  const start = performance.now();
+  const from = State.grid2DZoom || 1;
+  const to   = tz;
+  const dur  = 140; // ms
+
+  if (Math.abs(to - from) < 0.0001){
+    State.grid2DZoom = to;
+    render2DCards();
+    return;
   }
+
+  const ease = (t)=> 1 - Math.pow(1 - t, 3); // easeOutCubic
+  const step = (now)=>{
+    const k = Math.min(1, (now - start) / dur);
+    State.grid2DZoom = from + (to - from) * ease(k);
+    render2DCards();
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
-export function show2D(){
-  if (!host) initOverlay2D();
-  if (!host) return;
-  host.classList.add('active');
-  host.style.pointerEvents = 'auto';
-  render2DCards();
+/** Reseta para 1×. */
+export function resetGridZoom(){
+  setGridZoom(1);
 }
 
-export function hide2D(){
-  if (!host) initOverlay2D();
-  if (!host) return;
-  host.classList.remove('active');
-  host.style.pointerEvents = 'none';
+/** Avança um “passo” de zoom: 2× → 4× → Máx → volta ao min (quando chamar reset) */
+export function zoom2DStep(){
+  const z = Number(State.grid2DZoom || 1);
+  const ZMAX = getMaxGridZoom();
+
+  // thresholds para decidir próximo passo
+  if (z < 1.5) return setGridZoom(2);   // → 2x
+  if (z < 3)   return setGridZoom(4);   // → 4x
+  if (z < ZMAX - 0.1) return setGridZoom(ZMAX); // → Máx (1 linha)
+
+  // já em “máx”: quem chamar essa função pode trocar o ícone para “-”
+  // o retorno aqui é opcional; o HUD chamará resetGridZoom() ao clicar no "-"
 }
 
 /* ===== Helpers ===== */
+
 function compareApt(a, b){
   const rx = /(\d+)/g;
   const ax = String(a||'').toUpperCase();
@@ -144,6 +193,7 @@ function hasNC(row){
   const nc = Number(row.qtd_nao_conformidades_ultima_inspecao ?? row.nao_conformidades ?? 0) || 0;
   return nc > 0;
 }
+
 // Recolore apenas (quando trocar FVS/tema) mantendo grade fixa
 export function recolorCards2D(){
   if (!host) return;
@@ -161,7 +211,7 @@ export function recolorCards2D(){
     card._row = row;
     card._hasData = !!row;
 
-    // valores normalizados (mostra 0 quando não vier)
+    // valores normalizados
     const nc   = Math.max(0, Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0);
     const pend = Math.max(0, Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0);
     const perc = Math.max(0, Math.round(Number(row?.percentual_ultima_inspecao ?? row?.percentual ?? 0) || 0));
@@ -283,7 +333,6 @@ export function render2DCards(){
   host.style.left = '0';
   host.style.right = '0';
   host.style.setProperty('bottom', `${hudH}px`, 'important');
-  host.style.overflow = 'hidden';
 
   // Base da grade
   const perFloor = buildFloorsFromApartamentos();
@@ -321,7 +370,7 @@ export function render2DCards(){
       durEl.style.display = 'none';
       el.appendChild(durEl);
 
-      // Dados brutos (normalizados para sempre exibir)
+      // Dados brutos
       const nc   = Math.max(0, Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0);
       const pend = Math.max(0, Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0);
       const perc = Math.max(0, Math.round(Number(row?.percentual_ultima_inspecao ?? row?.percentual ?? 0) || 0));
@@ -457,7 +506,7 @@ export function render2DCards(){
     openAptModal({ id: apt, floor: pav, row, tintHex: hex });
   };
 
-  // ====== Layout (inalterado) ======
+  // ====== Layout ======
   const paneW = Math.max(240, host.clientWidth);
   const paneH = Math.max(180, host.clientHeight);
 
@@ -467,7 +516,10 @@ export function render2DCards(){
   let hGap = Math.max(12, Math.floor(paneW * 0.014));
   let vGap = Math.max(10, Math.floor(paneH * 0.014));
 
-  const TARGET_ROWS = Math.max(3, Math.round((State.grid2DZoom || 1) * 8)); // respeita zoom horizontal
+  const Z = Math.max(0.6, Math.min(getMaxGridZoom(), Number(State.grid2DZoom || 1)));
+  // base 8 linhas; com Z maior, menos linhas → cards maiores (efeito “zoom”)
+  const TARGET_ROWS = Math.max(1, Math.round(8 / Z));
+
   let cardH = Math.floor((paneH - (TARGET_ROWS-1)*vGap) / TARGET_ROWS);
   cardH = Math.max(MIN_H, Math.min(cardH, MAX_H));
   let cardW = Math.max(MIN_W, Math.floor(cardH * RATIO));
@@ -529,6 +581,32 @@ export function render2DCards(){
     cursorY += cardH + (r < perFloor.length-1 ? vGap : 0);
   }
 
-  host.style.overflowY = 'auto';
-  host.style.overflowX = 'hidden';
+  // ===== Restaurar a posição de leitura após mudança de zoom =====
+  if (_pendingScrollRestore){
+    const newH = host.scrollHeight || 1;
+    const oldH = _preZoomContentH || 1;
+    const ratio = newH / oldH;
+    const desired = ((_preZoomScrollTop + _preZoomFocalY) * ratio) - _preZoomFocalY;
+
+    const maxScroll = Math.max(0, newH - host.clientHeight);
+    host.scrollTop = Math.max(0, Math.min(maxScroll, desired));
+
+    _pendingScrollRestore = false;
+  }
+}
+
+/* ===== Visibilidade do overlay ===== */
+export function show2D(){
+  if (!host) initOverlay2D();
+  if (!host) return;
+  host.classList.add('active');
+  host.style.pointerEvents = 'auto';
+  render2DCards();
+}
+
+export function hide2D(){
+  if (!host) initOverlay2D();
+  if (!host) return;
+  host.classList.remove('active');
+  host.style.pointerEvents = 'none';
 }
