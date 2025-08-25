@@ -11,10 +11,10 @@ const ORBIT_MIN_PHI = 0.05;
 const ORBIT_MAX_PHI = Math.PI - 0.05;
 
 // Sensibilidades (ajustadas p/ ficar "leve" no mobile e igual ao 2D)
-const ROT_SPEED_DESKTOP = 0.012;   // antes 0.005
-const ROT_SPEED_TOUCH   = 0.012;
-const PAN_FACTOR        = 1.8;     // pan mais solto
-const ZOOM_STEP_FACTOR  = 0.08;    // mantido
+const ROT_SPEED_DESKTOP = 0.003;   // antes 0.005
+const ROT_SPEED_TOUCH   = 0.003;
+const PAN_FACTOR        = 0.3;     // pan mais solto
+const ZOOM_STEP_FACTOR  = 0.001;    // mantido
 
 // Canvas host
 function getAppEl(){
