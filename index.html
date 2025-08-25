@@ -31,48 +31,45 @@
 
   <!-- HUD (rodapé) -->
   <div id="hud">
+    <!-- handle/colapse -->
     <div class="row handle" id="hudHandle">
-      <div class="grabber" aria-hidden="true"></div>
-      <span class="title">Controles</span>
-      <button id="hudToggle" aria-expanded="true" title="Recolher/Expandir">▾</button>
     </div>
 
+    <!-- 1ª linha: dropdown + NC -->
     <div class="row" id="row-fvs">
-      <label for="fvsSelect" title="Selecionar FVS">FVS</label>
       <select id="fvsSelect" aria-label="Selecionar FVS">
         <option value="">Carregando...</option>
       </select>
       <button id="btnNC" type="button" title="Mostrar apenas NC" aria-pressed="false">NC</button>
     </div>
 
-    <div class="row">
-      <button id="resetRot" title="Resetar rotação" aria-label="Resetar rotação">🔄</button>
+    <!-- 2ª linha: recenter + reset rot + Reset explode + 2D -->
+    <div class="row" id="row-actions">
       <button id="recenter" title="Recentrar câmera" aria-label="Recentrar câmera">🎯</button>
-    </div>
-
-    <div class="row">
-      <label for="opacity" title="Opacidade">🌫️</label>
-      <input id="opacity" type="range" min="0" max="100" value="100" />
-    </div>
-
-    <div class="row">
-      <label for="explodeXY" title="Explodir XY">⤢</label>
-      <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
-    </div>
-
-    <div class="row">
-      <label for="explodeY" title="Explodir por piso (Y)">⬆️</label>
-      <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
+      <button id="resetRot" title="Resetar rotação" aria-label="Resetar rotação">🔄</button>
       <button id="resetExplode" title="Resetar explode" aria-label="Resetar explode">Reset</button>
-    </div>
 
-    <div class="row">
       <button id="btn2D" class="mode2d" title="Alternar visualização 2D" aria-pressed="false">
         <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
           <circle class="badge" cx="24" cy="24" r="20"></circle>
           <text class="label" x="24" y="29" text-anchor="middle">2D</text>
         </svg>
       </button>
+    </div>
+
+    <!-- 3ª linha: sliders (ícone + slider na MESMA linha) -->
+    <div class="row" id="row-sliders">
+      <div class="slider-group">
+        <input id="opacity" type="range" min="0" max="100" value="100" />
+      </div>
+
+      <div class="slider-group">
+        <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" />
+      </div>
+
+      <div class="slider-group">
+        <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" />
+      </div>
     </div>
   </div>
 
