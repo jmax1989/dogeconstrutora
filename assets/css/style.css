@@ -473,3 +473,18 @@ canvas{ display:block; }
   background: rgba(240,246,252,0.08);
 }
 #btnZoom2D.zoom2d:active{ transform: scale(0.98); }
+/* Linha do HUD sempre em uma única linha */
+#hud .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;   /* 🚫 impede quebra de linha */
+}
+
+/* Dropdown adaptável */
+#hud select {
+  flex-shrink: 1;      /* permite encolher quando faltar espaço */
+  min-width: 80px;     /* não fica menor que isso */
+  max-width: 160px;    /* não cresce demais */
+  width: auto;         /* usa só o espaço necessário */
+}
