@@ -5,7 +5,7 @@
 import { normNameKey, clamp } from './utils.js';
 import { State } from './state.js';
 
-export const COLOR_DEFAULT = '#3d444d';  // cinza neutro (GitHub dark)
+export const COLOR_DEFAULT = '#6b7280';  // cinza neutro (GitHub dark)
 export const PALETTE = {
   green:  '#3fb950',  // verde mais suave
   yellow: '#e3b341',  // amarelo quente, visível
