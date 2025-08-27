@@ -351,6 +351,12 @@ export function render2DCards(){
   if (!host) initOverlay2D();
   if (!host) return;
 
+    // ▼▼ NOVO: capturar estado de rolagem atual (para restaurar depois)
+  const rect = host.getBoundingClientRect();
+  const _prevFocalY   = rect.height * 0.5;            // foco no meio da viewport
+  const _prevScrollTop= host.scrollTop || 0;
+  const _prevContentH = host.scrollHeight || 1;
+  
   // host ocupa viewport (acima do HUD)
   const hud = document.getElementById('hud');
   const hudH = hud ? hud.offsetHeight : 0;
@@ -624,15 +630,13 @@ export function render2DCards(){
 
   // ===== Restaurar a posição de leitura após mudança de zoom =====
   if (_pendingScrollRestore){
-    const newH = host.scrollHeight || 1;
-    const oldH = _preZoomContentH || 1;
-    const ratio = newH / oldH;
-    const desired = ((_preZoomScrollTop + _preZoomFocalY) * ratio) - _preZoomFocalY;
-
+  const newH = host.scrollHeight || 1;
+  if (_prevContentH > 1 && newH > 1) {
+    const ratio = newH / _prevContentH;
+    const desired = ((_prevScrollTop + _prevFocalY) * ratio) - _prevFocalY;
     const maxScroll = Math.max(0, newH - host.clientHeight);
     host.scrollTop = Math.max(0, Math.min(maxScroll, desired));
-
-    _pendingScrollRestore = false;
+  }
   }
 }
 
