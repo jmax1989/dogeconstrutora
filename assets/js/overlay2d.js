@@ -7,6 +7,8 @@ import { normNameKey, hexToRgba } from './utils.js';
 import { pickFVSColor } from './colors.js';
 import { apartamentos } from './data.js';
 import { openAptModal } from './modal.js';
+import { renderer } from './scene.js';
+import { clear3DHighlight } from './picking.js';
 
 let host = null;
 let getRowsForCurrentFVS = null;
@@ -638,14 +640,33 @@ export function render2DCards(){
 export function show2D(){
   if (!host) initOverlay2D();
   if (!host) return;
+
   host.classList.add('active');
   host.style.pointerEvents = 'auto';
+
+  // Bloqueia qualquer interação do 3D por baixo
+  if (renderer?.domElement){
+    renderer.domElement.style.pointerEvents = 'none';
+    renderer.domElement.style.visibility = 'hidden';   // 🔒 esconde sem “sumir” do layout
+  }
+
+  // limpa qualquer hover/seleção remanescente no 3D
+  try { clear3DHighlight?.(); } catch(_) {}
+
   render2DCards();
 }
+
 
 export function hide2D(){
   if (!host) initOverlay2D();
   if (!host) return;
+
   host.classList.remove('active');
   host.style.pointerEvents = 'none';
+
+  if (renderer?.domElement){
+    renderer.domElement.style.pointerEvents = 'auto';
+    renderer.domElement.style.visibility = 'visible';  // ✅ volta a aparecer
+  }
 }
+
