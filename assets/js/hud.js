@@ -184,6 +184,35 @@ export function initHUD(){
 
   // Observer para mudanças no HUD (recalcula cards 2D)
   setupHudResizeObserver();
+  // === Handle (grabber) para expandir/recolher o HUD ===
+const hudHandle = document.getElementById('hudHandle');
+if (hudHandle && hudEl) {
+  hudHandle.setAttribute('role', 'button');
+  hudHandle.setAttribute('tabindex', '0');
+  hudHandle.setAttribute('aria-label', 'Mostrar ou ocultar controles');
+  hudHandle.style.cursor = 'pointer';
+
+  const syncExpanded = () => {
+    const collapsed = hudEl.classList.contains('collapsed');
+    hudHandle.setAttribute('aria-expanded', String(!collapsed));
+  };
+
+  const toggleHud = () => {
+    hudEl.classList.toggle('collapsed');
+    syncExpanded();
+  };
+
+  hudHandle.addEventListener('click', toggleHud, { passive: true });
+  hudHandle.addEventListener('keydown', (e)=>{
+    if (e.key==='Enter' || e.key===' '){
+      e.preventDefault();
+      toggleHud();
+    }
+  }, { passive:false });
+
+  syncExpanded();
+}
+
 }
 
 // ============================
