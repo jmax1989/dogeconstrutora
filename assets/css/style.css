@@ -209,15 +209,12 @@ canvas{ display:block; }
 
 /* Sliders compactos + alinhamento com emoji */
 #hud input[type="range"]{
-  width: clamp(70px, 22vw, 120px);
+  width: clamp(70px, 22vw, 50px);
   height: 4px;
   display:inline-block;
   vertical-align:middle;
 }
-#hud input[type="range"].slim{
-  width: clamp(70px, 20vw, 110px);
-  height: 4px;
-}
+
 #hud input[type="range"].slim::-webkit-slider-runnable-track{ height: 4px; }
 #hud input[type="range"].slim::-moz-range-track{ height: 4px; }
 
