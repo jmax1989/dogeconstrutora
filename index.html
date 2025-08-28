@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Acompanhamento de Serviços - DOGE Construtora</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+
+  <!-- CSS externo -->
+  <link rel="stylesheet" href="./assets/css/style.css" />
+</head>
+<body>
+  <!-- Canvas 3D + overlay 2D -->
+  <div id="app">
+    <div id="cards2d"></div>
+  </div>
+
+  <!-- Modal nativo (acessível) -->
+  <div id="doge-modal-backdrop" aria-hidden="true">
+    <div id="doge-modal" role="dialog" aria-modal="true" aria-labelledby="doge-modal-title">
+      <header>
+        <h3 id="doge-modal-title">Detalhes do Apartamento</h3>
+        <span class="pill" id="doge-modal-pill"></span>
+        <button class="close" id="doge-modal-close" type="button" aria-label="Fechar">✕</button>
+      </header>
+      <div class="content" id="doge-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- Tooltip global -->
+  <div id="doge-tip" role="tooltip" aria-hidden="true"></div>
+
+  <!-- HUD (rodapé) -->
+  <div id="hud">
+    <!-- handle (toggle do HUD) -->
+    <div class="row handle" id="hudHandle" title="Mostrar/ocultar">
+      <div class="grabber" aria-hidden="true"></div>
+    </div>
+
+    <!-- 1ª linha: FVS + NC + 2D (+ Zoom 2D aparece só no modo 2D) -->
+    <div class="row hud-row-1" id="row-fvs">
+      <!-- Corte por pavimento -->
+          <label for="floorLimit" title="Explodir por piso (Y)">🪜</label>
+    <input id="floorLimit" type="range" min="0" max="1" step="1" value="1" style="width:100px">
+    <span id="floorLimitValue" class="hud-value">—all—</span>
+
+      <select id="fvsSelect" aria-label="Selecionar FVS">
+        <option value="">Carregando...</option>
+      </select>
+      <button id="btnNC" type="button" title="Mostrar apenas NC" aria-pressed="false">NC</button>
+
+      <button id="btn2D" class="mode2d" title="Alternar visualização 2D" aria-pressed="false">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <circle class="badge" cx="24" cy="24" r="20"></circle>
+          <text class="label" x="24" y="29" text-anchor="middle">2D</text>
+        </svg>
+      </button>
+
+      <!-- Zoom 2D (só visível no 2D) -->
+      <button id="btnZoom2D" class="zoom2d" title="Zoom do grid 2D" aria-label="Zoom do grid 2D" style="display:none;">🔍−</button>
+    </div>
+
+    <!-- 2ª linha: sliders (compactos) + Reset -->
+    <div class="row hud-row-2 nowrap" id="row-sliders">
+      <label for="opacity" title="Opacidade">🌫️</label>
+      <input id="opacity" type="range" min="0" max="100" value="100" class="slim" />
+
+      <label for="explodeXY" title="Explodir XY">⤢</label>
+      <input id="explodeXY" type="range" min="0" max="4" step="0.01" value="0" class="slim" />
+
+      <label for="explodeY" title="Explodir por piso (Y)">⬆️</label>
+      <input id="explodeY" type="range" min="0" max="1.5" step="0.01" value="0" class="slim" />
+
+      <!-- Reset geral (volta tudo pro estado inicial) -->
+      <button id="btnResetAll" title="Resetar visual" aria-label="Resetar visual">🔁</button>
+    </div>
+  </div>
+
+  <!-- THREE core -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+  <!-- App (módulos ES) -->
+  <script type="module" src="./assets/js/viewer.js"></script>
+</body>
+</html>
+
