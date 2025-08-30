@@ -5,23 +5,23 @@
 import { normNameKey, clamp } from './utils.js';
 import { State } from './state.js';
 
-export const COLOR_DEFAULT = '#6b7280';  // cinza neutro (GitHub dark)
+export const COLOR_DEFAULT = '#6b7280';  // cinza neutro (tema dark)
 export const PALETTE = {
-  green:  '#3fb950',  // verde mais suave
-  yellow: '#e3b341',  // amarelo quente, visível
-  orange: '#f0883e',  // laranja forte
-  red:    '#f85149',  // vermelho vibrante
-  blue:   '#4493f8',  // azul agradável no dark
+  green:  '#3fb950',
+  yellow: '#e3b341',
+  orange: '#f0883e',
+  red:    '#f85149',
+  blue:   '#4493f8',
   gray:   COLOR_DEFAULT
 };
 
 // ------------------------------------------------------------------
-// Heurísticas de status -> cor (iguais ao viewer.html)
+// Heurísticas de status -> cor
 // Campos usuais: percentual_ultima_inspecao, qtd_pend_ultima_inspecao,
 // qtd_nao_conformidades_ultima_inspecao, data_termino_inicial, pavimento_origem.
 // ------------------------------------------------------------------
 
-// === NORMAL (igual ao viewer.html) ===
+// === NORMAL ===
 export function colorFromRowNormal(row){
   if (!row) return PALETTE.gray;
 
@@ -33,25 +33,30 @@ export function colorFromRowNormal(row){
   // Em andamento → azul (ainda não tem término inicial)
   if (!terminouInicial) return PALETTE.blue;
 
-  // Concluído 100% sem pend/NC → verde
+  // Concluído 100% sem pend/NC → verde; senão → amarelo
   const ultimaOK = (pct === 100 && pend === 0 && nc === 0);
-  return ultimaOK ? PALETTE.green : PALETTE.yellow; // senão → amarelo
+  return ultimaOK ? PALETTE.green : PALETTE.yellow;
 }
 
-// === MODO NC (igual ao viewer.html) ===
+// === MODO NC ===
 export function colorFromRowNC(row){
   const nc = Number(row?.qtd_nao_conformidades_ultima_inspecao ?? 0) || 0;
   return (nc > 0) ? PALETTE.red : COLOR_DEFAULT; // sem NC → neutro
 }
 
-// === Color map por FVS (NORMAL) — agregação por pavimento igual ao viewer.html
+// ------------------------------------------------------------------
+// Color map por FVS (NORMAL)
+// Agora a chave principal é `local_origem` (quando disponível), com
+// fallback para `nome` (layout-3d.json), depois `apartamento`/apto/id/name.
+// ------------------------------------------------------------------
 export function buildColorMapForFVS(rows){
   const map = { default: COLOR_DEFAULT, colors: {}, byFloor: {} };
   if (!Array.isArray(rows)) return map;
 
-  // indexa por NOME normalizado (fallbacks apenas se 'nome' faltar)
   for (const r of rows){
-    const key = normNameKey(r?.nome ?? r?.apartamento ?? r?.apto ?? r?.id ?? r?.name ?? '');
+    const key = normNameKey(
+      r?.local_origem ?? r?.nome ?? r?.apartamento ?? r?.apto ?? r?.id ?? r?.name ?? ''
+    );
     if (!key) continue;
     map.colors[key] = colorFromRowNormal(r);
   }
@@ -78,13 +83,18 @@ export function buildColorMapForFVS(rows){
   return map;
 }
 
-// === Color map por FVS (NC) — apenas vermelho onde há NC
+// ------------------------------------------------------------------
+// Color map por FVS (NC)
+// Também prioriza `local_origem` na chave.
+// ------------------------------------------------------------------
 export function buildColorMapForFVS_NC(rows){
   const map = { default: COLOR_DEFAULT, colors: {}, byFloor: {} };
   if (!Array.isArray(rows)) return map;
 
   for (const r of rows){
-    const key = normNameKey(r?.nome ?? r?.apartamento ?? r?.apto ?? r?.id ?? r?.name ?? '');
+    const key = normNameKey(
+      r?.local_origem ?? r?.nome ?? r?.apartamento ?? r?.apto ?? r?.id ?? r?.name ?? ''
+    );
     if (!key) continue;
     map.colors[key] = colorFromRowNC(r);
   }
@@ -104,12 +114,12 @@ export function buildColorMapForFVS_NC(rows){
 
 // ------------------------------------------------------------------
 // Seleção de cor por Apto/Floor usando COLOR_MAP atual do State
-// Agora normaliza pelo NOME (layout-3d.json)
+// `aptoName` aqui é o nome do layout-3d.json (campo `nome`) —
+// que deve bater com `local_origem` normalizado no color map.
 // ------------------------------------------------------------------
 export function pickFVSColor(aptoName, floorStr = null, colorMap = State.COLOR_MAP){
   if (!colorMap) return COLOR_DEFAULT;
 
-  // chave por nome normalizado (compat: aceita apto/id/label porque normNameKey trata tudo)
   const id = normNameKey(aptoName || '');
   if (id && colorMap.colors && colorMap.colors[id]) return colorMap.colors[id];
 
@@ -140,7 +150,6 @@ export function hexToRgb(hex){
 }
 
 export function tintFromColor(hex, alpha=0.18){
-  // Retorna um background rgba leve para headers/pill/modal
   const {r,g,b} = hexToRgb(hex);
   const a = clamp(alpha, 0, 1);
   return `rgba(${r},${g},${b},${a})`;
