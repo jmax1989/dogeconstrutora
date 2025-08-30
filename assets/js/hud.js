@@ -41,8 +41,10 @@ function buildFVSIndex(rows){
 
     const nc = Number(r?.qtd_nao_conformidades_ultima_inspecao ?? r?.nao_conformidades ?? 0) || 0;
     if (nc > 0) bucket.counts.withNC++;
-    const kApart = String(r?.apartamento ?? '').trim(); // <-- SOMENTE apartamento
-    if (kApart && !bucket.rowsByNameKey.has(kApart)) bucket.rowsByNameKey.set(kApart, r);
+
+    // 🔄 CHAVE PASSA A SER 'local_origem' (antes: 'apartamento')
+    const kName = String(r?.local_origem ?? '').trim();
+    if (kName && !bucket.rowsByNameKey.has(kName)) bucket.rowsByNameKey.set(kName, r);
   }
   return byFVS;
 }
@@ -98,8 +100,10 @@ function applyFVSSelection(fvsKey, fvsIndex){
   State.CURRENT_FVS_LABEL = bucket?.label || '';
 
   setRowsResolver2D(() => rows);
+
+  // ⚙️ Resolver 3D agora por 'local_origem'
   const byName = bucket?.rowsByNameKey || new Map();
-  setRowResolver3D((raw)=> byName.get(String(raw).trim()) || null); // sem normalização
+  setRowResolver3D((raw)=> byName.get(String(raw).trim()) || null);
 
   State.COLOR_MAP = State.NC_MODE
     ? buildColorMapForFVS_NC(rows)
@@ -190,12 +194,9 @@ export function initHUD(){
 
     // Começa mostrando TODOS os pavimentos (modo solo desativado)
     showAllFloors();
-    // valor do slider pode iniciar em 0 (sem efeito até o usuário mover)
     if (!floorLimitRange.value) floorLimitRange.value = '0';
     if (floorLimitValue) floorLimitValue.textContent = '—';
-    
-    
-    // Listener local (não depende do wireEvents)
+
     floorLimitRange.addEventListener('input', ()=>{
       const lv = Number(floorLimitRange.value) || 0;
       showOnlyFloor(lv);
@@ -246,61 +247,6 @@ export function initHUD(){
   }
 }
 
-// Deixa o slider "granulado": aplica no 3D só quando cruza um inteiro.
-// EPS define o "imã" para o próximo inteiro (quanto maior, mais "grudado").
-function setupDetentedSlider(rangeEl, valueEl, {
-  min = 0, max = 50, applyFn = ()=>{}, labelFn = (v)=>String(v), eps = 0.34
-} = {}){
-  if (!rangeEl) return;
-  rangeEl.min = String(min);
-  rangeEl.max = String(max);
-  rangeEl.step = '1';
-
-  let lastApplied = null;
-  let dragging = false;
-
-  const applyIfNeeded = (rawVal, force=false)=>{
-    const nearest = Math.round(rawVal);
-    const diff = Math.abs(rawVal - nearest);
-
-    // quando arrastando: só aplica se entrou na "zona magnética" do inteiro
-    if (!force && dragging && diff > eps) {
-      // muito longe do inteiro → não aplica ainda
-      return;
-    }
-
-    if (nearest !== lastApplied || force){
-      lastApplied = nearest;
-      rangeEl.value = String(nearest);     // snap visual também
-      valueEl && (valueEl.textContent = labelFn(nearest));
-      applyFn(nearest);
-    }
-  };
-
-  // Touch/Mouse estados
-  rangeEl.addEventListener('pointerdown', ()=>{ dragging = true; }, {passive:true});
-  rangeEl.addEventListener('pointerup',   ()=>{ dragging = false; applyIfNeeded(Number(rangeEl.value), true); }, {passive:true});
-  rangeEl.addEventListener('pointercancel',()=>{ dragging = false; applyIfNeeded(Number(rangeEl.value), true); }, {passive:true});
-  rangeEl.addEventListener('keydown', (e)=>{
-    // setas/ PgUp/PgDn também viram detent
-    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(e.key)){
-      requestAnimationFrame(()=> applyIfNeeded(Number(rangeEl.value), true));
-    }
-  }, {passive:true});
-
-  // Enquanto arrasta: só aplica quando estiver “colado” num inteiro
-  rangeEl.addEventListener('input', ()=>{
-    applyIfNeeded(Number(rangeEl.value), false);
-  }, {passive:true});
-
-  // inicial
-  lastApplied = Math.round(Number(rangeEl.value)||min);
-  rangeEl.value = String(lastApplied);
-  valueEl && (valueEl.textContent = labelFn(lastApplied));
-  applyFn(lastApplied);
-}
-
-
 // ============================
 // Eventos do HUD
 // ============================
@@ -319,12 +265,11 @@ function wireEvents(fvsIndex){
   });
 
   // Corte por pavimento (granular, step=1)
-floorLimitRange?.addEventListener('input', ()=>{
-  const lv = Number(floorLimitRange.value) || 0;
-  showOnlyFloor(lv);
-  render(); // garantir redraw
-});
-
+  floorLimitRange?.addEventListener('input', ()=>{
+    const lv = Number(floorLimitRange.value) || 0;
+    showOnlyFloor(lv);
+    render(); // garantir redraw
+  });
 
   // NC toggle
   btnNC?.addEventListener('click', ()=>{
@@ -386,12 +331,13 @@ floorLimitRange?.addEventListener('input', ()=>{
     State.explodeY  = 0;
     if (explodeXYRange) explodeXYRange.value = '0';
     if (explodeYRange)  explodeYRange.value  = '0';
+
     // pavimentos → todos
-const maxLvl2 = getMaxLevelIndex();
-State.floorLimit = maxLvl2;
-if (floorLimitRange) floorLimitRange.value = String(maxLvl2);
-if (floorLimitValue) floorLimitValue.textContent = '—all—';
-applyFloorLimit(maxLvl2);
+    const maxLvl2 = getMaxLevelIndex();
+    State.floorLimit = maxLvl2;
+    if (floorLimitRange) floorLimitRange.value = String(maxLvl2);
+    if (floorLimitValue) floorLimitValue.textContent = '—all—';
+    applyFloorLimit(maxLvl2);
 
     applyExplode();
 
@@ -402,7 +348,6 @@ applyFloorLimit(maxLvl2);
     hide2D();
     if (btnZoom2D){
       btnZoom2D.style.display = 'none';
-      // volta ícone para o próximo a partir de 1× (será usado quando entrar no 2D)
       btnZoom2D.textContent = '🔍' + getNextGridZoomSymbolFrom(1);
     }
     if (rowSliders) rowSliders.style.display = '';
@@ -423,36 +368,37 @@ applyFloorLimit(maxLvl2);
   });
 
   // Toggle 2D
-btn2D?.addEventListener('click', ()=>{
-  const turningOn = !(State.flatten2D >= 0.95);
+  btn2D?.addEventListener('click', ()=>{
+    const turningOn = !(State.flatten2D >= 0.95);
 
-  State.flatten2D = turningOn ? 1 : 0;
-  btn2D.setAttribute('aria-pressed', turningOn ? 'true' : 'false');
-  btn2D.classList.toggle('active', turningOn);
+    State.flatten2D = turningOn ? 1 : 0;
+    btn2D.setAttribute('aria-pressed', turningOn ? 'true' : 'false');
+    btn2D.classList.toggle('active', turningOn);
 
-  if (turningOn){
-    // 🔹 LIMPA destaque 3D antes de entrar no 2D
-    if (floorLimitRange) floorLimitRange.style.display = 'none'; 
-    if (floorLimitValue) floorLimitValue.style.display = 'none';
-    clear3DHighlight();
+    if (turningOn){
+      // 🔹 LIMPA destaque 3D antes de entrar no 2D
+      if (floorLimitRange) floorLimitRange.style.display = 'none';
+      if (floorLimitValue) floorLimitValue.style.display = 'none';
+      clear3DHighlight();
 
-    apply2DVisual(true);
-    show2D();
+      apply2DVisual(true);
+      show2D();
+
       // esconde a linha dos sliders no 2D
       if (rowSliders) rowSliders.style.display = 'none';
+
       // zoom 2D começa em 1×; ícone passa a mostrar o próximo (que é "−" para 0.75)
       if (btnZoom2D){
         btnZoom2D.style.display = 'inline-flex';
         setGridZoom(1);
         const sym = getNextGridZoomSymbolFrom(1);
         btnZoom2D.textContent = (sym === '+') ? '🔍+' : '🔍−';
-        
       }
-      
+
       render2DCards();
     }else{
       if (floorLimitRange) floorLimitRange.style.display = '';
-      if (floorLimitValue) floorLimitValue.style.display = ''; 
+      if (floorLimitValue) floorLimitValue.style.display = '';
       apply2DVisual(false);
       hide2D();
 
