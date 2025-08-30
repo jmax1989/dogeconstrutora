@@ -7,8 +7,6 @@ import { normNameKey, hexToRgba } from './utils.js';
 import { pickFVSColor } from './colors.js';
 import { apartamentos } from './data.js';
 import { openAptModal } from './modal.js';
-import { renderer } from './scene.js';
-import { clear3DHighlight } from './picking.js';
 
 let host = null;
 let getRowsForCurrentFVS = null;
@@ -43,46 +41,36 @@ export function initOverlay2D(){
 
 /* ---------- helpers ---------- */
 
-/** Encontra o índice mais próximo em um array de stops */
-function _nearestFromList(val, list){
-  let best = list[0], bd = Math.abs(val - best);
-  for (const v of list){
+/** Encontra o índice mais próximo no ciclo para o valor atual (considera animação). */
+function _nearestStop(val, stops){
+  let best = stops[0], bd = Math.abs(val - best);
+  for (const v of stops){
     const d = Math.abs(val - v);
     if (d < bd){ best = v; bd = d; }
   }
   return best;
 }
+function _nextStop(cur, stops){
+  const i = stops.indexOf(cur);
+  return stops[(i + 1) % stops.length];
+}
 
 /* ---------- API de zoom por botão (ciclo fixo) ---------- */
 
-// Degraus do ciclo: 1 → 0.75 → 0.5 → 4 → 2 → (volta 1)
+// Degraus do ciclo (padrão atual): 1 → 0.75 → 0.5 → 4 → 2 → (volta 1)
 const Z_STOPS = [1, 0.75, 0.5, 4, 2];
 
 export function getMaxGridZoom(){ return 4; } // teto = 4×
 
-function _nearestStop(val){ return _nearestFromList(val, Z_STOPS); }
-function _nextStop(fromVal){
-  const cur = _nearestStop(fromVal);
-  const i = Z_STOPS.indexOf(cur);
-  return Z_STOPS[(i + 1) % Z_STOPS.length];
-}
-
-
-// Animação desligada p/ garantir saltos exatos  (4→2, etc.)
+/** Anima pra um zoom alvo e preserva posição de leitura. */
 let _zoomRAF = null;
 export function setGridZoom(targetZ){
   if (!host) initOverlay2D();
   if (!host) return;
 
-  // Degraus do seu ciclo atual:
-  // const Z_STOPS = [1, 0.75, 0.5, 4, 2];  (já definido acima)
-
-  // Limites coerentes com seus stops
-  const ZMIN = 0.5;
-  const ZMAX = getMaxGridZoom(); // 4
-  // força para um dos degraus conhecidos (evita “entre-degraus”)
-  const clamped = Math.max(ZMIN, Math.min(ZMAX, Number(targetZ) || 1));
-  const to = _nearestStop(clamped);
+  const ZMIN = 0.5; // mínimo efetivo do layout (0.5 porque 0.25 foi aposentado neste ciclo)
+  const ZMAX = getMaxGridZoom();
+  const to = Math.max(ZMIN, Math.min(ZMAX, Number(targetZ) || 1));
 
   // capturar o foco vertical pra restaurar depois
   const rect = host.getBoundingClientRect();
@@ -91,45 +79,58 @@ export function setGridZoom(targetZ){
   _preZoomContentH  = host.scrollHeight;
   _pendingScrollRestore = true;
 
-  // cancela qq animação antiga
+  // cancela animação anterior, se houver
   if (_zoomRAF) { cancelAnimationFrame(_zoomRAF); _zoomRAF = null; }
 
-  // SNAP imediato garante re-layout exato (sem “passinho”)
-  State.grid2DZoom = to;
-  render2DCards();
-}
+  const from = Number(State.grid2DZoom || 1);
+  if (Math.abs(to - from) < 1e-4){
+    State.grid2DZoom = _nearestStop(to, Z_STOPS); // snap
+    render2DCards();
+    return;
+  }
 
+  const start = performance.now();
+  const dur   = 140; // ms
+  const ease  = t => 1 - Math.pow(1 - t, 3); // easeOutCubic
+
+  const step = (now)=>{
+    const k = Math.min(1, (now - start) / dur);
+    const z = from + (to - from) * ease(k);
+    State.grid2DZoom = z;
+    render2DCards();
+    if (k < 1){
+      _zoomRAF = requestAnimationFrame(step);
+    } else {
+      _zoomRAF = null;
+      // snap no fim pra cair exatamente no degrau
+      State.grid2DZoom = _nearestStop(to, Z_STOPS);
+      render2DCards();
+    }
+  };
+  _zoomRAF = requestAnimationFrame(step);
+}
 
 /** Reseta para 1×. */
 export function resetGridZoom(){ setGridZoom(1); }
 
 /** Avança no ciclo e retorna o novo degrau (ex.: 1→0.75→0.5→4→2→1). */
 export function zoom2DStep(){
-  // sempre parta do degrau atual (snapa antes)
-  const cur = _nearestStop(Number(State.grid2DZoom || 1));
-  const next = _nextStop(cur);  // ex.: 1→0.75→0.5→4→2→1
+  const cur  = _nearestStop(Number(State.grid2DZoom || 1), Z_STOPS);
+  const next = _nextStop(cur, Z_STOPS);
   setGridZoom(next);
-  return next; // devolve o degrau atingido
+  return next;
 }
-
 
 /** Retorna o símbolo do botão considerando o PRÓXIMO passo do ciclo. */
 export function getNextGridZoomSymbol(){
-  const cur = _nearestStop(Number(State.grid2DZoom || 1));
-  const nxt = _nextStop(cur);
+  const cur = _nearestStop(Number(State.grid2DZoom || 1), Z_STOPS);
+  const nxt = _nextStop(cur, Z_STOPS);
   return (nxt > cur) ? '+' : '−';
 }
-// ——— NOVO: símbolo do próximo passo calculado a partir de um valor-base (já “atingido”) ———
-export function getNextGridZoomSymbolFrom(baseVal){
-  const cur = _nearestStop(Number(baseVal));
-  const nxt = _nextStop(cur);
+export function getNextGridZoomSymbolFrom(val){
+  const cur = _nearestStop(Number(val || 1), Z_STOPS);
+  const nxt = _nextStop(cur, Z_STOPS);
   return (nxt > cur) ? '+' : '−';
-}
-
-
-// (opcional, mas útil ao depurar)
-export function getCurrentZoomStop(){
-  return _nearestStop(Number(State.grid2DZoom || 1));
 }
 
 /* ===== Helpers ===== */
@@ -155,15 +156,20 @@ function floorOrderValue(floorStr, fallbackIndex){
   return -1_000_000 + (fallbackIndex||0);
 }
 
+/**
+ * Constrói bandas por pavimento a partir de apartamentos.json
+ * CHAVE: usa local_origem (antes: apartamento)
+ */
 function buildFloorsFromApartamentos(){
   const floorsMap = new Map();
   const seenOrder = new Map();
 
   (apartamentos || []).forEach((ap, idx)=>{
-    const aptRaw  = String(ap.apartamento ?? '').trim();
+    const aptRaw  = String(ap.local_origem ?? '').trim();  // <<< TROCA PRINCIPAL
     const floor   = String(ap.pavimento ?? ap.pavimento_origem ?? ap.pav ?? '').trim();
     if (!aptRaw || !floor) return;
-    const aptKey = aptRaw; // travado em 'apartamento'
+
+    const aptKey = aptRaw; // mantemos cru para casar com layout/picking
     if (!floorsMap.has(floor)) {
       floorsMap.set(floor, new Map());
       seenOrder.set(floor, floorsMap.size - 1);
@@ -172,7 +178,7 @@ function buildFloorsFromApartamentos(){
 
     if (!byApt.has(aptKey)) {
       byApt.set(aptKey, {
-        apt: aptRaw,
+        apt: aptRaw,    // ← vai para dataset.apto
         floor,
         ordemcol: (Number(ap.ordemcol) ?? Number(ap.ordemCol) ?? Number(ap.ordem)),
         firstIndex: idx
@@ -202,12 +208,16 @@ function buildFloorsFromApartamentos(){
   return floors.map(f => ({ floor: f, items: floorsMap.get(f) || [] }));
 }
 
+/**
+ * Mapa de lookup para a FVS ativa.
+ * CHAVE: usa local_origem (antes: apartamento)
+ */
 function buildRowsLookup(){
   const rows = (getRowsForCurrentFVS ? (getRowsForCurrentFVS() || []) : []);
   const map = new Map();
   for (const r of rows){
-   const aptName = String(r.apartamento ?? '').trim();           // <-- SOMENTE apartamento
-   const key = aptName;
+    const aptName = String(r.local_origem ?? '').trim(); // <<< TROCA PRINCIPAL
+    const key = aptName;
     if (!key) continue;
     map.set(key, r);
   }
@@ -229,7 +239,7 @@ export function recolorCards2D(){
 
   const cards = host.querySelectorAll('.card');
   cards.forEach(card=>{
-    const apt = card.dataset.apto || '';
+    const apt = card.dataset.apto || ''; // agora contém local_origem
     const pav = card.dataset.pav  || '';
     const key = apt;
     const row = rowsMap.get(key) || null;
@@ -301,7 +311,7 @@ export function recolorCards2D(){
     // Recolorir + clique
     if (row){
       if (showData){
-        const color = pickFVSColor(apt, pav, State.COLOR_MAP);
+        const color = pickFVSColor(apt, pav, State.COLOR_MAP); // apt = local_origem
         const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
         card.style.borderColor = color;
         card.style.backgroundColor = hexToRgba(color, a);
@@ -351,12 +361,6 @@ export function render2DCards(){
   if (!host) initOverlay2D();
   if (!host) return;
 
-    // ▼▼ NOVO: capturar estado de rolagem atual (para restaurar depois)
-  const rect = host.getBoundingClientRect();
-  const _prevFocalY   = rect.height * 0.5;            // foco no meio da viewport
-  const _prevScrollTop= host.scrollTop || 0;
-  const _prevContentH = host.scrollHeight || 1;
-  
   // host ocupa viewport (acima do HUD)
   const hud = document.getElementById('hud');
   const hudH = hud ? hud.offsetHeight : 0;
@@ -379,12 +383,12 @@ export function render2DCards(){
 
   for (const band of perFloor){
     for (const it of band.items){
-      const key = it.apt;
+      const key = it.apt; // local_origem
       const row = rowsMap.get(key) || null;
 
       const el = document.createElement('div');
       el.className = 'card';
-      el.dataset.apto = it.apt;
+      el.dataset.apto = it.apt;  // agora = local_origem
       el.dataset.pav  = it.floor;
       el.dataset.key = key;
       el._row = row;
@@ -469,12 +473,12 @@ export function render2DCards(){
 
       // Visual / clicabilidade
       if (row){
-        const color = pickFVSColor(it.apt, it.floor, State.COLOR_MAP);
+        const color = pickFVSColor(it.apt, it.floor, State.COLOR_MAP); // it.apt = local_origem
         if (showData){
           const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
           el.style.borderColor = color;
-          el.style.backgroundColor = hexToRgba(color, a);
-          el.style.opacity = '1';
+          el.style.backgroundColor  = hexToRgba(color, a);
+          el.style.opacity     = '1';
           el.style.pointerEvents = 'auto';
           el.style.cursor = 'pointer';
           el.classList.remove('disabled');
@@ -531,7 +535,7 @@ export function render2DCards(){
       row = rowsMap2.get(card.dataset.key || '') || rowsMap2.get(card.dataset.apto || '') || null;
     }
 
-    const apt = card.dataset.apto || '';
+    const apt = card.dataset.apto || ''; // local_origem
     const pav = card.dataset.pav  || '';
     const hex = pickFVSColor(apt, pav, State.COLOR_MAP);
     openAptModal({ id: apt, floor: pav, row, tintHex: hex });
@@ -541,46 +545,30 @@ export function render2DCards(){
   const paneW = Math.max(240, host.clientWidth);
   const paneH = Math.max(180, host.clientHeight);
 
-  // 1) calcule o Z logo no início (para usarmos no MAX_H dinâmico)
-  const Z = Math.max(0.5, Math.min(getMaxGridZoom(), Number(State.grid2DZoom || 1)));
-
-  // proporção do card e limites
   const RATIO = 120/72;
   const MIN_W = 60, MIN_H = 40;
-
-  // 👇 teto agora é dinâmico: quando Z≥3 (ex.: 4×) deixamos os cards crescerem bem mais
-  //    (máx. ~45% da altura da área visível), senão um teto intermediário.
-  const MAX_H = (Z >= 3)
-    ? Math.max(200, Math.floor(paneH * 0.45))
-    : Math.max(160, Math.floor(paneH * 0.30));
-
-  // gaps proporcionais ao painel
+  const MAX_H = 160;
   let hGap = Math.max(12, Math.floor(paneW * 0.014));
   let vGap = Math.max(10, Math.floor(paneH * 0.014));
 
+  const Z = Math.max(0.5, Math.min(getMaxGridZoom(), Number(State.grid2DZoom || 1)));
   // base 8 linhas; com Z maior, menos linhas → cards maiores (efeito “zoom”)
   const TARGET_ROWS = Math.max(1, Math.round(8 / Z));
 
-  // altura do card a partir do número de linhas alvo
-  let cardH = Math.floor((paneH - (TARGET_ROWS - 1) * vGap) / TARGET_ROWS);
+  let cardH = Math.floor((paneH - (TARGET_ROWS-1)*vGap) / TARGET_ROWS);
   cardH = Math.max(MIN_H, Math.min(cardH, MAX_H));
-
-  // largura proporcional
   let cardW = Math.max(MIN_W, Math.floor(cardH * RATIO));
   let fontPx = Math.max(10, Math.floor(cardH * 0.24));
 
-  // se a largura total estourar, faz um “fit” no eixo X
-  //const perFloor = buildFloorsFromApartamentos(); // (mantenha onde já está no seu código)
   const colsPerFloor = perFloor.map(b => Math.max(1, b.items.length));
-  const calcTW = (cols) => cols * cardW + Math.max(0, cols - 1) * hGap;
+  const calcTW = (cols) => cols*cardW + Math.max(0, cols-1)*hGap;
   let TWmax = Math.max(...colsPerFloor.map(calcTW));
 
-  if (TWmax > paneW) {
+  if (TWmax > paneW){
     const sx = paneW / TWmax;
     cardW = Math.max(MIN_W, Math.floor(cardW * sx));
     hGap  = Math.max(8, Math.floor(hGap  * sx));
   }
-
 
   const cards = host.querySelectorAll('.card');
   cards.forEach(el=>{
@@ -630,13 +618,15 @@ export function render2DCards(){
 
   // ===== Restaurar a posição de leitura após mudança de zoom =====
   if (_pendingScrollRestore){
-  const newH = host.scrollHeight || 1;
-  if (_prevContentH > 1 && newH > 1) {
-    const ratio = newH / _prevContentH;
-    const desired = ((_prevScrollTop + _prevFocalY) * ratio) - _prevFocalY;
+    const newH = host.scrollHeight || 1;
+    const oldH = _preZoomContentH || 1;
+    const ratio = newH / oldH;
+    const desired = ((_preZoomScrollTop + _preZoomFocalY) * ratio) - _preZoomFocalY;
+
     const maxScroll = Math.max(0, newH - host.clientHeight);
     host.scrollTop = Math.max(0, Math.min(maxScroll, desired));
-  }
+
+    _pendingScrollRestore = false;
   }
 }
 
@@ -644,33 +634,14 @@ export function render2DCards(){
 export function show2D(){
   if (!host) initOverlay2D();
   if (!host) return;
-
   host.classList.add('active');
   host.style.pointerEvents = 'auto';
-
-  // Bloqueia qualquer interação do 3D por baixo
-  if (renderer?.domElement){
-    renderer.domElement.style.pointerEvents = 'none';
-    renderer.domElement.style.visibility = 'hidden';   // 🔒 esconde sem “sumir” do layout
-  }
-
-  // limpa qualquer hover/seleção remanescente no 3D
-  try { clear3DHighlight?.(); } catch(_) {}
-
   render2DCards();
 }
-
 
 export function hide2D(){
   if (!host) initOverlay2D();
   if (!host) return;
-
   host.classList.remove('active');
   host.style.pointerEvents = 'none';
-
-  if (renderer?.domElement){
-    renderer.domElement.style.pointerEvents = 'auto';
-    renderer.domElement.style.visibility = 'visible';  // ✅ volta a aparecer
-  }
 }
-
