@@ -68,6 +68,13 @@ export function bestRowForName(rawName, mapByName){
   return null;
 }
 
+export function extractBetweenPavimentoAndNextDash(full){
+  if (!full) return '';
+  const re = /Pavimento\s+\d+\s*-\s*([^-\n\r]+)(?:\s*-\s*.*)?/i;
+  const m = String(full).match(re);
+  return m ? m[1].trim() : String(full).trim();
+}
+
 /**
  * Normaliza CHAVE de FVS (para dropdown/lookup estável)
  * Estratégia:

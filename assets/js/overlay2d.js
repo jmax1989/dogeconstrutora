@@ -3,7 +3,7 @@
 // ============================
 
 import { State } from './state.js';
-import { hexToRgba, bestRowForName } from './utils.js';
+import { hexToRgba, bestRowForName, extractBetweenPavimentoAndNextDash } from './utils.js';
 import { pickFVSColor } from './colors.js';
 import { layoutData } from './data.js';
 import { openAptModal } from './modal.js';
@@ -17,6 +17,10 @@ let _preZoomScrollTop = 0;
 let _preZoomContentH  = 0;
 let _preZoomFocalY    = 0;  // posição dentro do host (px)
 let _pendingScrollRestore = false;
+let _keepRestoringScroll = false; // mantém a restauração ativa durante animação
+let _preZoomScrollLeft = 0;
+let _preZoomContentW   = 0;
+let _preZoomFocalX     = 0;
 
 /** Permite injetar o resolvedor de linhas da FVS ativa */
 export function setRowsResolver(fn){
@@ -61,6 +65,17 @@ function _nextStop(cur, stops){
   return stops[(i + 1) % stops.length];
 }
 
+function _set3DVisibility(hidden){
+  const cvs =
+    document.getElementById('doge-canvas') ||
+    document.querySelector('canvas[data-engine="doge"]') ||
+    document.querySelector('#app canvas') ||
+    document.querySelector('canvas');
+
+  if (!cvs) return;
+  cvs.style.visibility = hidden ? 'hidden' : 'visible';
+}
+
 /* ---------- API de zoom por botão (ciclo fixo) ---------- */
 
 // Degraus do ciclo (padrão atual): 1 → 0.75 → 0.5 → 4 → 2 → (volta 1)
@@ -70,51 +85,63 @@ export function getMaxGridZoom(){ return 4; } // teto = 4×
 
 /** Anima pra um zoom alvo e preserva posição de leitura. */
 let _zoomRAF = null;
+
 export function setGridZoom(targetZ){
   if (!host) initOverlay2D();
   if (!host) return;
 
-  const ZMIN = 0.5; // mínimo efetivo do layout (0.5 porque 0.25 foi aposentado neste ciclo)
+  const ZMIN = 0.5;
   const ZMAX = getMaxGridZoom();
   const to = Math.max(ZMIN, Math.min(ZMAX, Number(targetZ) || 1));
 
-  // capturar o foco vertical pra restaurar depois
+  // snapshot do foco para preservar
   const rect = host.getBoundingClientRect();
   _preZoomFocalY    = rect.height * 0.5;
+  _preZoomFocalX    = rect.width  * 0.5;
   _preZoomScrollTop = host.scrollTop;
   _preZoomContentH  = host.scrollHeight;
+  _preZoomScrollLeft = host.scrollLeft;           // << novo
+  _preZoomContentW   = host.scrollWidth;
   _pendingScrollRestore = true;
 
-  // cancela animação anterior, se houver
+  // cancela anima anterior
   if (_zoomRAF) { cancelAnimationFrame(_zoomRAF); _zoomRAF = null; }
 
   const from = Number(State.grid2DZoom || 1);
   if (Math.abs(to - from) < 1e-4){
-    State.grid2DZoom = _nearestStop(to, Z_STOPS); // snap
+    State.grid2DZoom = _nearestStop(to, Z_STOPS);
     render2DCards();
     return;
   }
 
   const start = performance.now();
-  const dur   = 140; // ms
-  const ease  = t => 1 - Math.pow(1 - t, 3); // easeOutCubic
+  const dur   = 140;
+  const ease  = t => 1 - Math.pow(1 - t, 3);
+
+  _keepRestoringScroll = true; // ⟵ mantém restauração ativa durante a animação
 
   const step = (now)=>{
     const k = Math.min(1, (now - start) / dur);
     const z = from + (to - from) * ease(k);
     State.grid2DZoom = z;
+
+    // garante que cada frame vai restaurar o scroll em render2DCards
+    _pendingScrollRestore = true;
     render2DCards();
+
     if (k < 1){
       _zoomRAF = requestAnimationFrame(step);
     } else {
       _zoomRAF = null;
-      // snap no fim pra cair exatamente no degrau
       State.grid2DZoom = _nearestStop(to, Z_STOPS);
+      _pendingScrollRestore = true;
       render2DCards();
+      _keepRestoringScroll = false; // ⟵ terminou a animação
     }
   };
   _zoomRAF = requestAnimationFrame(step);
 }
+
 
 /** Reseta para 1×. */
 export function resetGridZoom(){ setGridZoom(1); }
@@ -171,67 +198,72 @@ function buildFloorsFromApartamentos(){
   const split = (name)=> String(name||'').split(/\s*-\s*/g).map(s=>s.trim()).filter(Boolean);
   const join  = (parts,n)=> parts.slice(0,n).join(' - ');
 
-  // Map<levelIndex:number, Map<rootKey:string, { apt, floor, levelIndex, ordemcol, firstIndex }>>
+  // Map<levelIndex:number, Map<rootKey:string, { apt, floor, levelIndex, ordemcol, firstIndex, scale, page }>>
   const floorsByIdx = new Map();
+
+  // escala opcional já existente (mantida)
+  const S_MIN = 0.35, S_MAX = 1.0;
+  const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
 
   placements.forEach((p, idx)=>{
     const full = String(p?.nome ?? '').trim();
     if (!full) return;
 
-    // ❗ levelIndex numérico direto do 3D — base única para a ordem
     const lvl = getLevelIndexForName(full);
-    if (!Number.isFinite(lvl)) return; // se o 3D ainda não registrou, pula este item por enquanto
+    if (!Number.isFinite(lvl)) return;
 
     const parts = split(full);
-
-    // rótulo de exibição (NÃO usado na ordem)
     const floorLabel = `Nível ${lvl}`;
 
-    // --- “Root” do card (não mexe na ORDEM dos pavimentos) ---
-    // Preferência: até "Apartamento/Apto/Apt NNNN"
     const iApt = parts.findIndex(t => /^(Apartamento|Apto|Apt)\b/i.test(t));
-
-    // caso não tenha "Apartamento", tentamos cortar um termo após o nível (apenas para card granulado)
-    // Para isso, localizamos o token textual "Pavimento ..." se existir — novamente, só para recorte visual;
-    // NÃO influencia a ordenação, que é 100% pelo lvl.
     const iPav = parts.findIndex(t => /^Pavimento\b/i.test(t));
-
     let rootN = (iApt >= 0) ? (iApt + 1)
                : (iPav >= 0) ? (iPav + 2)
-               : Math.min(2, parts.length); // fallback mínimo: 1–2 termos
-
+               : Math.min(2, parts.length);
     if (rootN > parts.length) rootN = parts.length;
-
-    // se não há nada além do 1º nível, não vira card
     if (rootN <= 1 && parts.length <= 1) return;
 
     const rootKey = join(parts, rootN);
     if (!rootKey) return;
+
+    // 🔹 novo: página (1, 2, …). Se vier inválido, cai pra 1.
+    const page = Math.max(1, Math.floor(Number(p.pagina ?? p.page ?? 1) || 1));
+
+    // (opcional) proporção por card
+    const rawScale = Number(p.proporcao ?? p.scale ?? 1);
+    const scale    = clamp((Number.isFinite(rawScale) && rawScale > 0) ? rawScale : 1, S_MIN, S_MAX);
 
     if (!floorsByIdx.has(lvl)) floorsByIdx.set(lvl, new Map());
     const byRoot = floorsByIdx.get(lvl);
 
     if (!byRoot.has(rootKey)){
       byRoot.set(rootKey, {
-        apt: rootKey,                 // ID completo do card (casa 1:1 com FVS/hierarquia)
-        floor: floorLabel,            // DISPLAY sintético; não entra na ordenação
-        levelIndex: lvl,              // chave de AGRUPAMENTO e ORDENAÇÃO
+        apt: rootKey,
+        floor: floorLabel,
+        levelIndex: lvl,
         ordemcol: Number(p?.ordemcol ?? p?.ordemCol ?? p?.ordem),
-        firstIndex: idx
+        firstIndex: idx,
+        scale,
+        page
       });
+    } else {
+      // Se o mesmo rootKey aparecer em mais de um placement:
+      // - escala = maior
+      // - página  = menor (prioriza a mais à esquerda)
+      const it = byRoot.get(rootKey);
+      it.scale = Math.max(it.scale ?? 1, scale);
+      it.page  = Math.min(it.page ?? page, page);
     }
   });
 
-  // ❗ Ordenação dos pavimentos: ESTRITAMENTE por levelIndex DESC (alto → baixo)
+  // Pavimentos por levelIndex (desc)
   const sortedLvls = Array.from(floorsByIdx.keys()).sort((a,b)=> b - a);
 
-  // Ordenação dos cards dentro do pavimento (não altera ordem de pavimento)
   const sortCards = (A,B)=>{
     const oa = Number.isFinite(A.ordemcol) ? A.ordemcol : null;
     const ob = Number.isFinite(B.ordemcol) ? B.ordemcol : null;
     if (oa!=null && ob!=null && oa!==ob) return oa - ob;
 
-    // ordem alfanumérica com atenção a números no NOME (ex.: 2501 < 2502)
     const rx = /(\d+)/g;
     const ax = String(A.apt||'').toUpperCase();
     const bx = String(B.apt||'').toUpperCase();
@@ -245,7 +277,6 @@ function buildFloorsFromApartamentos(){
     return (A.firstIndex ?? 0) - (B.firstIndex ?? 0);
   };
 
-  // Constrói as bandas finais
   const bands = [];
   for (const lvl of sortedLvls){
     const items = Array.from(floorsByIdx.get(lvl).values()).sort(sortCards);
@@ -253,6 +284,8 @@ function buildFloorsFromApartamentos(){
   }
   return bands;
 }
+
+
 
 
 
@@ -416,7 +449,7 @@ export function render2DCards(){
   if (!host) initOverlay2D();
   if (!host) return;
 
-  // Ajusta a margem inferior para não cobrir o HUD
+  // margem inferior p/ não cobrir HUD
   const hud = document.getElementById('hud');
   const hudH = hud ? hud.offsetHeight : 0;
   host.style.setProperty('bottom', `${hudH}px`, 'important');
@@ -425,105 +458,101 @@ export function render2DCards(){
   const rowsMap  = buildRowsLookup();
   const NC_MODE  = !!State.NC_MODE;
 
-  // (re)constrói DOM
+  // (1) prepara DOM
   host.innerHTML = '';
   const frag = document.createDocumentFragment();
 
+  // 🔹 quantas páginas existem (maior "page" visto)
+  let maxPage = 1;
+  perFloor.forEach(b => b.items.forEach(it => { maxPage = Math.max(maxPage, Number(it.page||1)); }));
+
+  // 🔹 ativa/desativa scroll horizontal e snap
+  host.style.overflowX = (maxPage > 1) ? 'auto' : 'hidden';
+  host.style.overflowY = 'auto';
+  host.style.scrollSnapType = (maxPage > 1) ? 'x mandatory' : 'none';
+  host.style.touchAction = (maxPage > 1) ? 'pan-x pan-y' : 'pan-y'; // pinch-zoom continua desabilitado
+
+  // (2) cria “marcadores” de página para o snap
+  // cada página ocupa exatamente a largura visível; cards são posicionados por offset
+  const paneW = Math.max(240, host.clientWidth);
+  const paneH = Math.max(180, host.clientHeight);
+  for (let p = 1; p <= maxPage; p++){
+    const snap = document.createElement('div');
+    snap.className = 'page-snap';
+    snap.style.position = 'absolute';
+    snap.style.left = `${(p-1) * paneW}px`;
+    snap.style.top = `0px`;
+    snap.style.width = `${paneW}px`;
+    snap.style.height = `${paneH}px`;
+    snap.style.scrollSnapAlign = 'start';
+    snap.style.pointerEvents = 'none';
+    frag.appendChild(snap);
+  }
+
+  // (3) cria os cards normalmente
   for (const band of perFloor){
     for (const it of band.items){
-      const key = it.apt; // local_origem exato do card
-
-      // hierarquia EXATA
+      const key = it.apt;
       const row = bestRowForName(key, rowsMap);
 
       const el = document.createElement('div');
       el.className = 'card';
-      el.dataset.apto = it.apt;   // local_origem
-      el.dataset.pav  = it.floor; // string do pavimento
+      el.dataset.apto = it.apt;
+      el.dataset.pav  = it.floor;
       el.dataset.key  = key;
+      el.dataset.page = String(it.page || 1);
       el._row = row;
       el._hasData = !!row;
 
-      // 🔧 POSICIONAMENTO ABSOLUTO (centralizado no ponto x/y)
       el.style.position = 'absolute';
       el.style.transform = 'translate(-50%, -50%)';
 
-      // label grande do card
       const numEl = document.createElement('div');
       numEl.className = 'num';
-      numEl.textContent = it.apt;
+      numEl.textContent = extractBetweenPavimentoAndNextDash(it.apt);
       el.appendChild(numEl);
 
-      // duração (mantida oculta como no seu layout)
       const durEl = document.createElement('div');
       durEl.className = 'dur';
       durEl.style.display = 'none';
       el.appendChild(durEl);
 
-      // dados normalizados para badges
       const nc   = Math.max(0, Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0);
       const pend = Math.max(0, Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0);
       const perc = Math.max(0, Math.round(Number(row?.percentual_ultima_inspecao ?? row?.percentual ?? 0) || 0));
       const durN = Math.max(0, Math.round(Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0));
-
       const showData = !!row && (!NC_MODE || nc > 0);
 
       if (showData){
         const badges = document.createElement('div');
         badges.className = 'badges';
-
-        // 1ª linha: PEND | NC
+        // linha 1
         {
           const rowTop = document.createElement('div');
           rowTop.className = 'badge-row';
-
           const left  = document.createElement('div'); left.className  = 'slot left';
           const right = document.createElement('div'); right.className = 'slot right';
-
-          const bPend = document.createElement('span');
-          bPend.className = 'badge pend';
-          bPend.textContent = String(pend);
-          bPend.title = `Pendências: ${pend}`;
-          left.appendChild(bPend);
-
-          const bNc = document.createElement('span');
-          bNc.className = 'badge nc';
-          bNc.textContent = String(nc);
-          bNc.title = `Não conformidades: ${nc}`;
-          right.appendChild(bNc);
-
+          const bPend = document.createElement('span'); bPend.className = 'badge pend'; bPend.textContent = String(pend); bPend.title = `Pendências: ${pend}`;
+          const bNc   = document.createElement('span'); bNc.className   = 'badge nc';   bNc.textContent   = String(nc);   bNc.title   = `Não conformidades: ${nc}`;
+          left.appendChild(bPend); right.appendChild(bNc);
           rowTop.append(left, right);
           badges.appendChild(rowTop);
         }
-
-        // 2ª linha: DURAÇÃO | PERCENTUAL
+        // linha 2
         {
           const rowBottom = document.createElement('div');
           rowBottom.className = 'badge-row';
-
           const left2  = document.createElement('div'); left2.className  = 'slot left';
           const right2 = document.createElement('div'); right2.className = 'slot right';
-
-          const bDur = document.createElement('span');
-          bDur.className = 'badge dur';
-          bDur.textContent = String(durN);
-          bDur.title = `Duração (dias): ${durN}`;
-          left2.appendChild(bDur);
-
-          const bPct = document.createElement('span');
-          bPct.className = 'badge percent';
-          bPct.textContent = `${perc}%`;
-          bPct.title = `Percentual executado`;
-          right2.appendChild(bPct);
-
+          const bDur = document.createElement('span'); bDur.className = 'badge dur';     bDur.textContent = String(durN);   bDur.title = `Duração (dias): ${durN}`;
+          const bPct = document.createElement('span'); bPct.className = 'badge percent'; bPct.textContent = `${perc}%`;     bPct.title = `Percentual executado`;
+          left2.appendChild(bDur); right2.appendChild(bPct);
           rowBottom.append(left2, right2);
           badges.appendChild(rowBottom);
         }
-
         el.appendChild(badges);
       }
 
-      // Visual / clicabilidade
       if (row){
         if (showData){
           const color = pickFVSColor(it.apt, it.floor, State.COLOR_MAP);
@@ -554,31 +583,26 @@ export function render2DCards(){
       }
 
       frag.appendChild(el);
-      it._el = el; // referencia para posicionamento
+      it._el = el;
     }
   }
 
   host.appendChild(frag);
 
-  // Clique delegando para abrir modal
+  // clique → modal
   host.onclick = (e) => {
     const card = e.target.closest('.card');
     if (!card || card.classList.contains('disabled')) return;
-
     const rowsMap2 = buildRowsLookup();
     const key = card.dataset.key || card.dataset.apto || '';
     const row = bestRowForName(key, rowsMap2);
-
     const apt = card.dataset.apto || '';
     const pav = card.dataset.pav  || '';
     const hex = pickFVSColor(apt, pav, State.COLOR_MAP);
     openAptModal({ id: apt, floor: pav, row, tintHex: hex });
   };
 
-  // ====== Layout (centralização e responsividade) ======
-  const paneW = Math.max(240, host.clientWidth);
-  const paneH = Math.max(180, host.clientHeight);
-
+  // ====== Layout (com páginas) ======
   const RATIO = 120/72;
   const MIN_W = 60, MIN_H = 40;
   const MAX_H = 160;
@@ -593,25 +617,39 @@ export function render2DCards(){
   let cardW = Math.max(MIN_W, Math.floor(cardH * RATIO));
   let fontPx = Math.max(10, Math.floor(cardH * 0.24));
 
-  const colsPerFloor = perFloor.map(b => Math.max(1, b.items.length));
-  const calcTW = (cols) => cols*cardW + Math.max(0, cols-1)*hGap;
-  let TWmax = Math.max(...colsPerFloor.map(calcTW));
+  // (i) ajusta base se alguma página estourar horizontalmente (considerando escala por card)
+  const S_MIN = 0.35, S_MAX = 1.0;
+  const clampScale = (v)=> Math.max(S_MIN, Math.min(S_MAX, Number(v)||1));
+  const widthOf = (w, s)=> Math.floor(w * clampScale(s));
 
+  const calcTWScaled = (items, baseW, gap)=>{
+    if (!items.length) return 0;
+    const sum = items.reduce((acc, it) => acc + widthOf(baseW, it.scale ?? 1), 0);
+    return sum + Math.max(0, items.length - 1) * gap;
+  };
+
+  // verifica cada página de cada pavimento
+  let TWmax = 0;
+  for (const band of perFloor){
+    const byPage = new Map();
+    band.items.forEach(it=>{
+      const p = Number(it.page || 1);
+      if (!byPage.has(p)) byPage.set(p, []);
+      byPage.get(p).push(it);
+    });
+    for (const [p, items] of byPage){
+      TWmax = Math.max(TWmax, calcTWScaled(items, cardW, hGap));
+    }
+  }
   if (TWmax > paneW){
     const sx = paneW / TWmax;
     cardW = Math.max(MIN_W, Math.floor(cardW * sx));
+    cardH = Math.max(MIN_H, Math.floor(cardH * sx));
+    fontPx = Math.max(10, Math.floor(fontPx * sx));
     hGap  = Math.max(8, Math.floor(hGap  * sx));
   }
 
-  const cards = host.querySelectorAll('.card');
-  cards.forEach(el=>{
-    el.style.width = `${cardW}px`;
-    el.style.height = `${cardH}px`;
-    el.style.fontSize = `${fontPx}px`;
-    el.style.opacity = el.style.opacity || '1';
-    el.style.mixBlendMode = 'normal';  // 🔒 sem blend
-  });
-
+  // variáveis dos badges
   const badgeFont = Math.max(8,  Math.min(16, Math.round(cardH * 0.15)));
   const badgePadV = Math.max(2,  Math.round(cardH * 0.055));
   const badgePadH = Math.max(4,  Math.round(cardW * 0.08));
@@ -626,46 +664,88 @@ export function render2DCards(){
   host.style.setProperty('--badge-gap',  `${badgeGap}px`);
   host.style.setProperty('--badge-top',  `${badgeTop}px`);
 
-  const originX = Math.floor(paneW/2);
   const topPad  = 16;
   let cursorY   = topPad;
 
-  for (let r = 0; r < perFloor.length; r++){
-    const band = perFloor[r];
-    const cols = Math.max(1, band.items.length);
-    const TWf  = calcTW(cols);
+  // posiciona por pavimento, mas agora separando por página
+  for (const band of perFloor){
+    // agrupa cards desta banda por página
+    const byPage = new Map();
+    band.items.forEach(it=>{
+      const p = Number(it.page || 1);
+      if (!byPage.has(p)) byPage.set(p, []);
+      byPage.get(p).push(it);
+    });
+
+    // para cada página: calcula largura e posiciona com offsetX = (page-1)*paneW
     const rowCenterY = cursorY + Math.floor(cardH/2);
 
-    for (let c = 0; c < band.items.length; c++){
-      const it = band.items[c];
-      const el = it._el;
-      if (!el) continue;
-      const x = originX - Math.floor(TWf/2) + c*(cardW + hGap) + Math.floor(cardW/2);
-      const y = rowCenterY;
-      el.style.left = `${x}px`;
-      el.style.top  = `${y}px`;
+    for (let p = 1; p <= maxPage; p++){
+      const items = byPage.get(p) || [];
+      if (!items.length) continue;
+
+      const TWf = calcTWScaled(items, cardW, hGap);
+      let runX = ((p-1) * paneW) + Math.floor(paneW/2) - Math.floor(TWf/2);
+
+      for (const it of items){
+        const el = it._el; if (!el) continue;
+
+        const s = clampScale(it.scale ?? 1);
+        const w = widthOf(cardW, s);
+        const h = Math.floor(cardH * s);
+        const f = Math.max(10, Math.floor(fontPx * s));
+
+        el.style.width = `${w}px`;
+        el.style.height = `${h}px`;
+        el.style.fontSize = `${f}px`;
+        el.style.opacity = el.style.opacity || '1';
+        el.style.mixBlendMode = 'normal';
+
+        const xCenter = runX + Math.floor(w/2);
+        const yCenter = rowCenterY;
+        el.style.left = `${xCenter}px`;
+        el.style.top  = `${yCenter}px`;
+
+        runX += w + hGap;
+      }
     }
 
-    cursorY += cardH + (r < perFloor.length-1 ? vGap : 0);
+    cursorY += cardH + vGap;
   }
 
-  // restaura scroll se necessário
-  if (_pendingScrollRestore){
-    const newH = host.scrollHeight || 1;
-    const oldH = _preZoomContentH || 1;
-    const ratio = newH / oldH;
-    const desired = ((_preZoomScrollTop + _preZoomFocalY) * ratio) - _preZoomFocalY;
+// ===== restaura scroll se necessário =====
+if (_pendingScrollRestore){
+  // vertical
+  const newH = host.scrollHeight || 1;
+  const oldH = _preZoomContentH || 1;
+  const ratioY = newH / oldH;
+  const desiredTop = ((_preZoomScrollTop + _preZoomFocalY) * ratioY) - _preZoomFocalY;
+  const maxTop = Math.max(0, newH - host.clientHeight);
+  host.scrollTop = Math.max(0, Math.min(maxTop, desiredTop));
 
-    const maxScroll = Math.max(0, newH - host.clientHeight);
-    host.scrollTop = Math.max(0, Math.min(maxScroll, desired));
+  // horizontal (página)
+  const newW = host.scrollWidth || 1;
+  const oldW = _preZoomContentW || 1;
+  const ratioX = newW / oldW;
+  const desiredLeft = ((_preZoomScrollLeft + _preZoomFocalX) * ratioX) - _preZoomFocalX;
+  const maxLeft = Math.max(0, newW - host.clientWidth);
+  host.scrollLeft = Math.max(0, Math.min(maxLeft, desiredLeft));
 
-    _pendingScrollRestore = false;
-    if (!host.querySelector('.card')) {
-  // se não gerou nenhum card, tenta novamente no próximo frame
-  requestAnimationFrame(()=> render2DCards());
-}
+  _pendingScrollRestore = false;
+
+  // fallback caso ainda não tenha cards
+  if (!host.querySelector('.card')) {
+    requestAnimationFrame(()=> render2DCards());
   }
 }
+
+
+  // opcional: se você quiser começar sempre na página 1 ao entrar no 2D:
+  // host.scrollLeft = 0;
+}
+
+
+
 
 // === Efeito "esfumaçado" no 3D quando o 2D estiver ativo ===
 function _set3DFog(on){
@@ -686,11 +766,16 @@ export function show2D(){
   if (!host) return;
   host.classList.add('active');
   host.style.pointerEvents = 'auto';
+  _set3DVisibility(true);   // 🔴 esconde o canvas 3D
+  // opcional: se quiser o blur em vez de esconder, pode chamar _set3DFog(true)
   render2DCards();
 }
+
 export function hide2D(){
   if (!host) initOverlay2D();
   if (!host) return;
   host.classList.remove('active');
   host.style.pointerEvents = 'none';
+  _set3DVisibility(false);  // 🟢 mostra o canvas 3D
+  // opcional: _set3DFog(false)
 }

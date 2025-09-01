@@ -2,7 +2,7 @@
 // Modal (abrir/fechar + conteúdo + tint) — idêntico ao viewer.html
 // ============================
 
-import { formatDateBR, normAptoId, hexToRgba } from './utils.js';
+import { formatDateBR, normAptoId, hexToRgba, extractBetweenPavimentoAndNextDash } from './utils.js';
 import { State } from './state.js';
 
 let backdrop, modal, titleEl, pillEl, contentEl, closeBtn;
@@ -61,6 +61,11 @@ export function initModal(){
   modal.addEventListener('pointerdown',     suppressGhostClick, true);
 }
 
+/**
+ * Extrai o texto entre "Pavimento XX - " e o próximo " - ".
+ * Ex.: "Torre A - Pavimento 03 - Apartamento 301 - Banheiro" -> "Apartamento 301"
+ * Se o padrão não existir, devolve o texto original.
+ */
 // ---------------
 // API pública
 // ---------------
@@ -80,8 +85,8 @@ export function openAptModal({ id, floor=null, row=null, tintHex=null }){
   const aptName = String(id || '').trim();            // nome completo do layout-3d.json
   const aptKey  = normAptoId(aptName);
 
-  // 🔧 Título: SEMPRE o nome do layout (id), nunca o row.nome “301”
-  const aptNameForTitle = aptName || 'Apartamento';
+  // 🔒 Título: aplica a REGRA pedida (entre "Pavimento XX - " e o próximo " - ")
+  const aptNameForTitle = extractBetweenPavimentoAndNextDash(aptName) || 'Apartamento';
   titleEl.textContent = aptNameForTitle;
 
   // Pill curto (igual viewer): mostra Duração OU Progresso
@@ -95,8 +100,7 @@ export function openAptModal({ id, floor=null, row=null, tintHex=null }){
   applyModalTint(tintHex);
 
   // Conteúdo (estrutura e regras 1:1 com viewer.html)
-  // Passamos o nome completo para o conteúdo usar também.
-  renderModalContent({ row, displayName: aptName });
+  renderModalContent({ row });
 
   // Mostrar
   backdrop.classList.add('show');
@@ -116,7 +120,6 @@ export function openAptModal({ id, floor=null, row=null, tintHex=null }){
   const canvas = document.querySelector('#app canvas');
   if (canvas) canvas.style.pointerEvents = 'none';
 }
-
 
 /** Fecha o modal e restaura foco */
 export function closeModal(){
@@ -206,7 +209,7 @@ function renderModalContent({ row }){
     });
   }
 
-  // ===== HTML (parágrafos + progresso + tabela reaberturas) =====
+  // ===== HTML =====
   let html = '';
 
   html += `<p><strong>Apartamento:</strong> ${row?.nome ?? row?.apartamento ?? '—'}</p>`;
@@ -263,7 +266,6 @@ function renderModalContent({ row }){
   // anima barra de progresso (mesma rotina do viewer)
   animateProgressBars(contentEl);
 }
-
 
 // ---------------
 // Helpers (iguais ao viewer)

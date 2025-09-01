@@ -347,7 +347,8 @@ function wireEvents(fvsIndex){
   });
 
   // NC toggle
-  btnNC?.addEventListener('click', ()=>{
+btnNC?.addEventListener('click', ()=>{
+  with2DScrollPreserved(()=>{
     State.NC_MODE = !State.NC_MODE;
     const on = !!State.NC_MODE;
     btnNC.setAttribute('aria-pressed', String(on));
@@ -367,7 +368,7 @@ function wireEvents(fvsIndex){
         fvsSelect.value = State.CURRENT_FVS_KEY;
         applyFVSSelection(State.CURRENT_FVS_KEY, fvsIndex);
       }
-    }else if (fvsSelect.options.length){
+    } else if (fvsSelect.options.length){
       State.CURRENT_FVS_KEY = fvsSelect.options[0].value;
       fvsSelect.value = State.CURRENT_FVS_KEY;
       applyFVSSelection(State.CURRENT_FVS_KEY, fvsIndex);
@@ -376,6 +377,7 @@ function wireEvents(fvsIndex){
     render2DCards();
     render();
   });
+});
 
   // Opacidade
   opacityRange?.addEventListener('input', ()=>{
@@ -486,12 +488,113 @@ function wireEvents(fvsIndex){
   });
 
   // Botão de Zoom 2D
-  btnZoom2D?.addEventListener('click', ()=>{
-    const reached = zoom2DStep();                 // degrau exato do overlay
+btnZoom2D?.addEventListener('click', ()=>{
+  const host = document.getElementById('cards2d');
+  const focalY = host ? Math.floor(host.clientHeight / 2) : 0;
+  const focalX = host ? Math.floor(host.clientWidth  / 2) : 0;
+
+  with2DScrollPreserved(()=>{
+    const reached = zoom2DStep();
     const sym = getNextGridZoomSymbolFrom(reached);
     btnZoom2D.textContent = (sym === '+') ? '🔍+' : '🔍−';
-  });
+  }, { focalY, focalX });
+});
+
+
+
+
 }
+
+function with2DScrollPreserved(
+  action,
+  { containerId = 'cards2d', focalY, focalX } = {}
+){
+  const host = document.getElementById(containerId);
+  if (!host){ action?.(); return; }
+
+  // ===== snapshot pré-ação =====
+  const preTop   = host.scrollTop;
+  const preH     = host.scrollHeight  || 1;
+  const preLeft  = host.scrollLeft;
+  const preW     = host.scrollWidth   || 1;
+
+  const fy = (typeof focalY === 'number')
+    ? focalY
+    : Math.max(0, Math.min(host.clientHeight, Math.floor(host.clientHeight / 2)));
+  const fx = (typeof focalX === 'number')
+    ? focalX
+    : Math.max(0, Math.min(host.clientWidth,  Math.floor(host.clientWidth  / 2)));
+
+  const yAbs = preTop  + fy;
+  const xAbs = preLeft + fx;
+
+  // acha âncora mais próxima do foco (prioriza Y; em empate, o mais perto em X)
+  const cards = Array.from(host.querySelectorAll('.card'));
+  let anchor = null, anchorPrevY = null, anchorPrevX = null, anchorKey = null;
+  let bestY = Infinity, bestX = Infinity;
+
+  for (const el of cards){
+    const cy = Number.parseFloat(el.style.top)  || el.offsetTop  || 0;
+    const cx = Number.parseFloat(el.style.left) || el.offsetLeft || 0;
+    const dy = Math.abs(cy - yAbs);
+    const dx = Math.abs(cx - xAbs);
+
+    if (dy < bestY || (dy === bestY && dx < bestX)){
+      bestY = dy; bestX = dx;
+      anchor = el;
+      anchorPrevY = cy;
+      anchorPrevX = cx;
+      anchorKey = (el.dataset.apto || '') + '|' + (el.dataset.pav || '');
+    }
+  }
+
+  // executa a ação (zoom, NC, etc.)
+  action?.();
+
+  // ===== restaura no(s) próximo(s) frame(s) =====
+  const restore = ()=>{
+    // tenta reencontrar o MESMO card após render
+    let newAnchor = null, newY = null, newX = null;
+    if (anchorKey){
+      const [apt,pav] = anchorKey.split('|');
+      newAnchor = Array.from(host.querySelectorAll('.card'))
+        .find(el => el.dataset.apto === apt && el.dataset.pav === pav) || null;
+      if (newAnchor){
+        newY = Number.parseFloat(newAnchor.style.top)  || newAnchor.offsetTop  || 0;
+        newX = Number.parseFloat(newAnchor.style.left) || newAnchor.offsetLeft || 0;
+      }
+    }
+
+    if (newAnchor != null && anchorPrevY != null && anchorPrevX != null){
+      // deslocamento real da âncora
+      const dy = newY - anchorPrevY;
+      const dx = newX - anchorPrevX;
+      host.scrollTop  = preTop  + dy;
+      host.scrollLeft = preLeft + dx;
+    } else {
+      // fallback proporcional (caso a âncora não exista mais)
+      const newH = host.scrollHeight || 1;
+      const newW = host.scrollWidth  || 1;
+
+      const ratioY = newH / preH;
+      const ratioX = newW / preW;
+
+      const desiredTop  = ((preTop  + fy) * ratioY) - fy;
+      const desiredLeft = ((preLeft + fx) * ratioX) - fx;
+
+      const maxTop  = Math.max(0, newH - host.clientHeight);
+      const maxLeft = Math.max(0, newW - host.clientWidth);
+
+      host.scrollTop  = Math.max(0, Math.min(maxTop,  desiredTop));
+      host.scrollLeft = Math.max(0, Math.min(maxLeft, desiredLeft));
+    }
+  };
+
+  // dois RAFs garantem layout estabilizado pós-innerHTML
+  requestAnimationFrame(()=> requestAnimationFrame(restore));
+}
+
+
 
 // ============================
 // Observador de tamanho do HUD
