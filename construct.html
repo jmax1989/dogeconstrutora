@@ -121,7 +121,6 @@
 .pill{ font-size:12px; color:#9fb0c3; border:1px solid #16233a; padding:2px 8px; border-radius:999px; }
 
 </style>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div id="toolbar">
@@ -161,7 +160,6 @@
   <!-- input “hidden” para o arquivo XLSX -->
   <input id="xlsxInput" type="file" accept=".xlsx,.xls" style="display:none" />
   <!-- input “hidden” já existente para JSON -->
-  <input id="fileInput" type="file" accept=".json" style="display:none" />
 
 
     <span style="color:#9fb0c3; font-size:12px; width:100%;">Zoom 2D (scroll) • Pan (botão direito ou SPACE+arrastar) • Ctrl+Z/Y • Ctrl+C/V • Clique no número do pavimento para isolar (ESC limpa) • Arrasto em grupo • 3D: esquerdo=orbitar, direito=pan, scroll=zoom</span>
@@ -267,7 +265,6 @@
 
   <!-- Three.js -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 /* ==================== Constantes / Estado ==================== */
 const UNIT_XZ = 22;           // tamanho de 1 célula no plano XZ (px)
@@ -432,11 +429,6 @@ function dimsFromSet(set){
 }
 function buildCumHeights(){ const cum=[0]; for (let i=0;i<floors.length;i++) cum.push(cum[i] + floors[i]*UNIT_Y); return cum; }
 // ==== Blocos por pavimento (BPP) — helpers de conversão Y ====
-if (typeof BLOCKS_PER_FLOOR === 'undefined') {
-  // fallback caso ainda não tenha sido declarado no topo
-  //var BLOCKS_PER_FLOOR = 1;
-}
-
 // Cada elemento tem base e.y em "pavimentos". As máscaras front/side usam Y em "blocos".
 function ySubOfLocal(e, yLocalBlock){
   // índice global de bloco = (pavimento base * BPP) + offset interno + deslocamento local
@@ -554,9 +546,9 @@ function drawFrontal(){
     const ySubTop    = ySubOfLocal(e, Math.max(0, dimF.maxY+1)); // exclusivo
     const yBottomPx  = baseY - yWorldOfYSub(ySubBottom);
     const yTopPx     = baseY - yWorldOfYSub(ySubTop);
-    const rx = cx + (e.x + minCol) * UNIT_Y;
+    const rx = cx + (e.x + minCol) * UNIT_XZ;
     const ry = yTopPx;
-    const rw = wCols * UNIT_Y;
+    const rw = wCols * UNIT_XZ;
     const rh = Math.max(1, yBottomPx - yTopPx);
     cacheFront.set(e.id, {x:rx,y:ry,w:rw,h:rh});
 
@@ -565,8 +557,8 @@ function drawFrontal(){
     ctxF.strokeStyle = selectedIds.has(e.id)? '#ffc107' : hexToRgba(e.color, 0.95);
     ctxF.beginPath();
     for (const s of segs){
-      const px1 = cx + (e.x + s.x1)*UNIT_Y;
-      const px2 = cx + (e.x + s.x2)*UNIT_Y;
+      const px1 = cx + (e.x + s.x1)*UNIT_XZ;
+      const px2 = cx + (e.x + s.x2)*UNIT_XZ;
 
       const ySub1 = ySubOfLocal(e, s.y1);
       const ySub2 = ySubOfLocal(e, s.y2);
@@ -729,73 +721,6 @@ window.addEventListener('mousemove', (e)=>{
     panDrag = { view:(cv===frontCanvas?'front':'top'), lastX:e.clientX, lastY:e.clientY };
     e.preventDefault(); // evita seleção de texto/scroll
   });
-});
-window.addEventListener('mousemove', (e)=>{
-  if (!drag || drag.view!=='front') return;
-  const r=frontCanvas.getBoundingClientRect();
-  const mx=e.clientX-r.left, my=e.clientY-r.top;
-  const world = mouseToWorld(mx,my,'front');
-
-  // mover horizontal (X) continua por colunas UNIT_Y
-  const dxCols = Math.round((world.x - drag.start.wx)/UNIT_Y);
-
-  // snap vertical em BLOCO GLOBAL
-  const baseY = frontCanvas.clientHeight - GRID_PAD;
-  const ySubAtPixel = (py)=>{
-    const cum = buildCumHeights();
-    let bestF=0, bestErr=Infinity;
-    for (let f=0; f<cum.length; f++){
-      const y0 = baseY - cum[f];
-      const err = Math.abs(y0 - py);
-      if (err<bestErr){ bestErr=err; bestF=f; }
-    }
-    const topPx = baseY - cum[bestF];
-    const nextPx = baseY - (cum[bestF+1] ?? cum.at(-1));
-    const heightPx = topPx - nextPx;
-    const frac = Math.max(0, Math.min(1, (topPx - py)/Math.max(1, heightPx)));
-    const subFloat = bestF*BLOCKS_PER_FLOOR + frac*BLOCKS_PER_FLOOR;
-    return Math.round(subFloat);
-  };
-
-  const currentYSubAtMouse = ySubAtPixel(world.y);
-  const deltaBlocks = currentYSubAtMouse - drag.start.ySubAtMouse;
-
-  for (const id of drag.ids){
-    const s = drag.start.xById.get(id);
-    const el = elements.find(x=>x.id===id);
-    if (!s || !el) continue;
-
-    // horizontal
-    el.x = s.x + dxCols;
-
-    // vertical em blocos: altera yb e y com normalização
-    const dimF = dimsFromSet(el.frontMask);
-    const heightBlocks = (dimF.maxY>=0 ? dimF.maxY+1 : 1);
-
-    let yb = (s.yb|0) + deltaBlocks;
-    let y = s.y;
-
-    // normaliza offset para 0..BPP-1
-    while (yb < 0){ y -= 1; yb += BLOCKS_PER_FLOOR; }
-    while (yb >= BLOCKS_PER_FLOOR){ y += 1; yb -= BLOCKS_PER_FLOOR; }
-
-    // clamp inferior/superior em blocos globais
-    const totalBlocks = floors.length * BLOCKS_PER_FLOOR;
-    const startSub = y * BLOCKS_PER_FLOOR + yb;
-    const endSubEx = startSub + heightBlocks;
-
-    if (startSub < 0){
-      y = 0; yb = 0;
-    } else if (endSubEx > totalBlocks){
-      const maxStart = totalBlocks - heightBlocks;
-      y = Math.floor(maxStart / BLOCKS_PER_FLOOR);
-      yb = maxStart - y*BLOCKS_PER_FLOOR;
-    }
-
-    el.y = Math.max(0, Math.min(floors.length-1, y));
-    el.yb = yb;
-  }
-  drawAll();
 });
 
 window.addEventListener('mouseup', ()=>{ 
@@ -1131,7 +1056,7 @@ function copySelection(){
       // mantém o id original apenas como referência interna (não será usado no paste)
       id: e.id,
       // >>> GERA O NOVO UID AQUI <<<
-      uid: rndUid()
+      uid: uidFromJSON || rndUid(),
     }))
   };
 
@@ -1407,7 +1332,7 @@ function buildGlobalOccupancy(){
     const vset = voxelsOf(e);
     for (const v of vset){
       const [x,y,z] = v.split(',').map(Number);
-      if (isolatedFloor!=null && y!==isolatedFloor) continue; // só o pavimento isolado
+      if (isolatedFloor!=null && floorOfYSub(y)!==isolatedFloor) continue;
       occ.add(v);
       if (x<minX) minX=x; if (y<minY) minY=y; if (z<minZ) minZ=z;
       if (x>maxX) maxX=x; if (y>maxY) maxY=y; if (z>maxZ) maxZ=z;
@@ -1422,8 +1347,8 @@ function buildSurfaceGeometry(){
   if (!info) return null;
   const {occ, minX, maxX, minY, maxY, minZ, maxZ} = info;
   const cum = buildCumHeights();
-  const yBottom = (y)=> cum[Math.max(0, Math.min(y, cum.length-1))];
-  const yTop    = (y)=> cum[Math.max(0, Math.min(y+1, cum.length-1))];
+  const yBottom = (y)=> yWorldOfYSub(y);
+  const yTop    = (y)=> yWorldOfYSub(y+1);
   const has = (x,y,z)=> occ.has(`${x},${y},${z}`);
 
   const pos = [];
@@ -2122,7 +2047,7 @@ document.getElementById('dupElem').addEventListener('click', ()=>{
     const src = elements.find(e=>e.id===id); if (!src) continue;
     const dup = { 
       id: rndId(),
-      uid: src.uid,          // ← preserva UID (se quiser UID novo ao duplicar, use rndId())
+      uid: rndUid(),          // ← preserva UID (se quiser UID novo ao duplicar, use rndId())
       code: src.code,
       name: src.name || "",
       zIndex: (src.zIndex|0),
@@ -2852,7 +2777,7 @@ document.getElementById('copyJSON').addEventListener('click', async ()=>{
 /* Import JSON */
 document.getElementById('importJSON').addEventListener('click', ()=> document.getElementById('fileInput').click());
 document.getElementById('fileInput').addEventListener('change', async (e)=>{
-  const f=e.target.files[0]; if(!f) return;
+  const f = e.target.files[0]; if(!f) return;
   try{
     const text = await f.text();
     const obj = JSON.parse(text);
@@ -2860,7 +2785,7 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
 
     pushUndo(snapshotState());
 
-    // floors
+    // floors (mantém se vier no JSON)
     if (obj.meta && Array.isArray(obj.meta.floors)) floors = obj.meta.floors.slice();
 
     // meta por apto (zIndex opcional)
@@ -2891,68 +2816,97 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
       return best|0;
     };
 
+    const BPP = (Number.isFinite(BLOCKS_PER_FLOOR) && BLOCKS_PER_FLOOR>0) ? BLOCKS_PER_FLOOR : 1;
+
     for (const [apto, list] of byApto.entries()){
-      // Cor / nome / ordemcol
-      const color = list[0]?.color || '#4e79a7';
-      const nome = (list[0]?.nome || String(apto));
+      if (!list.length) continue;
+
+      // Cor / nome / ordemcol / pagina
+      const color    = list[0]?.color || '#4e79a7';
+      const nome     = (list[0]?.nome || String(apto));
       const ordemcol = (list[0]?.ordemcol|0);
+      const pagina   = mostCommonInt(list.map(p => p.pagina));
 
-      // 🔸 PÁGINA: calcula a moda entre as peças do apto (ou 0)
-      const pagina = mostCommonInt(list.map(p => p.pagina));
+      // ===== 1) PASS: medir bbox global (x/z) e faixa vertical em BLOCO =====
+      let xMin=Infinity, xMax=-Infinity, zMin=Infinity, zMax=-Infinity;
+      let gStart=Infinity, gEndEx=-Infinity;
 
-      // Máscaras + bounding boxes em grid
+      for (const p of list){
+        const x0 = (p.x|0), z0 = (p.z|0);
+        const x1 = x0 + ((p.w|0)-1);
+        const z1 = z0 + ((p.d|0)-1);
+        xMin = Math.min(xMin, x0); xMax = Math.max(xMax, x1);
+        zMin = Math.min(zMin, z0); zMax = Math.max(zMax, z1);
+
+        // pavimento → blocos globais
+        const yStartSub = (p.andar|0) * BPP;
+        const yEndExSub = ((p.andar|0) + (p.h|0)) * BPP;
+        gStart = Math.min(gStart, yStartSub);
+        gEndEx = Math.max(gEndEx, yEndExSub);
+      }
+
+      if (!Number.isFinite(xMin)) continue; // segurança
+
+      // ===== 2) PASS: popular máscaras em coordenadas LOCAIS =====
       const topMask   = new Set();
       const frontMask = new Set();
       const sideMask  = new Set();
 
-      let xMin=Infinity, xMax=-Infinity, zMin=Infinity, zMax=-Infinity;
-      let gFloorStart=Infinity, gFloorEndEx=-Infinity;
-
       for (const p of list){
         const x0 = (p.x|0), z0 = (p.z|0);
-        const x1 = x0 + (p.w|0) - 1;
-        const z1 = z0 + (p.d|0) - 1;
+        const x1 = x0 + ((p.w|0)-1);
+        const z1 = z0 + ((p.d|0)-1);
 
-        xMin = Math.min(xMin, x0); xMax = Math.max(xMax, x1);
-        zMin = Math.min(zMin, z0); zMax = Math.max(zMax, z1);
-
-        gFloorStart = Math.min(gFloorStart, (p.andar|0));
-        gFloorEndEx = Math.max(gFloorEndEx, (p.andar|0) + (p.h|0));
-
-        // popula masks
+        // TOP (W×D)
         for (let z=z0; z<=z1; z++){
           for (let x=x0; x<=x1; x++){
-            topMask.add(`${x},${z}`);
+            topMask.add(`${x - xMin},${z - zMin}`);
           }
         }
-        for (let y=gFloorStart; y<gFloorEndEx; y++){
-          for (let x=x0; x<=x1; x++){ frontMask.add(`${x},${y}`); }
-          for (let z=z0; z<=z1; z++){ sideMask.add(`${z},${y}`); }
+
+        // FRONT / SIDE (Y em blocos → local = ySub - gStart)
+        const yStartSub = (p.andar|0) * BPP;
+        const yEndExSub = ((p.andar|0) + (p.h|0)) * BPP;
+        for (let ySub=yStartSub; ySub<yEndExSub; ySub++){
+          const yLocal = ySub - gStart;
+          for (let x=x0; x<=x1; x++){ frontMask.add(`${x - xMin},${yLocal}`); }
+          for (let z=z0; z<=z1; z++){ sideMask.add(`${z - zMin},${yLocal}`); }
         }
       }
 
+      // Dimensões locais
       const W = (xMax - xMin + 1);
       const D = (zMax - zMin + 1);
-      const H = (gFloorEndEx - gFloorStart);
-      const minGX = xMin, minGY = gFloorStart, minGZ = zMin;
+      const Hblocks = Math.max(1, gEndEx - gStart);
+      const Hfloors = Math.max(1, Math.round(Hblocks / BPP));
+
+      // Base global (Y em pavimentos + yb em blocos)
+      const startSub = gStart;
+      const baseY  = Math.floor(startSub / BPP);
+      const baseYB = startSub - baseY * BPP;
 
       // zIndex opcional por apto
       const zIndex = (aptoMeta && aptoMeta[apto] && Number.isFinite(aptoMeta[apto].zIndex))
         ? (aptoMeta[apto].zIndex|0) : 0;
 
-      // 🔥 UID (preserva se vier; senão cria)
+      // UID (preserva se vier; senão cria com rndUid)
       const uidFromJSON = (list[0] && list[0].uid) ? String(list[0].uid).trim() : null;
 
       elements.push({
         id: rndId(),
-        uid: uidFromJSON || rndId(),
+        uid: uidFromJSON || rndUid(),
         code: String(apto),
         name: nome,
         ordemcol: ordemcol|0,
-        pagina: pagina|0,              // ✅ agora o elemento guarda a PÁGINA
+        pagina: pagina|0,
         color,
-        x: minGX, y: minGY, z: minGZ,
-        W, H, D,
+
+        x: xMin, y: baseY, yb: baseYB, z: zMin,
+
+        // tamanhos esperados pelo UI
+        W: W, H: Hfloors, D: D,
+        w: W, h: Hfloors, d: D,
+
         topMask, frontMask, sideMask,
         zIndex
       });
@@ -2967,6 +2921,7 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
     e.target.value = ''; // permite reimportar o mesmo JSON
   }
 });
+
 
 
 
@@ -2997,10 +2952,6 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
 })();
 
 
-/* util duplicado para status em algumas versões de navegador */
-function updateStatus(){ const iso = (isolatedFloor==null) ? '—' : isolatedFloor;
-  statusEl.textContent = `Elementos: ${elements.length} • Sel.: ${selectedIds.size} • Pavimentos: ${floors.length} • Isolado: ${iso} • Zoom F:${(frontZoom*100).toFixed(0)}% T:${(topZoom*100).toFixed(0)}%`; }
-function fitAll(){ fitCanvas(frontCanvas); fitCanvas(topCanvas); fit3D(); }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
 </body>
