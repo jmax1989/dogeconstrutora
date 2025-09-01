@@ -694,5 +694,3 @@ export function hide2D(){
   host.classList.remove('active');
   host.style.pointerEvents = 'none';
 }
-
-
