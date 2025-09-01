@@ -107,6 +107,19 @@
   #floorsList .floorRow{ display:flex; gap:8px; align-items:center; background:#0b111b; border:1px solid #16233a; padding:8px; border-radius:10px; }
   .kbd{font-size:12px;color:#a7b6c9}
   #fileInput{ display:none; }
+
+  .inspectorLabel{
+  display:flex; align-items:center; gap:6px;
+  background:#0b111b; border:1px solid #16233a;
+  padding:6px 8px; border-radius:8px; color:#9fb0c3; font-size:12px;
+}
+#inspectorTop input{
+  background:#0b1220; color:#e6edf3; border:1px solid #2a3446;
+  border-radius:8px; padding:6px 8px; min-width:180px;
+}
+#inspectorTop input[readonly]{opacity:.85}
+.pill{ font-size:12px; color:#9fb0c3; border:1px solid #16233a; padding:2px 8px; border-radius:999px; }
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -126,6 +139,17 @@
     <label style="margin-left:8px;">Blocos/pav.
     <input id="blocksPerFloor" type="number" min="1" max="50" value="1" style="width:64px">
     </label>
+    <div id="inspectorTop" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-left:8px;">
+  <label class="inspectorLabel">UID
+    <input id="fieldUid" type="text" readonly value="">
+  </label>
+  <button id="btnCopyUid" type="button" title="Copiar UID">Copiar</button>
+  <label class="inspectorLabel">Nome
+    <input id="fieldNome" type="text" placeholder="Defina o nome…" value="">
+  </label>
+  <span id="hintSaved" class="pill" style="display:none">Salvo</span>
+</div>
+
 
     <button id="importJSON" style="margin-left:auto">⬆️ Importar JSON</button>
     <input id="fileInput" type="file" accept="application/json">
@@ -192,6 +216,7 @@
 </div>
 
         <label>Nome<input id="cName" type="text" placeholder="Ex.: Torre - Pavimento 03 - Apartamento 301"/></label>
+        <label>Pág. <input id="cPagina" type="number" min="0" value="0" style="width:72px"></label>
         <label>Ordem col. <input id="cOrdem" type="number" min="0" max="99" value="0" style="width:72px"></label>
         <label>W (X) <input id="cW" type="number" min="1" max="64" value="6"></label>
         <label>H (Y pavimentos) <input id="cH" type="number" min="1" max="200" value="6"></label>
@@ -285,6 +310,12 @@ const topCanvas = document.getElementById('top');
 const ctxT = topCanvas.getContext('2d');
 const statusEl = document.getElementById('status');
 
+// ===== Inspector Top (UID + Nome)
+const $uid   = document.getElementById('fieldUid');
+const $nome  = document.getElementById('fieldNome');
+const $copy  = document.getElementById('btnCopyUid');
+const $hint  = document.getElementById('hintSaved');
+
 /* ==================== Helpers comuns ==================== */
 function fitCanvas(c){
   const dpr = Math.max(1, window.devicePixelRatio||1);
@@ -293,6 +324,96 @@ function fitCanvas(c){
   c.height= Math.round(r.height*dpr);
   c.getContext('2d').setTransform(dpr,0,0,dpr,0,0);
 }
+
+// === UID aleatório (A–Z, 0–9), tamanho configurável ===
+function rndUid(len = 10){
+  if (window.crypto && crypto.getRandomValues){
+    const arr = new Uint8Array(len);
+    crypto.getRandomValues(arr);
+    return Array.from(arr, n => (n % 36).toString(36)).join('').toUpperCase();
+  }
+  // fallback
+  return Math.random().toString(36).slice(2, 2 + len).toUpperCase();
+}
+
+
+function getPrimarySelected(){
+  if (!selectedIds || selectedIds.size === 0) return null;
+  const firstId = selectedIds.values().next().value;
+  return elements.find(e => e.id === firstId) || null;
+}
+
+function refreshInspectorTop(){
+  const e = getPrimarySelected();
+  if (!e){
+    if ($uid)  { $uid.value = '';  $uid.disabled = true; }
+    if ($nome) { $nome.value = ''; $nome.disabled = true; }
+    if ($hint) $hint.style.display = 'none';
+    return;
+  }
+  if ($uid)  { $uid.disabled = false;  $uid.value  = (e.uid ?? e.id ?? ''); }
+  if ($nome) { $nome.disabled = false; $nome.value = (e.name || ''); }
+}
+
+function flashSaved(msg='Salvo'){
+  if (!$hint) return;
+  $hint.textContent = msg;
+  $hint.style.display = 'inline-block';
+  clearTimeout(flashSaved._t);
+  flashSaved._t = setTimeout(()=>{ $hint.style.display='none'; }, 1200);
+}
+
+$copy?.addEventListener('click', async ()=>{
+  if (!$uid?.value) return;
+  try{
+    await navigator.clipboard.writeText(String($uid.value));
+  }catch(e){
+    try{ $uid.select(); document.execCommand('copy'); }catch(_){}
+  }
+  flashSaved('UID copiado');
+});
+
+$nome?.addEventListener('blur', ()=>{
+  const e = getPrimarySelected(); if (!e) return;
+
+  const novo   = String(($nome.value || '').trim());
+  const antigo = String(e.name || '');
+
+  if (novo === antigo) return;
+
+  // mantém seu fluxo de undo/redo se existir
+  if (typeof startAction === 'function') startAction();
+  e.name = novo;
+  if (typeof commitAction === 'function') commitAction();
+
+  if (typeof drawAll === 'function') drawAll();
+  if (typeof statusEl !== 'undefined' && statusEl) statusEl.textContent = 'Nome salvo.';
+  flashSaved('Salvo');
+});
+
+(function hookRefreshInspector(){
+  const wrap = (name)=>{
+    const fn = window[name];
+    if (typeof fn === 'function'){
+      window[name] = function(...args){
+        const out = fn.apply(this, args);
+        try{ refreshInspectorTop(); }catch(_){}
+        return out;
+      };
+    }
+  };
+  ['selectId','restoreSnapshot','deleteSelected','pasteClipboard','importFromJSON','undo','redo'].forEach(wrap);
+
+  // Inicializa sincronizado e mantém em redimensionamentos
+  window.addEventListener('load', ()=>{ try{ refreshInspectorTop(); }catch(_){ } });
+  window.addEventListener('resize', ()=>{ try{ refreshInspectorTop(); }catch(_){ } });
+
+  // Após importar XLSX, muitos projetos só têm este id; manter sincronizado:
+  document.getElementById('xlsxInput')?.addEventListener('change', ()=> {
+    setTimeout(()=>{ try{ refreshInspectorTop(); }catch(_){} }, 0);
+  });
+})();
+
 function hexToRgba(hex, a=1){
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'#ffffff');
   if(!m) return `rgba(255,255,255,${a})`;
@@ -895,22 +1016,57 @@ function elementTouchesFloor(e, f){
 /* ==================== Undo/Redo/Clipboard ==================== */
 function serializeElement(e){
   return {
-    id:e.id, code:e.code, name:(e.name||''), ordemcol: (e.ordemcol|0),
-    color:e.color, x:e.x, y:e.y, z:e.z, W:e.W, H:e.H, D:e.D,
-    yb: e.yb|0,
-    topMask:[...e.topMask], frontMask:[...e.frontMask],
-    sideMask: e.sideMask ? [...e.sideMask] : []
+    // ids
+    id: e?.id ?? null,
+    uid: e?.uid ?? null,                     // ✅ agora vai no JSON
+
+    // nome
+    nome: (e?.name ?? '').trim(),
+
+    // posição e tamanho (aceita W/H/D ou w/h/d)
+    x: (e?.x|0), y: (e?.y|0), z: (e?.z|0),
+    w: ((e?.w ?? e?.W) | 0),
+    h: ((e?.h ?? e?.H) | 0),
+    d: ((e?.d ?? e?.D) | 0),
+
+    // demais campos comuns do seu modelo
+    ordem: ((e?.ordemCol ?? e?.ordemcol ?? e?.ordem) | 0),
+    zIndex: (e?.zIndex|0) || 0,
+    yb: (e?.yb|0) || 0,
+    color: e?.color ?? null,
+
+    // máscaras: se vierem como Set, exporta como array
+    topMask:   Array.isArray(e?.topMask)   ? e.topMask.slice()   : [ ...(e?.topMask   || []) ],
+    frontMask: Array.isArray(e?.frontMask) ? e.frontMask.slice() : [ ...(e?.frontMask || []) ],
+    sideMask:  Array.isArray(e?.sideMask)  ? e.sideMask.slice()  : [ ...(e?.sideMask  || []) ],
   };
 }
+
 function deserializeElement(o){
   return {
-    id:o.id, code:o.code, name:(o.name||''), ordemcol: (o.ordemcol|0),
-    color:o.color, x:o.x, y:o.y, z:o.z, W:o.W, H:o.H, D:o.D,
-    yb: (o.yb|0),
-    topMask:new Set(o.topMask), frontMask:new Set(o.frontMask),
-    sideMask: new Set(o.sideMask || [])
+    id: o?.id ?? null,
+    uid: o?.uid ?? null,                     // ✅ lido do JSON
+
+    // internamente você usa name; no JSON é "nome"
+    name: (o?.nome ?? o?.name ?? ''),
+
+    // posição/tamanho
+    x: (o?.x|0), y: (o?.y|0), z: (o?.z|0),
+    w: (o?.w|0), h: (o?.h|0), d: (o?.d|0),
+
+    // extras
+    ordemCol: ((o?.ordem ?? o?.ordemCol) | 0),
+    zIndex: (o?.zIndex|0) || 0,
+    yb: (o?.yb|0) || 0,
+    color: o?.color ?? null,
+
+    // máscaras: volta para Set
+    topMask:   new Set(o?.topMask   || []),
+    frontMask: new Set(o?.frontMask || []),
+    sideMask:  new Set(o?.sideMask  || []),
   };
 }
+
 function snapshotState(){ return { elements: elements.map(serializeElement), floors:[...floors], isolatedFloor }; }
 function restoreSnapshot(snap){
   const obj = typeof snap==='string' ? JSON.parse(snap) : snap;
@@ -934,56 +1090,97 @@ function redo(){
   undoStack.push(JSON.stringify(curr)); restoreSnapshot(snap);
 }
 function copySelection(){
-  if (selectedIds.size===0) return;
-  const sel = elements.filter(e=>selectedIds.has(e.id));
-  let minX=Infinity,minY=Infinity,minZ=Infinity;
-  sel.forEach(e=>{ minX=Math.min(minX,e.x); minY=Math.min(minY,e.y); minZ=Math.min(minZ,e.z); });
+  if (!selectedIds || selectedIds.size === 0) return;
+
+  const sel = elements.filter(e => selectedIds.has(e.id));
+  if (!sel.length) return;
+
+  // base para colagens relativas
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  sel.forEach(e => {
+    minX = Math.min(minX, e.x|0);
+    minY = Math.min(minY, e.y|0);
+    minZ = Math.min(minZ, e.z|0);
+  });
+
+  // >>> AQUI está a mudança: o UID que vai para o clipboard JÁ é novo
   clipboard = {
-    base:{x:minX,y:minY,z:minZ},
-    items: sel.map(e=>({
-      dx: e.x - minX, dy: e.y - minY, dz: e.z - minZ,
-      W:e.W,H:e.H,D:e.D, color:e.color, code:e.code,
-      name: e.name || "",             // NOVO
-      zIndex: (e.zIndex|0),           // NOVO
+    base: { x:minX, y:minY, z:minZ },
+    items: sel.map(e => ({
+      // offsets espaciais
+      dx: (e.x|0) - minX,
+      dy: (e.y|0) - minY,
+      dz: (e.z|0) - minZ,
+
+      // dimensões/atributos
+      W: e.W ?? e.w ?? 1,
+      H: e.H ?? e.h ?? 1,
+      D: e.D ?? e.d ?? 1,
+      color: e.color ?? null,
+      code:  e.code  ?? null,
+      name:  e.name  ?? "",
+
+      // máscaras/opcionais
+      zIndex: e.zIndex|0,
       yb: e.yb|0,
-      topMask:[...e.topMask], frontMask:[...e.frontMask], sideMask: e.sideMask ? [...e.sideMask] : [],
-      id:e.id
+      topMask:   Array.isArray(e.topMask)   ? e.topMask.slice()   : [...(e.topMask   || [])],
+      frontMask: Array.isArray(e.frontMask) ? e.frontMask.slice() : [...(e.frontMask || [])],
+      sideMask:  Array.isArray(e.sideMask)  ? e.sideMask.slice()  : [...(e.sideMask  || [])],
+
+      // IDs/UIDs
+      // mantém o id original apenas como referência interna (não será usado no paste)
+      id: e.id,
+      // >>> GERA O NOVO UID AQUI <<<
+      uid: rndUid()
     }))
   };
-  pasteBump = 0;
-  statusEl.textContent = `Copiados ${sel.length} elemento(s). Ctrl+V para colar.`;
+
+  pasteBump = 0; // se você usa um deslocamento incremental na colagem
+  statusEl && (statusEl.textContent = `Copiados ${sel.length} elemento(s). Ctrl+V para colar.`);
 }
 
+
 function pasteClipboard(){
-  if (!clipboard) return;
-  startAction();
-  const baseOffset = {x:clipboard.base.x + 1 + pasteBump, y:clipboard.base.y, z:clipboard.base.z};
-  const newIds=[];
-  clipboard.items.forEach(it=>{
+  if (!clipboard || !clipboard.items || !clipboard.items.length) return;
+
+  if (typeof startAction === 'function') startAction();
+
+  const bump = (typeof pasteBump === 'number' ? pasteBump : 0) + 1;
+  pasteBump = bump;
+
+  const base = clipboard.base || {x:0,y:0,z:0};
+  const offset = { x: (base.x|0) + bump, y: base.y|0, z: (base.z|0) + bump };
+
+  const newIds = [];
+  for (const it of clipboard.items){
     const e = {
-      id: rndId(),
-      code: it.code,
-      name: it.name || "",           // NOVO
-      zIndex: (it.zIndex|0),         // NOVO
-      color: it.color,
-      x: baseOffset.x + it.dx,
-      y: baseOffset.y + it.dy,
-      z: baseOffset.z + it.dz,
-      W: it.W, H: it.H, D: it.D,
+      id: rndId ? rndId() : ('E' + rndUid(6)), // seu gerador de IDs locais
+      uid: it.uid || rndUid(),                 // <<< usa o UID do clipboard (já novo)
+      name: it.name || "",
+      code: it.code ?? null,
+      zIndex: it.zIndex|0,
+      color: it.color ?? null,
+
+      x: (offset.x|0) + (it.dx|0),
+      y: (offset.y|0) + (it.dy|0),
+      z: (offset.z|0) + (it.dz|0),
+
+      W: it.W|0, H: it.H|0, D: it.D|0,
       yb: it.yb|0,
-      topMask: new Set(it.topMask),
-      frontMask: new Set(it.frontMask),
-      sideMask: new Set(it.sideMask || [])
+
+      topMask:   new Set(it.topMask   || []),
+      frontMask: new Set(it.frontMask || []),
+      sideMask:  new Set(it.sideMask  || [])
     };
     elements.push(e);
     newIds.push(e.id);
-  });
-  pasteBump++;
-  selectedIds = new Set(newIds); selId=newIds[0]||null;
-  commitAction();
-  renumberIds();
-  drawAll(); updateButtonsState();
+  }
+
+  selectedIds = new Set(newIds);
+  if (typeof commitAction === 'function') commitAction();
+  drawAll?.(); updateButtonsState?.(); refreshInspectorTop?.();
 }
+
 
 
 
@@ -1784,9 +1981,10 @@ function openCreator(mode='new'){
   editId   = editMode ? selId : null;
 
   // refs do modal
-  const cUIDEl = document.getElementById('cUID');
-  const cIDEl  = document.getElementById('cID');   // oculto p/ compat
-  const cNameEl= document.getElementById('cName');
+  const cUIDEl  = document.getElementById('cUID');
+  const cIDEl   = document.getElementById('cID');   // oculto p/ compat
+  const cNameEl = document.getElementById('cName');
+  const cPaginaEl = document.getElementById('cPagina'); // ← NOVO
 
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
@@ -1804,6 +2002,9 @@ function openCreator(mode='new'){
     if (!e.uid) e.uid = rndId();
     cUIDEl.textContent = e.uid;
 
+    // PÁGINA
+    if (cPaginaEl) cPaginaEl.value = (e.pagina|0);
+
   } else {
     cID.value = '';
     cName.value = '';
@@ -1814,6 +2015,9 @@ function openCreator(mode='new'){
 
     // Gera UID para o novo elemento
     cUIDEl.textContent = rndId();
+
+    // PÁGINA default
+    if (cPaginaEl) cPaginaEl.value = 0;
   }
 
   // abre modal
@@ -1823,6 +2027,9 @@ function openCreator(mode='new'){
   // tenta preencher cName usando a planilha
   applyNomeCompletoToCurrentForm();
 }
+
+
+
 
 
 function closeCreator(){ document.getElementById('creatorOverlay').style.display='none'; painting=null; editMode=false; editId=null; }
@@ -1858,9 +2065,10 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
 
   pushUndo(snapshotState());
 
-  const nomeVal  = (cName.value||'').trim();
-  const ordemVal = Math.max(0, parseInt(cOrdem.value||'0',10) || 0);
-  const uidText  = (document.getElementById('cUID').textContent || '').trim() || rndId();
+  const nomeVal   = (cName.value||'').trim();
+  const ordemVal  = Math.max(0, parseInt(cOrdem.value||'0',10) || 0);
+  const paginaVal = Math.max(0, parseInt(cPagina.value||'0',10) || 0); // ← NOVO
+  const uidText   = (document.getElementById('cUID').textContent || '').trim() || rndId();
 
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
@@ -1868,6 +2076,7 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
     e.code  = (cID.value||'').trim() || e.code; // legado/compat
     e.name  = nomeVal;
     e.ordemcol = ordemVal|0;
+    e.pagina   = paginaVal|0;              // ← NOVO
     e.W=Wv; e.H=Hv; e.D=Dv;
     e.topMask   = normTop;
     e.frontMask = normFront;
@@ -1881,6 +2090,7 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
       code: (cID.value||'').trim(),          // oculto/compat
       name: nomeVal,
       ordemcol: ordemVal|0,
+      pagina:   paginaVal|0,                 // ← NOVO
       color: COLORS[elements.length % COLORS.length],
       x: 0, y: bornY, z: 0, W: Wv, H: Hv, D: Dv,
       yb: 0,
@@ -1892,6 +2102,8 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
   closeCreator(); drawAll(); updateButtonsState();
   renumberIds();
 });
+
+
 
 
 /* ==================== UI básica & grelha de pavimentos ==================== */
@@ -1910,9 +2122,10 @@ document.getElementById('dupElem').addEventListener('click', ()=>{
     const src = elements.find(e=>e.id===id); if (!src) continue;
     const dup = { 
       id: rndId(),
+      uid: src.uid,          // ← preserva UID (se quiser UID novo ao duplicar, use rndId())
       code: src.code,
-      name: src.name || "",          // NOVO
-      zIndex: (src.zIndex|0),        // NOVO
+      name: src.name || "",
+      zIndex: (src.zIndex|0),
       color: src.color, x: src.x+1, y: src.y, z: src.z,
       W: src.W, H: src.H, D: src.D,
       yb: src.yb|0,
@@ -1925,6 +2138,7 @@ document.getElementById('dupElem').addEventListener('click', ()=>{
   selectedIds = new Set(newIds); selId = newIds[0] ?? null; drawAll(); updateButtonsState();
   renumberIds();
 });
+
 
 
 /* ==================== Mesclar (adjacência 6-neigh) ==================== */
@@ -2089,6 +2303,17 @@ function normalizeHeader(h){
 }
 function safeStr(v){ return (v==null ? '' : String(v)).trim(); }
 
+// Normaliza UID para evitar falhas por caixa/acentos/espaços
+function normUID(v){
+  if (v == null) return '';
+  return String(v)
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,''); // remove diacríticos
+}
+
+// XLSX -> preenche NOME_BY_UID
 // XLSX -> preenche NOME_BY_UID
 async function loadXLSXFile(file){
   const ab = await file.arrayBuffer();
@@ -2110,14 +2335,13 @@ async function loadXLSXFile(file){
 
   NOME_BY_UID.clear();
   for (const r of rows){
-    const uid  = safeStr(r[colUID]);
+    const uid  = normUID(r[colUID]);
     const nome = safeStr(r[colNome]);
     if (uid && nome) NOME_BY_UID.set(uid, nome);
   }
-  const msg = `Planilha lida: ${NOME_BY_UID.size} nomes.`;
-  const statusEl = document.getElementById('status');
-  if (statusEl) statusEl.textContent = msg; else console.log(msg);
+  if (statusEl) statusEl.textContent = `Planilha lida: ${NOME_BY_UID.size} nomes.`;
 }
+
 
 // Preenche cName a partir do UID visível
 function applyNomeCompletoToCurrentForm(){
@@ -2135,13 +2359,17 @@ function applyNomeCompletoToCurrentForm(){
 }
 
 // Aplica o mapa UID→Nome em todos os elementos (sem abrir modal)
-function applyNamesFromUIDMap({ override = false } = {}){
+function applyNamesFromUIDMap({ override = true } = {}){
   let changed = 0;
+  const altMap = (window.__UID_NAME_MAP__ instanceof Map) ? window.__UID_NAME_MAP__ : null;
+
   for (const e of elements){
-    if (!e || !e.uid) continue;
-    // lê de ambos os mapas (o oficial e o da UI injetada)
-    const nome = (NOME_BY_UID.get(String(e.uid).trim()))
-              || (window.__UID_NAME_MAP__ && window.__UID_NAME_MAP__.get(String(e.uid).trim()));
+    if (!e) continue;
+    // aceita e.uid; se não houver, tenta e.code como fallback
+    const key = normUID(e.uid ?? e.code);
+    if (!key) continue;
+
+    const nome = NOME_BY_UID.get(key) || (altMap && altMap.get(key));
     if (!nome) continue;
 
     if (override || !String(e.name||'').trim()){
@@ -2149,33 +2377,17 @@ function applyNamesFromUIDMap({ override = false } = {}){
       changed++;
     }
   }
+
   if (changed){
-    drawAll();
-    updateButtonsState();
-    try { statusEl.textContent = `Nomes aplicados a ${changed} elemento(s).`; } catch {}
+    drawAll?.();
+    updateButtonsState?.();
+    if (statusEl) statusEl.textContent = `Nomes aplicados a ${changed} elemento(s).`;
   }
 }
 
-function applyNamesFromUIDMap({ override = false } = {}){
-  let changed = 0;
-  for (const e of elements){
-    if (!e.uid) continue;
-    const nome = NOME_BY_UID.get(String(e.uid).trim());
-    if (!nome) continue;
-    if (override || !String(e.name||'').trim()){
-      e.name = nome;
-      changed++;
-    }
-  }
-  if (changed){
-    drawAll();
-    updateButtonsState();
-    try { statusEl.textContent = `Nomes aplicados a ${changed} elemento(s).`; } catch {}
-  }
-}
 
 // Toolbar: Importar XLSX
-// Toolbar: Importar XLSX
+
 // Toolbar: Importar XLSX
 (function wireXLSXImport(){
   const btn = document.getElementById('importXLSX');
@@ -2190,19 +2402,22 @@ function applyNamesFromUIDMap({ override = false } = {}){
     try{
       await loadXLSXFile(f);
 
-      // Preenche o modal aberto (se houver) a partir do UID
-      applyNomeCompletoToCurrentForm();
+      // Preenche o modal aberto (se houver) a partir do UID visível
+      try { applyNomeCompletoToCurrentForm?.(); } catch(_){}
 
-      // Auto-save: aplica UID→Nome em TODOS os elementos (não sobrescreve se já tiver nome)
-      try { applyNamesFromUIDMap({ override:false }); } catch(_){}
+      // ⚠️ sobrescreve SEMPRE (override:true)
+      applyNamesFromUIDMap({ override:true });
+
+      // se houver alguma UI dependente, redesenha
+      drawAll?.(); updateButtonsState?.();
     }catch(err){
       alert('Erro ao ler planilha: ' + (err?.message || err));
     }finally{
-      // permite importar a MESMA planilha novamente
-      e.target.value = '';
+      e.target.value = ''; // permite importar a MESMA planilha novamente
     }
   }, { passive: false });
 })();
+
 
 // Botão copiar UID
 (function wireCopyUID(){
@@ -2462,22 +2677,10 @@ function computePlacements(){
 }
 
 
-function exportModel(){
-  const placements = computePlacements();
 
-  // mapa com metadados por apartamento (zIndex, e futuramente outros)
-  const aptoMeta = {};
-  for (const e of elements){
-    const key = String(e.code||'').trim();
-    if (!key) continue;
-    aptoMeta[key] = { zIndex: (e.zIndex|0)||0 };
-  }
 
-  return {
-    meta: { cellW:1, cellD:1, gap:0, floors: floors.slice(), aptoMeta },
-    placements
-  };
-}
+
+
 
 function downloadText(text, filename='predio_layout.json'){
   const blob = new Blob([text], {type:'application/json'});
@@ -2504,6 +2707,114 @@ document.getElementById('exportJSON').addEventListener('click', ()=>{
   downloadText(str, 'predio_layout.json');
   statusEl.textContent = 'JSON exportado.';
 });
+
+
+function exportModel(){
+  const placements = computePlacements();
+
+  // --- mapas por APTO (== e.code) ---
+  const codeToUID    = new Map();
+  const codeToPagina = new Map();
+
+  for (const e of elements){
+    const code = (e && e.code != null) ? String(e.code).trim() : '';
+    if (!code) continue;
+    if (!codeToUID.has(code))    codeToUID.set(code,    e.uid ?? null);
+    if (!codeToPagina.has(code)) codeToPagina.set(code, (e.pagina|0) || 0);
+  }
+
+  // injeta uid e pagina em placements
+  for (const p of placements){
+    if (!p) continue;
+    const key = (p.apto != null) ? String(p.apto).trim() : '';
+    if (!key) continue;
+
+    if (p.uid == null || String(p.uid).trim()===''){
+      const uid = codeToUID.get(key);
+      if (uid != null && String(uid).trim()!=='') p.uid = uid;
+    }
+
+    // sempre escreve pagina (ou normaliza se já existir)
+    const pg = codeToPagina.get(key);
+    if (typeof p.pagina === 'undefined') p.pagina = (pg|0)||0; else p.pagina = p.pagina|0;
+  }
+
+  // meta por apartamento (mantido)
+  const aptoMeta = {};
+  for (const e of elements){
+    const key = String(e.code||'').trim();
+    if (!key) continue;
+    aptoMeta[key] = { zIndex: (e.zIndex|0)||0 };
+  }
+
+  return {
+    meta: { cellW:1, cellD:1, gap:0, floors: floors.slice(), aptoMeta },
+    placements
+  };
+}
+
+function importFromJSON(obj){
+  const arr = (obj && Array.isArray(obj.placements)) ? obj.placements : [];
+
+  elements = arr.map(it => {
+    // code pode vir como "code" ou "apto"
+    const code = (it.code != null && String(it.code).trim() !== '')
+      ? String(it.code).trim()
+      : (it.apto != null && String(it.apto).trim() !== '' ? String(it.apto).trim() : null);
+
+    // pagina vem exatamente como "pagina"
+    const pagina = (Object.prototype.hasOwnProperty.call(it, 'pagina'))
+      ? (typeof it.pagina === 'number' ? (it.pagina|0) : (parseInt(String(it.pagina).trim(),10) || 0))
+      : 0;
+
+    // dimensões: seu modal lê W/H/D maiúsculos → vamos preencher os MAIÚSCULOS
+    const W = (it.W != null ? it.W : it.w) | 0;
+    const H = (it.H != null ? it.H : it.h) | 0;
+    const D = (it.D != null ? it.D : it.d) | 0;
+
+    // coordenadas: placements usam "andar" como Y
+    const Y = (it.andar != null ? it.andar : it.y) | 0;
+
+    return {
+      id: it.id || null,
+      uid: it.uid || null,
+      code,
+      name: it.nome || it.name || '',
+      pagina,                 // ✅ agora vai para o runtime
+
+      // o que seu UI/creator espera:
+      W, H, D,
+      x: it.x|0, y: Y, z: it.z|0,
+
+      // compat que seu código usa em outros pontos
+      w: W, h: H, d: D,
+      ordemcol: (it.ordemcol != null ? it.ordemcol : (it.ordem|it.ordemCol|0)) | 0,
+      ordemCol: (it.ordem|it.ordemCol|it.ordemcol|0) | 0,
+
+      yb: it.yb|0,
+      zIndex: (it.zIndex|0) || 0,
+      color: it.color ?? null,
+      topMask:   new Set(it.topMask   || []),
+      frontMask: new Set(it.frontMask || []),
+      sideMask:  new Set(it.sideMask  || [])
+    };
+  });
+
+  // sua renumberIds() só atualiza code e redesenha — não perde pagina
+  renumberIds?.();
+
+  drawAll?.(); updateButtonsState?.(); refreshInspectorTop?.();
+  if (typeof statusEl !== 'undefined' && statusEl) {
+    statusEl.textContent = `JSON importado. (${elements.length} itens)`;
+  }
+}
+
+
+
+
+
+
+
 
 // Copiar JSON para a área de transferência
 document.getElementById('copyJSON').addEventListener('click', async ()=>{
@@ -2559,7 +2870,7 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
     elements.length = 0;
     selId=null; selectedIds.clear(); isolatedFloor=null;
 
-    // Reconstrói por apto
+    // Agrupa peças por "apto"
     const byApto = new Map();
     for (const p of obj.placements){
       const key = String(p.apto||'').trim(); if (!key) continue;
@@ -2567,20 +2878,33 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
       byApto.get(key).push(p);
     }
 
-    for (const [apto, list] of byApto.entries()){
-      // Cor opcional por apto (mantém se existir)
-      const color = list[0]?.color || '#4e79a7';
+    // helper: moda (valor mais frequente)
+    const mostCommonInt = (vals)=>{
+      const nums = vals
+        .map(v => (typeof v === 'string' ? parseInt(v,10) : v))
+        .filter(n => Number.isFinite(n));
+      if (!nums.length) return 0;
+      const cnt = new Map();
+      for (const n of nums) cnt.set(n, (cnt.get(n)||0)+1);
+      let best=nums[0], bestC=-1;
+      for (const [n,c] of cnt.entries()){ if (c>bestC){ bestC=c; best=n; } }
+      return best|0;
+    };
 
-      // nome e ordemcol (mantém se existirem)
+    for (const [apto, list] of byApto.entries()){
+      // Cor / nome / ordemcol
+      const color = list[0]?.color || '#4e79a7';
       const nome = (list[0]?.nome || String(apto));
       const ordemcol = (list[0]?.ordemcol|0);
 
-      // máscara top/front/side vem do agrupamento das peças
+      // 🔸 PÁGINA: calcula a moda entre as peças do apto (ou 0)
+      const pagina = mostCommonInt(list.map(p => p.pagina));
+
+      // Máscaras + bounding boxes em grid
       const topMask   = new Set();
       const frontMask = new Set();
       const sideMask  = new Set();
 
-      // Bounding boxes em grid
       let xMin=Infinity, xMax=-Infinity, zMin=Infinity, zMax=-Infinity;
       let gFloorStart=Infinity, gFloorEndEx=-Infinity;
 
@@ -2616,7 +2940,7 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
       const zIndex = (aptoMeta && aptoMeta[apto] && Number.isFinite(aptoMeta[apto].zIndex))
         ? (aptoMeta[apto].zIndex|0) : 0;
 
-      // 🔥 Garante UID (preserva se vier no JSON; senão cria)
+      // 🔥 UID (preserva se vier; senão cria)
       const uidFromJSON = (list[0] && list[0].uid) ? String(list[0].uid).trim() : null;
 
       elements.push({
@@ -2625,6 +2949,7 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
         code: String(apto),
         name: nome,
         ordemcol: ordemcol|0,
+        pagina: pagina|0,              // ✅ agora o elemento guarda a PÁGINA
         color,
         x: minGX, y: minGY, z: minGZ,
         W, H, D,
@@ -2634,7 +2959,7 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
     }
 
     renumberIds();
-    drawAll(); updateButtonsState();
+    drawAll(); updateButtonsState(); refreshInspectorTop?.();
     statusEl.textContent = 'JSON importado com sucesso.';
   }catch(err){
     alert('Falha ao importar: ' + (err?.message || err));
@@ -2642,6 +2967,7 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
     e.target.value = ''; // permite reimportar o mesmo JSON
   }
 });
+
 
 
 (() => {
