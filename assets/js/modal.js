@@ -77,11 +77,11 @@ export function openAptModal({ id, floor=null, row=null, tintHex=null }){
 
   lastFocused = document.activeElement;
 
-  const aptName = String(id || '').trim();
+  const aptName = String(id || '').trim();            // nome completo do layout-3d.json
   const aptKey  = normAptoId(aptName);
 
-  // Título = número do apto (sem FVS)
-  const aptNameForTitle = row?.nome ?? row?.apartamento ?? id ?? 'Apartamento';
+  // 🔧 Título: SEMPRE o nome do layout (id), nunca o row.nome “301”
+  const aptNameForTitle = aptName || 'Apartamento';
   titleEl.textContent = aptNameForTitle;
 
   // Pill curto (igual viewer): mostra Duração OU Progresso
@@ -95,7 +95,8 @@ export function openAptModal({ id, floor=null, row=null, tintHex=null }){
   applyModalTint(tintHex);
 
   // Conteúdo (estrutura e regras 1:1 com viewer.html)
-  renderModalContent({ row });
+  // Passamos o nome completo para o conteúdo usar também.
+  renderModalContent({ row, displayName: aptName });
 
   // Mostrar
   backdrop.classList.add('show');
@@ -115,6 +116,7 @@ export function openAptModal({ id, floor=null, row=null, tintHex=null }){
   const canvas = document.querySelector('#app canvas');
   if (canvas) canvas.style.pointerEvents = 'none';
 }
+
 
 /** Fecha o modal e restaura foco */
 export function closeModal(){

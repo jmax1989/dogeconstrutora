@@ -108,6 +108,7 @@
   .kbd{font-size:12px;color:#a7b6c9}
   #fileInput{ display:none; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div id="toolbar">
@@ -131,6 +132,13 @@
     <button id="exportJSON">⬇️ Exportar JSON</button>
     <button id="copyJSON">📋 Copiar JSON</button>
     <button id="resetAll">↺ Reset</button>
+      <button id="importXLSX"  class="btn">Importar planilha</button>
+
+  <!-- input “hidden” para o arquivo XLSX -->
+  <input id="xlsxInput" type="file" accept=".xlsx,.xls" style="display:none" />
+  <!-- input “hidden” já existente para JSON -->
+  <input id="fileInput" type="file" accept=".json" style="display:none" />
+
 
     <span style="color:#9fb0c3; font-size:12px; width:100%;">Zoom 2D (scroll) • Pan (botão direito ou SPACE+arrastar) • Ctrl+Z/Y • Ctrl+C/V • Clique no número do pavimento para isolar (ESC limpa) • Arrasto em grupo • 3D: esquerdo=orbitar, direito=pan, scroll=zoom</span>
   </div>
@@ -170,8 +178,20 @@
         <button id="creatorClose">✖</button>
       </div>
       <div class="row">
-        <label>Código (ex.: 301) <input id="cID" type="text" placeholder="vazio = automático"></label>
-        <label>Nome <input id="cName" type="text" placeholder="ex.: Apto 301"></label>
+<!-- UID (visível) + cID (oculto p/ compat) -->
+<div class="row">
+  <label>UID
+  <div class="stack">
+    <div style="display:flex;align-items:center;gap:.5rem;">
+      <span id="cUID" class="mono" style="padding:.25rem .5rem;border:1px solid #333;border-radius:.375rem;background:#111;user-select:text;min-width:12ch;display:inline-block;text-align:left">—</span>
+      <button id="copyUID" type="button" title="Copiar UID">Copiar</button></label>
+    </div>
+  </div>
+  <!-- campo antigo mantido, agora oculto, para compatibilidade com o código existente -->
+  <input id="cID" type="hidden" />
+</div>
+
+        <label>Nome<input id="cName" type="text" placeholder="Ex.: Torre - Pavimento 03 - Apartamento 301"/></label>
         <label>Ordem col. <input id="cOrdem" type="number" min="0" max="99" value="0" style="width:72px"></label>
         <label>W (X) <input id="cW" type="number" min="1" max="64" value="6"></label>
         <label>H (Y pavimentos) <input id="cH" type="number" min="1" max="200" value="6"></label>
@@ -222,6 +242,7 @@
 
   <!-- Three.js -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 /* ==================== Constantes / Estado ==================== */
 const UNIT_XZ = 22;           // tamanho de 1 célula no plano XZ (px)
@@ -1735,6 +1756,7 @@ function autoAptCode(floor, candidate){
   return String(floor*100 + index);
 }
 /* Criar/Editar */
+/* Criar/Editar */
 function openCreator(mode='new'){
   function deriveSideFrom(topMask, frontMask){
     const xsByZ = new Map();
@@ -1758,17 +1780,30 @@ function openCreator(mode='new'){
     return out;
   }
 
-  editMode = (mode==='edit'); editId = editMode ? selId : null;
+  editMode = (mode==='edit');
+  editId   = editMode ? selId : null;
+
+  // refs do modal
+  const cUIDEl = document.getElementById('cUID');
+  const cIDEl  = document.getElementById('cID');   // oculto p/ compat
+  const cNameEl= document.getElementById('cName');
+
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
-    cID.value = e.code || '';
-    cName.value = e.name || '';
+    // compat
+    cIDEl.value = e.code || '';
+    cNameEl.value = e.name || '';
     cOrdem.value = (e.ordemcol|0);
     cW.value = e.W; cH.value = e.H; cD.value = e.D;
     tempTop   = new Set(e.topMask);
     tempFront = new Set(e.frontMask);
     tempSide  = new Set(e.sideMask ? e.sideMask : deriveSideFrom(e.topMask, e.frontMask));
     creatorTitle.textContent = 'Editar elemento';
+
+    // UID existente (ou gera se faltou)
+    if (!e.uid) e.uid = rndId();
+    cUIDEl.textContent = e.uid;
+
   } else {
     cID.value = '';
     cName.value = '';
@@ -1776,10 +1811,20 @@ function openCreator(mode='new'){
     cW.value = 6; cH.value = Math.max(6, floors.length); cD.value = 4;
     tempTop.clear(); tempFront.clear(); tempSide.clear();
     creatorTitle.textContent = 'Novo elemento';
+
+    // Gera UID para o novo elemento
+    cUIDEl.textContent = rndId();
   }
+
+  // abre modal
   document.getElementById('creatorOverlay').style.display='flex';
   drawCreatorGrids();
+
+  // tenta preencher cName usando a planilha
+  applyNomeCompletoToCurrentForm();
 }
+
+
 function closeCreator(){ document.getElementById('creatorOverlay').style.display='none'; painting=null; editMode=false; editId=null; }
 document.getElementById('newElem').addEventListener('click', ()=> openCreator('new'));
 document.getElementById('editElem').addEventListener('click', ()=>{ if (selId) openCreator('edit'); });
@@ -1813,13 +1858,15 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
 
   pushUndo(snapshotState());
 
-  const nomeVal = (cName.value||'').trim();
+  const nomeVal  = (cName.value||'').trim();
   const ordemVal = Math.max(0, parseInt(cOrdem.value||'0',10) || 0);
+  const uidText  = (document.getElementById('cUID').textContent || '').trim() || rndId();
 
   if (editMode && editId){
     const e = elements.find(x=>x.id===editId);
-    e.code = (cID.value||'').trim() || e.code;
-    e.name = nomeVal;
+    e.uid   = e.uid || uidText;            // garante uid
+    e.code  = (cID.value||'').trim() || e.code; // legado/compat
+    e.name  = nomeVal;
     e.ordemcol = ordemVal|0;
     e.W=Wv; e.H=Hv; e.D=Dv;
     e.topMask   = normTop;
@@ -1830,7 +1877,8 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
     const bornY = (isolatedFloor!=null ? isolatedFloor : 0);
     const e = {
       id: rndId(),
-      code: (cID.value||'').trim() || autoAptCode(bornY, null),
+      uid: uidText,                          // <- salva o UID
+      code: (cID.value||'').trim(),          // oculto/compat
       name: nomeVal,
       ordemcol: ordemVal|0,
       color: COLORS[elements.length % COLORS.length],
@@ -1838,11 +1886,13 @@ document.getElementById('creatorSave').addEventListener('click', ()=>{
       yb: 0,
       topMask: normTop, frontMask: normFront, sideMask: normSide
     };
-    elements.push(e); selId = e.id; selectedIds = new Set([e.id]);
+    elements.push(e);
+    selId = e.id; selectedIds = new Set([e.id]);
   }
   closeCreator(); drawAll(); updateButtonsState();
   renumberIds();
 });
+
 
 /* ==================== UI básica & grelha de pavimentos ==================== */
 function updateButtonsState(){
@@ -2027,6 +2077,148 @@ document.getElementById('resetAll').addEventListener('click', ()=>{
   elements = []; selId=null; selectedIds.clear(); isolatedFloor=null;
   drawAll(); updateButtonsState();
 });
+
+
+// ===== Planilha: uid -> nomeCompleto =====
+const NOME_BY_UID = new Map();
+
+function normalizeHeader(h){
+  return String(h || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/\s+/g, '');
+}
+function safeStr(v){ return (v==null ? '' : String(v)).trim(); }
+
+// XLSX -> preenche NOME_BY_UID
+async function loadXLSXFile(file){
+  const ab = await file.arrayBuffer();
+  const wb = XLSX.read(ab, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+  // Detecta cabeçalhos (case-insensitive / flexível)
+  let colUID = null, colNome = null;
+  if (rows.length){
+    const headers = Object.keys(rows[0]);
+    for (const h of headers){
+      const k = normalizeHeader(h);
+      if (!colUID && (k === 'uid')) colUID = h;
+      if (!colNome && (k === 'nomecompleto' || k === 'nome' || k === 'local' || k === 'localcompleto')) colNome = h;
+    }
+  }
+  if (!colUID || !colNome) throw new Error('A planilha precisa ter colunas "uid" e "nomeCompleto" (ou semelhante).');
+
+  NOME_BY_UID.clear();
+  for (const r of rows){
+    const uid  = safeStr(r[colUID]);
+    const nome = safeStr(r[colNome]);
+    if (uid && nome) NOME_BY_UID.set(uid, nome);
+  }
+  const msg = `Planilha lida: ${NOME_BY_UID.size} nomes.`;
+  const statusEl = document.getElementById('status');
+  if (statusEl) statusEl.textContent = msg; else console.log(msg);
+}
+
+// Preenche cName a partir do UID visível
+function applyNomeCompletoToCurrentForm(){
+  const cUIDEl  = document.getElementById('cUID');
+  const cNameEl = document.getElementById('cName');
+  if (!cUIDEl || !cNameEl) return;
+
+  const uid = safeStr(cUIDEl.textContent);
+  if (!uid) return;
+
+  const nome = NOME_BY_UID.get(uid);
+  if (nome && !safeStr(cNameEl.value)){
+    cNameEl.value = nome;
+  }
+}
+
+// Aplica o mapa UID→Nome em todos os elementos (sem abrir modal)
+function applyNamesFromUIDMap({ override = false } = {}){
+  let changed = 0;
+  for (const e of elements){
+    if (!e || !e.uid) continue;
+    // lê de ambos os mapas (o oficial e o da UI injetada)
+    const nome = (NOME_BY_UID.get(String(e.uid).trim()))
+              || (window.__UID_NAME_MAP__ && window.__UID_NAME_MAP__.get(String(e.uid).trim()));
+    if (!nome) continue;
+
+    if (override || !String(e.name||'').trim()){
+      e.name = nome;
+      changed++;
+    }
+  }
+  if (changed){
+    drawAll();
+    updateButtonsState();
+    try { statusEl.textContent = `Nomes aplicados a ${changed} elemento(s).`; } catch {}
+  }
+}
+
+function applyNamesFromUIDMap({ override = false } = {}){
+  let changed = 0;
+  for (const e of elements){
+    if (!e.uid) continue;
+    const nome = NOME_BY_UID.get(String(e.uid).trim());
+    if (!nome) continue;
+    if (override || !String(e.name||'').trim()){
+      e.name = nome;
+      changed++;
+    }
+  }
+  if (changed){
+    drawAll();
+    updateButtonsState();
+    try { statusEl.textContent = `Nomes aplicados a ${changed} elemento(s).`; } catch {}
+  }
+}
+
+// Toolbar: Importar XLSX
+// Toolbar: Importar XLSX
+// Toolbar: Importar XLSX
+(function wireXLSXImport(){
+  const btn = document.getElementById('importXLSX');
+  const inp = document.getElementById('xlsxInput');
+  if (!btn || !inp) return;
+
+  btn.addEventListener('click', ()=> inp.click(), { passive: true });
+
+  inp.addEventListener('change', async (e)=>{
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try{
+      await loadXLSXFile(f);
+
+      // Preenche o modal aberto (se houver) a partir do UID
+      applyNomeCompletoToCurrentForm();
+
+      // Auto-save: aplica UID→Nome em TODOS os elementos (não sobrescreve se já tiver nome)
+      try { applyNamesFromUIDMap({ override:false }); } catch(_){}
+    }catch(err){
+      alert('Erro ao ler planilha: ' + (err?.message || err));
+    }finally{
+      // permite importar a MESMA planilha novamente
+      e.target.value = '';
+    }
+  }, { passive: false });
+})();
+
+// Botão copiar UID
+(function wireCopyUID(){
+  const btn = document.getElementById('copyUID');
+  const sp  = document.getElementById('cUID');
+  if (!btn || !sp) return;
+  btn.addEventListener('click', async ()=>{
+    try{
+      await navigator.clipboard.writeText(safeStr(sp.textContent));
+      const statusEl = document.getElementById('status');
+      if (statusEl) statusEl.textContent = 'UID copiado.';
+    }catch{
+      /* ignore */
+    }
+  });
+})();
 
 /* ==================== Pavimentos ==================== */
 const buildingFloorsInput = document.getElementById('buildingFloors');
@@ -2286,6 +2478,7 @@ function exportModel(){
     placements
   };
 }
+
 function downloadText(text, filename='predio_layout.json'){
   const blob = new Blob([text], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2293,13 +2486,38 @@ function downloadText(text, filename='predio_layout.json'){
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
+// Exportar JSON para arquivo
 document.getElementById('exportJSON').addEventListener('click', ()=>{
+  // 🔄 se o modal estiver aberto, sincroniza o cName antes de exportar
+  try{
+    if (creatorOverlay && creatorOverlay.style.display === 'flex' && editMode && editId){
+      const e = elements.find(x => x.id === editId);
+      if (e) e.name = (cName.value || '').trim();
+    }
+  }catch(_){}
+
+  // 🔥 aplica UID→Nome em quem ainda estiver sem nome
+  try { applyNamesFromUIDMap({ override:false }); } catch(_){}
+
   const obj = exportModel();
   const str = JSON.stringify(obj, null, 2);
   downloadText(str, 'predio_layout.json');
   statusEl.textContent = 'JSON exportado.';
 });
+
+// Copiar JSON para a área de transferência
 document.getElementById('copyJSON').addEventListener('click', async ()=>{
+  // 🔄 se o modal estiver aberto, sincroniza o cName antes de copiar
+  try{
+    if (creatorOverlay && creatorOverlay.style.display === 'flex' && editMode && editId){
+      const e = elements.find(x => x.id === editId);
+      if (e) e.name = (cName.value || '').trim();
+    }
+  }catch(_){}
+
+  // 🔥 aplica UID→Nome em quem ainda estiver sem nome
+  try { applyNamesFromUIDMap({ override:false }); } catch(_){}
+
   const obj = exportModel();
   const str = JSON.stringify(obj, null, 2);
   try{
@@ -2320,6 +2538,7 @@ document.getElementById('copyJSON').addEventListener('click', async ()=>{
 });
 
 /* Import JSON */
+/* Import JSON */
 document.getElementById('importJSON').addEventListener('click', ()=> document.getElementById('fileInput').click());
 document.getElementById('fileInput').addEventListener('change', async (e)=>{
   const f=e.target.files[0]; if(!f) return;
@@ -2336,97 +2555,120 @@ document.getElementById('fileInput').addEventListener('change', async (e)=>{
     // meta por apto (zIndex opcional)
     const aptoMeta = (obj.meta && obj.meta.aptoMeta) ? obj.meta.aptoMeta : {};
 
-    // agrupa placements por apto
+    // limpa seleção e elementos
+    elements.length = 0;
+    selId=null; selectedIds.clear(); isolatedFloor=null;
+
+    // Reconstrói por apto
     const byApto = new Map();
     for (const p of obj.placements){
-      const key = String(p.apto);
+      const key = String(p.apto||'').trim(); if (!key) continue;
       if (!byApto.has(key)) byApto.set(key, []);
       byApto.get(key).push(p);
     }
 
-    elements = [];
     for (const [apto, list] of byApto.entries()){
-      let minGX=Infinity,minGY=Infinity,minGZ=Infinity, color=list[0]?.color||COLORS[elements.length%COLORS.length];
-      list.forEach(pl=>{
-        minGX=Math.min(minGX, pl.x);
-        minGZ=Math.min(minGZ, pl.z);
-        minGY=Math.min(minGY, pl.andar);
-      });
+      // Cor opcional por apto (mantém se existir)
+      const color = list[0]?.color || '#4e79a7';
 
-      const topMask = new Set();
+      // nome e ordemcol (mantém se existirem)
+      const nome = (list[0]?.nome || String(apto));
+      const ordemcol = (list[0]?.ordemcol|0);
+
+      // máscara top/front/side vem do agrupamento das peças
+      const topMask   = new Set();
       const frontMask = new Set();
+      const sideMask  = new Set();
 
-      function deriveSideFrom(topMask, frontMask){
-        const xsByZ = new Map();
-        topMask.forEach(k=>{
-          const [x,z]=k.split(',').map(Number);
-          if(!xsByZ.has(z)) xsByZ.set(z,new Set());
-          xsByZ.get(z).add(x);
-        });
-        const xsByY = new Map();
-        frontMask.forEach(k=>{
-          const [x,y]=k.split(',').map(Number);
-          if(!xsByY.has(y)) xsByY.set(y,new Set());
-          xsByY.get(y).add(x);
-        });
-        const out = new Set();
-        xsByZ.forEach((xset,z)=>{
-          xsByY.forEach((xsetY,y)=>{
-            for (const x of xset){ if (xsetY.has(x)){ out.add(`${z},${y}`); break; } }
-          });
-        });
-        return out;
+      // Bounding boxes em grid
+      let xMin=Infinity, xMax=-Infinity, zMin=Infinity, zMax=-Infinity;
+      let gFloorStart=Infinity, gFloorEndEx=-Infinity;
+
+      for (const p of list){
+        const x0 = (p.x|0), z0 = (p.z|0);
+        const x1 = x0 + (p.w|0) - 1;
+        const z1 = z0 + (p.d|0) - 1;
+
+        xMin = Math.min(xMin, x0); xMax = Math.max(xMax, x1);
+        zMin = Math.min(zMin, z0); zMax = Math.max(zMax, z1);
+
+        gFloorStart = Math.min(gFloorStart, (p.andar|0));
+        gFloorEndEx = Math.max(gFloorEndEx, (p.andar|0) + (p.h|0));
+
+        // popula masks
+        for (let z=z0; z<=z1; z++){
+          for (let x=x0; x<=x1; x++){
+            topMask.add(`${x},${z}`);
+          }
+        }
+        for (let y=gFloorStart; y<gFloorEndEx; y++){
+          for (let x=x0; x<=x1; x++){ frontMask.add(`${x},${y}`); }
+          for (let z=z0; z<=z1; z++){ sideMask.add(`${z},${y}`); }
+        }
       }
 
-      list.forEach(pl=>{
-        for (let lx=0; lx<pl.w; lx++){
-          for (let lz=0; lz<pl.d; lz++){
-            topMask.add(`${(pl.x - minGX)+lx},${(pl.z - minGZ)+lz}`);
-          }
-        }
-        for (let lx=0; lx<pl.w; lx++){
-          for (let ly=0; ly<pl.h; ly++){
-            frontMask.add(`${(pl.x - minGX)+lx},${(pl.andar - minGY)+ly}`);
-          }
-        }
-      });
+      const W = (xMax - xMin + 1);
+      const D = (zMax - zMin + 1);
+      const H = (gFloorEndEx - gFloorStart);
+      const minGX = xMin, minGY = gFloorStart, minGZ = zMin;
 
-      const W = Math.max(1, dimsFromSet(topMask).maxX+1);
-      const D = Math.max(1, dimsFromSet(topMask).maxY+1);
-      const H = Math.max(1, dimsFromSet(frontMask).maxY+1);
-      const sideMask = deriveSideFrom(topMask, frontMask);
-
-      const metaZ = (aptoMeta && aptoMeta[apto] && Number.isFinite(aptoMeta[apto].zIndex))
+      // zIndex opcional por apto
+      const zIndex = (aptoMeta && aptoMeta[apto] && Number.isFinite(aptoMeta[apto].zIndex))
         ? (aptoMeta[apto].zIndex|0) : 0;
 
-const nome = (list[0]?.nome || String(apto));
-const ordemcol = (list[0]?.ordemcol|0);
+      // 🔥 Garante UID (preserva se vier no JSON; senão cria)
+      const uidFromJSON = (list[0] && list[0].uid) ? String(list[0].uid).trim() : null;
 
-elements.push({
-  id:rndId(),
-  code:String(apto),
-  name: nome,
-  ordemcol: ordemcol|0,
-  color,
-  x:minGX, y:minGY, z:minGZ,
-  W,H,D,
-  topMask, frontMask,
-  sideMask
-});
-
-
+      elements.push({
+        id: rndId(),
+        uid: uidFromJSON || rndId(),
+        code: String(apto),
+        name: nome,
+        ordemcol: ordemcol|0,
+        color,
+        x: minGX, y: minGY, z: minGZ,
+        W, H, D,
+        topMask, frontMask, sideMask,
+        zIndex
+      });
     }
 
-    selId=null; selectedIds.clear(); isolatedFloor=null;
     renumberIds();
     drawAll(); updateButtonsState();
     statusEl.textContent = 'JSON importado com sucesso.';
   }catch(err){
-    alert('Falha ao importar: '+ (err?.message||err));
-  } finally {
-    e.target.value='';
+    alert('Falha ao importar: ' + (err?.message || err));
+  }finally{
+    e.target.value = ''; // permite reimportar o mesmo JSON
   }
 });
+
+
+(() => {
+  // estado global único
+  window.__UID_NAME_MAP__ = window.__UID_NAME_MAP__ || new Map();
+
+  // aplica nome no formulário aberto (UID → Nome)
+  window.applyNomeCompletoToCurrentForm = function(){
+    const uidLbl = document.getElementById('cUID');
+    const nameEl = document.getElementById('cName');
+    if (!uidLbl || !nameEl) return;
+    const uid = (uidLbl.textContent||'').trim();
+    if (!uid) return;
+
+    const nome = window.__UID_NAME_MAP__.get(uid);
+    if (nome && !nameEl.value.trim()){
+      nameEl.value = nome;
+    }
+  };
+
+  
+  // UI de import discreta (topo-direito)
+  function injectXlsxUI(){}
+
+
+  injectXlsxUI();
+})();
 
 
 /* util duplicado para status em algumas versões de navegador */
@@ -2434,7 +2676,6 @@ function updateStatus(){ const iso = (isolatedFloor==null) ? '—' : isolatedFlo
   statusEl.textContent = `Elementos: ${elements.length} • Sel.: ${selectedIds.size} • Pavimentos: ${floors.length} • Isolado: ${iso} • Zoom F:${(frontZoom*100).toFixed(0)}% T:${(topZoom*100).toFixed(0)}%`; }
 function fitAll(){ fitCanvas(frontCanvas); fitCanvas(topCanvas); fit3D(); }
 </script>
-
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
 </body>
 </html>
-

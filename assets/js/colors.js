@@ -50,84 +50,64 @@ export function colorFromRowNC(row){
 // fallback para `nome` (layout-3d.json), depois `apartamento`/apto/id/name.
 // ------------------------------------------------------------------
 export function buildColorMapForFVS(rows){
-  const map = { default: COLOR_DEFAULT, colors: {}, byFloor: {} };
+  const map = { default: COLOR_DEFAULT, colors: {} };
   if (!Array.isArray(rows)) return map;
 
   for (const r of rows){
-    const key = normNameKey(
-      r?.local_origem ?? r?.nome ?? r?.apartamento ?? r?.apto ?? r?.id ?? r?.name ?? ''
-    );
+    const key = String((r?.local_origem ?? r?.nome ?? '')).trim();
     if (!key) continue;
     map.colors[key] = colorFromRowNormal(r);
   }
-
-  // por pavimento: working > pending > done > default
-  const agg = new Map(); // pav → {working,pending,done}
-  for (const r of rows){
-    const pav = (r?.pavimento_origem != null) ? String(r.pavimento_origem) : null;
-    if (!pav) continue;
-    const col = colorFromRowNormal(r);
-    const o = agg.get(pav) || { working:0, pending:0, done:0 };
-    if (col === PALETTE.blue)        o.working++;
-    else if (col === PALETTE.yellow) o.pending++;
-    else if (col === PALETTE.green)  o.done++;
-    agg.set(pav, o);
-  }
-  for (const [pav, o] of agg){
-    let chosen = COLOR_DEFAULT;
-    if (o.working) chosen = PALETTE.blue;
-    else if (o.pending) chosen = PALETTE.yellow;
-    else if (o.done)    chosen = PALETTE.green;
-    map.byFloor[pav] = chosen;
-  }
   return map;
 }
+
+
+
 
 // ------------------------------------------------------------------
 // Color map por FVS (NC)
 // Também prioriza `local_origem` na chave.
 // ------------------------------------------------------------------
 export function buildColorMapForFVS_NC(rows){
-  const map = { default: COLOR_DEFAULT, colors: {}, byFloor: {} };
+  const map = { default: COLOR_DEFAULT, colors: {} };
   if (!Array.isArray(rows)) return map;
 
   for (const r of rows){
-    const key = normNameKey(
-      r?.local_origem ?? r?.nome ?? r?.apartamento ?? r?.apto ?? r?.id ?? r?.name ?? ''
-    );
+    const key = String((r?.local_origem ?? r?.nome ?? '')).trim();
     if (!key) continue;
     map.colors[key] = colorFromRowNC(r);
   }
-
-  const floors = new Map(); // pav → hasNC
-  for (const r of rows){
-    const pav = (r?.pavimento_origem != null) ? String(r.pavimento_origem) : null;
-    if (!pav) continue;
-    const hasNC = Number(r?.qtd_nao_conformidades_ultima_inspecao ?? 0) > 0;
-    floors.set(pav, (floors.get(pav) || false) || hasNC);
-  }
-  for (const [pav, hasNC] of floors){
-    map.byFloor[pav] = hasNC ? PALETTE.red : COLOR_DEFAULT;
-  }
   return map;
 }
+
+
+
+
 
 // ------------------------------------------------------------------
 // Seleção de cor por Apto/Floor usando COLOR_MAP atual do State
 // `aptoName` aqui é o nome do layout-3d.json (campo `nome`) —
 // que deve bater com `local_origem` normalizado no color map.
 // ------------------------------------------------------------------
-export function pickFVSColor(aptoName, floorStr = null, colorMap = State.COLOR_MAP){
+export function pickFVSColor(aptoName, _floorStr = null, colorMap = State.COLOR_MAP){
   if (!colorMap) return COLOR_DEFAULT;
 
-  const id = normNameKey(aptoName || '');
-  if (id && colorMap.colors && colorMap.colors[id]) return colorMap.colors[id];
+  const raw = String(aptoName || '').trim();
+  if (!raw) return colorMap.default || COLOR_DEFAULT;
 
-  const pav = floorStr != null ? String(floorStr).trim() : '';
-  if (pav && colorMap.byFloor && colorMap.byFloor[pav]) return colorMap.byFloor[pav];
-
+  const parts = raw.split(/\s*-\s*/g).map(s => s.trim()).filter(Boolean);
+  for (let n = parts.length; n >= 1; n--){
+    const key = parts.slice(0, n).join(' - ');
+    const hit = colorMap.colors && colorMap.colors[key];
+    if (hit) return hit;
+  }
   return colorMap.default || COLOR_DEFAULT;
 }
+
+
+
+
+
 
 // ------------------------------------------------------------------
 // Utilitários de cor

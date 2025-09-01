@@ -29,6 +29,18 @@ body{
 #app{ position: fixed; inset: 0; }
 canvas{ display:block; }
 
+/* quando o 2D está ativo, permita blur do conteúdo “atrás” do overlay */
+body.grid2d-on #overlay2d {
+  /* se seu overlay tiver um fundo semi-transparente, o backdrop-filter entra bonito */
+  backdrop-filter: blur(2px);
+}
+
+/* (opcional) garante que o overlay esteja acima do canvas */
+#overlay2d {
+  position: fixed;
+  z-index: 50; /* já estava no JS, aqui só reforça */
+}
+
 /* O canvas usa gestos 100% custom → desabilita gestos nativos */
 #app canvas{ touch-action: none; }
 

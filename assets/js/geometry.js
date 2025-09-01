@@ -15,6 +15,33 @@ export let stepZ = 1.0;
 export let stepY = 1.0; // mantém para compat; com profile variável, vira “média”/referência
 export let gap   = 0.0;
 
+// ===== Ponte 3D→2D: levelIndex por nome completo =====
+let _nameToLevelIndex = new Map();
+
+/** Registra levelIndex do grupo pelo nome completo (ex.: "Torre - Pavimento 25 - Apartamento 2501 - Sala") */
+export function registerNameLevelIndex(fullName, levelIndex){
+  const nm = String(fullName || '').trim();
+  if (!nm) return;
+  const idx = Number(levelIndex);
+  if (!Number.isFinite(idx)) return;
+  // guarda o menor índice visto para esse nome (segurança)
+  const prev = _nameToLevelIndex.get(nm);
+  if (prev == null || idx < prev) _nameToLevelIndex.set(nm, idx);
+}
+
+/** Lê o levelIndex pelo nome completo (retorna null se não houver) */
+export function getLevelIndexForName(fullName){
+  const nm = String(fullName || '').trim();
+  if (!nm) return null;
+  const v = _nameToLevelIndex.get(nm);
+  return (v == null) ? null : Number(v);
+}
+
+/** Limpa o cache (chamar antes de reconstruir a torre) */
+export function resetNameLevelIndexMap(){
+  _nameToLevelIndex = new Map();
+}
+
 // Alvos para picking
 let faceTargets = [];
 let edgeTargets = [];
@@ -28,6 +55,7 @@ let _floorsProfile = null; // array de fatores (ex.: [1,1,0.8,1.2,...]) ou null
 // Limite de pavimento (levelIndex) e o máximo detectado
 let _maxLevelIndex = 0;
 export function getMaxLevelIndex(){ return _maxLevelIndex; }
+
 
 /** Mostra apenas aptos com levelIndex <= limit (null/undefined => todos) */
 export function applyFloorLimit(limit){
@@ -237,6 +265,10 @@ export function buildFromLayout(layout){
       }
     });
   }
+
+  // 🔴 (1) RESETA o cache nome→levelIndex para a nova construção
+  resetNameLevelIndexMap();
+
   torre = new THREE.Group();
   torre.name = 'Torre';
   faceTargets = [];
@@ -309,6 +341,9 @@ export function buildFromLayout(layout){
     }
     if (!Number.isFinite(minLevel)) minLevel = 0;
 
+    // 🔴 (2) REGISTRA nome→levelIndex para o 2D ordenar igual ao 3D
+    registerNameLevelIndex(nome, minLevel);
+
     // grupo do apto
     const g = new THREE.Group();
     g.name = nome || 'apt';
@@ -373,12 +408,13 @@ export function buildFromLayout(layout){
       g.userData.anchor.y  -= dy;
     }
   }
-// Detecta o maior levelIndex para configurar o slider de pavimentos
-_maxLevelIndex = 0;
-for (const g of torre.children){
-  const li = Number(g?.userData?.levelIndex || 0);
-  if (li > _maxLevelIndex) _maxLevelIndex = li;
-}
+
+  // Detecta o maior levelIndex para configurar o slider de pavimentos
+  _maxLevelIndex = 0;
+  for (const g of torre.children){
+    const li = Number(g?.userData?.levelIndex || 0);
+    if (li > _maxLevelIndex) _maxLevelIndex = li;
+  }
 
   scene.add(torre);
 
@@ -386,9 +422,13 @@ for (const g of torre.children){
   State.faceOpacity = 1;
   setFaceOpacity(1, true);
   applyExplode();
-
+// avisa o mundo que o 3D foi montado e o mapa nome→levelIndex está pronto
+try {
+  window.dispatchEvent(new CustomEvent('layout-3d-built'));
+} catch (_) {}
   return { bbox: bbox2, center };
 }
+
 
 // ============================
 // 2D visual — sem clarear linhas (só opacidade)

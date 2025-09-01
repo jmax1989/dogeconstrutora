@@ -3,10 +3,11 @@
 // ============================
 
 import { State } from './state.js';
-import { normNameKey, hexToRgba } from './utils.js';
+import { hexToRgba, bestRowForName } from './utils.js';
 import { pickFVSColor } from './colors.js';
-import { apartamentos } from './data.js';
+import { layoutData } from './data.js';
 import { openAptModal } from './modal.js';
+import { getLevelIndexForName } from './geometry.js';
 
 let host = null;
 let getRowsForCurrentFVS = null;
@@ -21,6 +22,10 @@ let _pendingScrollRestore = false;
 export function setRowsResolver(fn){
   getRowsForCurrentFVS = (typeof fn === 'function') ? fn : null;
 }
+
+// ===== Controle de visibilidade do overlay 2D =====
+//let _overlay2dEnabled = false;
+
 
 export function initOverlay2D(){
   host = document.getElementById('cards2d');
@@ -38,6 +43,7 @@ export function initOverlay2D(){
   // IMPORTANTE: desabilitado qualquer binding de pinch/wheel-zoom aqui.
   // O zoom agora é apenas por botão (hud.js chamará setGridZoom/zoom2DStep).
 }
+
 
 /* ---------- helpers ---------- */
 
@@ -147,66 +153,111 @@ function compareApt(a, b){
   return ax.localeCompare(bx, 'pt-BR');
 }
 
-function floorOrderValue(floorStr, fallbackIndex){
-  const s = String(floorStr ?? '').trim().toUpperCase();
-  const n = Number(s);
-  if (Number.isFinite(n)) return 10_000 + n;
-  const map = { AT: 50_000, COB: 50_000, PH: 50_000, LAZ: 100, TER: 0, TÉR: 0, GAR: -100 };
-  if (s in map) return map[s];
-  return -1_000_000 + (fallbackIndex||0);
-}
 
 /**
- * Constrói bandas por pavimento a partir de apartamentos.json
- * CHAVE: usa local_origem (antes: apartamento)
+ * Constrói bandas por pavimento a partir do LAYOUT (layout-3d.json), SEM fallback.
+ * Agrupa e ordena EXCLUSIVAMENTE pelo levelIndex vindo do 3D (alto → baixo).
+ * Os rótulos são apenas display; não influenciam na ordenação.
+ */
+/**
+ * Constrói bandas por pavimento a partir do LAYOUT (layout-3d.json), SEM fallback.
+ * AGRUPA e ORDENA EXCLUSIVAMENTE pelo levelIndex do 3D.
+ * Nenhuma heurística textual influencia a ordenação.
  */
 function buildFloorsFromApartamentos(){
-  const floorsMap = new Map();
-  const seenOrder = new Map();
+  const placements = Array.isArray(layoutData?.placements) ? layoutData.placements : [];
+  if (!placements.length) return [];
 
-  (apartamentos || []).forEach((ap, idx)=>{
-    const aptRaw  = String(ap.local_origem ?? '').trim();  // <<< TROCA PRINCIPAL
-    const floor   = String(ap.pavimento ?? ap.pavimento_origem ?? ap.pav ?? '').trim();
-    if (!aptRaw || !floor) return;
+  const split = (name)=> String(name||'').split(/\s*-\s*/g).map(s=>s.trim()).filter(Boolean);
+  const join  = (parts,n)=> parts.slice(0,n).join(' - ');
 
-    const aptKey = aptRaw; // mantemos cru para casar com layout/picking
-    if (!floorsMap.has(floor)) {
-      floorsMap.set(floor, new Map());
-      seenOrder.set(floor, floorsMap.size - 1);
-    }
-    const byApt = floorsMap.get(floor);
+  // Map<levelIndex:number, Map<rootKey:string, { apt, floor, levelIndex, ordemcol, firstIndex }>>
+  const floorsByIdx = new Map();
 
-    if (!byApt.has(aptKey)) {
-      byApt.set(aptKey, {
-        apt: aptRaw,    // ← vai para dataset.apto
-        floor,
-        ordemcol: (Number(ap.ordemcol) ?? Number(ap.ordemCol) ?? Number(ap.ordem)),
+  placements.forEach((p, idx)=>{
+    const full = String(p?.nome ?? '').trim();
+    if (!full) return;
+
+    // ❗ levelIndex numérico direto do 3D — base única para a ordem
+    const lvl = getLevelIndexForName(full);
+    if (!Number.isFinite(lvl)) return; // se o 3D ainda não registrou, pula este item por enquanto
+
+    const parts = split(full);
+
+    // rótulo de exibição (NÃO usado na ordem)
+    const floorLabel = `Nível ${lvl}`;
+
+    // --- “Root” do card (não mexe na ORDEM dos pavimentos) ---
+    // Preferência: até "Apartamento/Apto/Apt NNNN"
+    const iApt = parts.findIndex(t => /^(Apartamento|Apto|Apt)\b/i.test(t));
+
+    // caso não tenha "Apartamento", tentamos cortar um termo após o nível (apenas para card granulado)
+    // Para isso, localizamos o token textual "Pavimento ..." se existir — novamente, só para recorte visual;
+    // NÃO influencia a ordenação, que é 100% pelo lvl.
+    const iPav = parts.findIndex(t => /^Pavimento\b/i.test(t));
+
+    let rootN = (iApt >= 0) ? (iApt + 1)
+               : (iPav >= 0) ? (iPav + 2)
+               : Math.min(2, parts.length); // fallback mínimo: 1–2 termos
+
+    if (rootN > parts.length) rootN = parts.length;
+
+    // se não há nada além do 1º nível, não vira card
+    if (rootN <= 1 && parts.length <= 1) return;
+
+    const rootKey = join(parts, rootN);
+    if (!rootKey) return;
+
+    if (!floorsByIdx.has(lvl)) floorsByIdx.set(lvl, new Map());
+    const byRoot = floorsByIdx.get(lvl);
+
+    if (!byRoot.has(rootKey)){
+      byRoot.set(rootKey, {
+        apt: rootKey,                 // ID completo do card (casa 1:1 com FVS/hierarquia)
+        floor: floorLabel,            // DISPLAY sintético; não entra na ordenação
+        levelIndex: lvl,              // chave de AGRUPAMENTO e ORDENAÇÃO
+        ordemcol: Number(p?.ordemcol ?? p?.ordemCol ?? p?.ordem),
         firstIndex: idx
       });
     }
   });
 
-  for (const [floor, mapApt] of floorsMap.entries()){
-    const arr = Array.from(mapApt.values());
-    arr.sort((A,B)=>{
-      const oa = Number.isFinite(A.ordemcol) ? A.ordemcol : null;
-      const ob = Number.isFinite(B.ordemcol) ? B.ordemcol : null;
-      if (oa!=null && ob!=null && oa!==ob) return oa - ob;
-      const cmp = compareApt(A.apt, B.apt);
-      if (cmp !== 0) return cmp;
-      return (A.firstIndex ?? 0) - (B.firstIndex ?? 0);
-    });
-    floorsMap.set(floor, arr);
+  // ❗ Ordenação dos pavimentos: ESTRITAMENTE por levelIndex DESC (alto → baixo)
+  const sortedLvls = Array.from(floorsByIdx.keys()).sort((a,b)=> b - a);
+
+  // Ordenação dos cards dentro do pavimento (não altera ordem de pavimento)
+  const sortCards = (A,B)=>{
+    const oa = Number.isFinite(A.ordemcol) ? A.ordemcol : null;
+    const ob = Number.isFinite(B.ordemcol) ? B.ordemcol : null;
+    if (oa!=null && ob!=null && oa!==ob) return oa - ob;
+
+    // ordem alfanumérica com atenção a números no NOME (ex.: 2501 < 2502)
+    const rx = /(\d+)/g;
+    const ax = String(A.apt||'').toUpperCase();
+    const bx = String(B.apt||'').toUpperCase();
+    const an = ax.match(rx); const bn = bx.match(rx);
+    if (an && bn){
+      const na = parseInt(an[0], 10), nb = parseInt(bn[0], 10);
+      if (!Number.isNaN(na) && !Number.isNaN(nb) && na !== nb) return na - nb;
+    }
+    const cmp = ax.localeCompare(bx, 'pt-BR');
+    if (cmp !== 0) return cmp;
+    return (A.firstIndex ?? 0) - (B.firstIndex ?? 0);
+  };
+
+  // Constrói as bandas finais
+  const bands = [];
+  for (const lvl of sortedLvls){
+    const items = Array.from(floorsByIdx.get(lvl).values()).sort(sortCards);
+    bands.push({ floor: `Nível ${lvl}`, items });
   }
-
-  const floors = Array.from(floorsMap.keys()).sort((fa, fb)=>{
-    const va = floorOrderValue(fa, seenOrder.get(fa));
-    const vb = floorOrderValue(fb, seenOrder.get(fb));
-    return vb - va;
-  });
-
-  return floors.map(f => ({ floor: f, items: floorsMap.get(f) || [] }));
+  return bands;
 }
+
+
+
+
+
 
 /**
  * Mapa de lookup para a FVS ativa.
@@ -234,20 +285,20 @@ function hasNC(row){
 export function recolorCards2D(){
   if (!host) return;
 
-  const rowsMap = buildRowsLookup();
+  const rowsMap = buildRowsLookup(); // Map<local_origem exato, row>
   const NC_MODE = !!State.NC_MODE;
 
   const cards = host.querySelectorAll('.card');
   cards.forEach(card=>{
-    const apt = card.dataset.apto || ''; // agora contém local_origem
-    const pav = card.dataset.pav  || '';
-    const key = apt;
-    const row = rowsMap.get(key) || null;
+    const apt = String(card.dataset.apto || '').trim(); // == local_origem do card
+    const pav = String(card.dataset.pav  || '').trim();
+
+    // Hierarquia EXATA (usa seus helpers _splitHierarchy/_joinHierarchy/bestRowForName)
+    const row = bestRowForName(apt, rowsMap);
 
     card._row = row;
     card._hasData = !!row;
 
-    // valores normalizados
     const nc   = Math.max(0, Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0);
     const pend = Math.max(0, Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0);
     const perc = Math.max(0, Math.round(Number(row?.percentual_ultima_inspecao ?? row?.percentual ?? 0) || 0));
@@ -255,7 +306,7 @@ export function recolorCards2D(){
 
     const showData = !!row && (!NC_MODE || nc > 0);
 
-    // badges (sempre 4 quando showData)
+    // badges (4 itens quando showData)
     let badges = card.querySelector('.badges');
     if (!badges){
       badges = document.createElement('div');
@@ -265,7 +316,6 @@ export function recolorCards2D(){
     badges.innerHTML = '';
 
     if (showData){
-      // 1ª linha
       const rowTop = document.createElement('div');
       rowTop.className = 'badge-row';
       const left  = document.createElement('div'); left.className  = 'slot left';
@@ -286,7 +336,6 @@ export function recolorCards2D(){
       rowTop.append(left, right);
       badges.appendChild(rowTop);
 
-      // 2ª linha
       const rowBottom = document.createElement('div');
       rowBottom.className = 'badge-row';
       const left2  = document.createElement('div'); left2.className  = 'slot left';
@@ -308,22 +357,25 @@ export function recolorCards2D(){
       badges.appendChild(rowBottom);
     }
 
-    // Recolorir + clique
+    // 🔒 SÓLIDO: sem usar opacity no card
+    card.style.mixBlendMode = 'normal';
+
     if (row){
       if (showData){
-        const color = pickFVSColor(apt, pav, State.COLOR_MAP); // apt = local_origem
-        const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
+        const color = pickFVSColor(apt, pav, State.COLOR_MAP);
+        const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 1))); // 1 = opaco
         card.style.borderColor = color;
         card.style.backgroundColor = hexToRgba(color, a);
-        card.style.opacity = '1';
+        card.style.opacity = '1';                   // <- garante sólido
         card.style.pointerEvents = 'auto';
         card.style.cursor = 'pointer';
         card.classList.remove('disabled');
         card.title = apt;
       }else{
         card.style.borderColor = 'rgba(110,118,129,.6)';
-        card.style.backgroundColor = 'rgba(34,40,53,.60)';
-        card.style.opacity = '0.85';
+        // fundo cinza, mas ainda SÓLIDO
+        card.style.backgroundColor = 'rgba(34,40,53,1)';
+        card.style.opacity = '1';                   // <- sem translucidez
         card.style.pointerEvents = 'none';
         card.style.cursor = 'default';
         card.classList.add('disabled');
@@ -331,18 +383,18 @@ export function recolorCards2D(){
       }
     }else{
       card.style.borderColor = 'rgba(110,118,129,.6)';
-      card.style.backgroundColor = 'rgba(34,40,53,.60)';
-      card.style.opacity = '0.85';
+      // sem dados: mantém clicável (fora de NC) mas SÓLIDO para “tampar” o 3D
+      card.style.backgroundColor = 'rgba(34,40,53,1)';
+      card.style.opacity = '1';                     // <- sólido
       card.style.pointerEvents = NC_MODE ? 'none' : 'auto';
       card.style.cursor = NC_MODE ? 'default' : 'pointer';
       if (NC_MODE) card.classList.add('disabled'); else card.classList.remove('disabled');
     }
 
-    // NC-mode: realce somente nos que têm NC
+    // NC mode: realce só nos que têm NC>0 (sem mexer na opacidade)
     if (NC_MODE){
       if (nc > 0){
         card.style.filter = 'none';
-        card.style.opacity = '1';
         card.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
       }else{
         card.style.filter = 'none';
@@ -356,26 +408,22 @@ export function recolorCards2D(){
 }
 
 
+
+
+
 /* ===== Render ===== */
 export function render2DCards(){
   if (!host) initOverlay2D();
   if (!host) return;
 
-  // host ocupa viewport (acima do HUD)
+  // Ajusta a margem inferior para não cobrir o HUD
   const hud = document.getElementById('hud');
   const hudH = hud ? hud.offsetHeight : 0;
-  host.style.position = 'fixed';
-  host.style.top = '0';
-  host.style.left = '0';
-  host.style.right = '0';
   host.style.setProperty('bottom', `${hudH}px`, 'important');
 
-  // Base da grade
   const perFloor = buildFloorsFromApartamentos();
-
-  // Dados da FVS ativa
-  const rowsMap = buildRowsLookup();
-  const NC_MODE = !!State.NC_MODE;
+  const rowsMap  = buildRowsLookup();
+  const NC_MODE  = !!State.NC_MODE;
 
   // (re)constrói DOM
   host.innerHTML = '';
@@ -383,44 +431,48 @@ export function render2DCards(){
 
   for (const band of perFloor){
     for (const it of band.items){
-      const key = it.apt; // local_origem
-      const row = rowsMap.get(key) || null;
+      const key = it.apt; // local_origem exato do card
+
+      // hierarquia EXATA
+      const row = bestRowForName(key, rowsMap);
 
       const el = document.createElement('div');
       el.className = 'card';
-      el.dataset.apto = it.apt;  // agora = local_origem
-      el.dataset.pav  = it.floor;
-      el.dataset.key = key;
+      el.dataset.apto = it.apt;   // local_origem
+      el.dataset.pav  = it.floor; // string do pavimento
+      el.dataset.key  = key;
       el._row = row;
       el._hasData = !!row;
 
-      // Label do apto (hover)
+      // 🔧 POSICIONAMENTO ABSOLUTO (centralizado no ponto x/y)
+      el.style.position = 'absolute';
+      el.style.transform = 'translate(-50%, -50%)';
+
+      // label grande do card
       const numEl = document.createElement('div');
       numEl.className = 'num';
       numEl.textContent = it.apt;
       el.appendChild(numEl);
 
-      // (antigo) duração no canto — mantido oculto
+      // duração (mantida oculta como no seu layout)
       const durEl = document.createElement('div');
       durEl.className = 'dur';
       durEl.style.display = 'none';
       el.appendChild(durEl);
 
-      // Dados brutos
+      // dados normalizados para badges
       const nc   = Math.max(0, Number(row?.qtd_nao_conformidades_ultima_inspecao ?? row?.nao_conformidades ?? 0) || 0);
       const pend = Math.max(0, Number(row?.qtd_pend_ultima_inspecao ?? row?.pendencias ?? 0) || 0);
       const perc = Math.max(0, Math.round(Number(row?.percentual_ultima_inspecao ?? row?.percentual ?? 0) || 0));
       const durN = Math.max(0, Math.round(Number(row?.duracao_real ?? row?.duracao ?? row?.duracao_inicial ?? 0) || 0));
 
-      // NC-mode: só mostra badges se TIVER NC; senão “sem dados” e não clicável
       const showData = !!row && (!NC_MODE || nc > 0);
 
-      // Badges (sempre 4 quando showData = true)
       if (showData){
         const badges = document.createElement('div');
         badges.className = 'badges';
 
-        // 1ª linha: PEND (esq) | NC (dir)
+        // 1ª linha: PEND | NC
         {
           const rowTop = document.createElement('div');
           rowTop.className = 'badge-row';
@@ -444,27 +496,27 @@ export function render2DCards(){
           badges.appendChild(rowTop);
         }
 
-        // 2ª linha: DURAÇÃO (esq) | PERCENTUAL (dir)
+        // 2ª linha: DURAÇÃO | PERCENTUAL
         {
           const rowBottom = document.createElement('div');
           rowBottom.className = 'badge-row';
 
-          const left  = document.createElement('div'); left.className  = 'slot left';
-          const right = document.createElement('div'); right.className = 'slot right';
+          const left2  = document.createElement('div'); left2.className  = 'slot left';
+          const right2 = document.createElement('div'); right2.className = 'slot right';
 
           const bDur = document.createElement('span');
           bDur.className = 'badge dur';
           bDur.textContent = String(durN);
           bDur.title = `Duração (dias): ${durN}`;
-          left.appendChild(bDur);
+          left2.appendChild(bDur);
 
           const bPct = document.createElement('span');
           bPct.className = 'badge percent';
           bPct.textContent = `${perc}%`;
           bPct.title = `Percentual executado`;
-          right.appendChild(bPct);
+          right2.appendChild(bPct);
 
-          rowBottom.append(left, right);
+          rowBottom.append(left2, right2);
           badges.appendChild(rowBottom);
         }
 
@@ -473,9 +525,9 @@ export function render2DCards(){
 
       // Visual / clicabilidade
       if (row){
-        const color = pickFVSColor(it.apt, it.floor, State.COLOR_MAP); // it.apt = local_origem
         if (showData){
-          const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.5)));
+          const color = pickFVSColor(it.apt, it.floor, State.COLOR_MAP);
+          const a = Math.max(0, Math.min(1, Number(State.grid2DAlpha ?? 0.75)));
           el.style.borderColor = color;
           el.style.backgroundColor  = hexToRgba(color, a);
           el.style.opacity     = '1';
@@ -485,63 +537,45 @@ export function render2DCards(){
           el.title = it.apt;
         }else{
           el.style.borderColor = 'rgba(110,118,129,.6)';
-          el.style.backgroundColor  = 'rgba(34,40,53,.60)';
-          el.style.opacity     = '0.85';
+          el.style.backgroundColor  = 'rgba(34,40,53,.95)';
+          el.style.opacity     = '1';
           el.style.pointerEvents = 'none';
           el.style.cursor = 'default';
           el.classList.add('disabled');
           el.title = '';
         }
       }else{
-        // sem dados (fora do NC) mantém clique normal apenas quando NC_MODE=false
         el.style.borderColor = 'rgba(110,118,129,.6)';
-        el.style.backgroundColor  = 'rgba(34,40,53,.60)';
-        el.style.opacity     = '0.85';
+        el.style.backgroundColor  = 'rgba(34,40,53,.95)';
+        el.style.opacity     = '1';
         el.style.pointerEvents = NC_MODE ? 'none' : 'auto';
         el.style.cursor = NC_MODE ? 'default' : 'pointer';
         if (NC_MODE) el.classList.add('disabled'); else el.classList.remove('disabled');
       }
 
-      // Realce NC-mode apenas para quem tem NC
-      if (NC_MODE){
-        if (nc > 0){
-          el.style.filter = 'none';
-          el.style.opacity = '1';
-          el.style.boxShadow = '0 0 0 2px rgba(248,81,73,.22)';
-        }else{
-          el.style.filter = 'none';
-          el.style.boxShadow = 'none';
-        }
-      }else{
-        el.style.filter = 'none';
-        el.style.boxShadow = 'none';
-      }
-
       frag.appendChild(el);
-      it._el = el; // para layout
+      it._el = el; // referencia para posicionamento
     }
   }
 
   host.appendChild(frag);
 
-  // Delegação de clique (mantida)
+  // Clique delegando para abrir modal
   host.onclick = (e) => {
     const card = e.target.closest('.card');
     if (!card || card.classList.contains('disabled')) return;
 
-    let row = card._row || null;
-    if (!row) {
-      const rowsMap2 = buildRowsLookup();
-      row = rowsMap2.get(card.dataset.key || '') || rowsMap2.get(card.dataset.apto || '') || null;
-    }
+    const rowsMap2 = buildRowsLookup();
+    const key = card.dataset.key || card.dataset.apto || '';
+    const row = bestRowForName(key, rowsMap2);
 
-    const apt = card.dataset.apto || ''; // local_origem
+    const apt = card.dataset.apto || '';
     const pav = card.dataset.pav  || '';
     const hex = pickFVSColor(apt, pav, State.COLOR_MAP);
     openAptModal({ id: apt, floor: pav, row, tintHex: hex });
   };
 
-  // ====== Layout ======
+  // ====== Layout (centralização e responsividade) ======
   const paneW = Math.max(240, host.clientWidth);
   const paneH = Math.max(180, host.clientHeight);
 
@@ -552,7 +586,6 @@ export function render2DCards(){
   let vGap = Math.max(10, Math.floor(paneH * 0.014));
 
   const Z = Math.max(0.5, Math.min(getMaxGridZoom(), Number(State.grid2DZoom || 1)));
-  // base 8 linhas; com Z maior, menos linhas → cards maiores (efeito “zoom”)
   const TARGET_ROWS = Math.max(1, Math.round(8 / Z));
 
   let cardH = Math.floor((paneH - (TARGET_ROWS-1)*vGap) / TARGET_ROWS);
@@ -575,10 +608,10 @@ export function render2DCards(){
     el.style.width = `${cardW}px`;
     el.style.height = `${cardH}px`;
     el.style.fontSize = `${fontPx}px`;
-    el.style.opacity = el.style.opacity || '0.95';
+    el.style.opacity = el.style.opacity || '1';
+    el.style.mixBlendMode = 'normal';  // 🔒 sem blend
   });
 
-  // CSS vars para dimensionar badges
   const badgeFont = Math.max(8,  Math.min(16, Math.round(cardH * 0.15)));
   const badgePadV = Math.max(2,  Math.round(cardH * 0.055));
   const badgePadH = Math.max(4,  Math.round(cardW * 0.08));
@@ -616,7 +649,7 @@ export function render2DCards(){
     cursorY += cardH + (r < perFloor.length-1 ? vGap : 0);
   }
 
-  // ===== Restaurar a posição de leitura após mudança de zoom =====
+  // restaura scroll se necessário
   if (_pendingScrollRestore){
     const newH = host.scrollHeight || 1;
     const oldH = _preZoomContentH || 1;
@@ -627,10 +660,27 @@ export function render2DCards(){
     host.scrollTop = Math.max(0, Math.min(maxScroll, desired));
 
     _pendingScrollRestore = false;
+    if (!host.querySelector('.card')) {
+  // se não gerou nenhum card, tenta novamente no próximo frame
+  requestAnimationFrame(()=> render2DCards());
+}
   }
 }
 
-/* ===== Visibilidade do overlay ===== */
+// === Efeito "esfumaçado" no 3D quando o 2D estiver ativo ===
+function _set3DFog(on){
+  // aplica no canvas principal do THREE
+  const cvs = document.querySelector('canvas');
+  if (!cvs) return;
+  cvs.style.transition = 'filter 140ms ease';
+  // blur + redução de brilho/contraste p/ o 3D “ficar atrás”
+  cvs.style.filter = on
+    ? 'blur(3px) brightness(0.85) contrast(0.9) saturate(0.9)'
+    : '';
+}
+
+
+
 export function show2D(){
   if (!host) initOverlay2D();
   if (!host) return;
@@ -638,10 +688,11 @@ export function show2D(){
   host.style.pointerEvents = 'auto';
   render2DCards();
 }
-
 export function hide2D(){
   if (!host) initOverlay2D();
   if (!host) return;
   host.classList.remove('active');
   host.style.pointerEvents = 'none';
 }
+
+

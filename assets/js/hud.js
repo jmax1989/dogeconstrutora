@@ -11,7 +11,7 @@ import {
 import { buildColorMapForFVS, buildColorMapForFVS_NC } from './colors.js';
 import { syncSelectedColor } from './picking.js';
 import { recenterCamera, INITIAL_THETA, INITIAL_PHI, resetRotation, render } from './scene.js';
-import { normFVSKey } from './utils.js';
+import { normFVSKey, bestRowForName } from './utils.js';
 import { apartamentos } from './data.js';
 import { setRowsResolver as setRowsResolver2D } from './overlay2d.js';
 import { setRowResolver  as setRowResolver3D } from './picking.js';
@@ -23,31 +23,48 @@ let hudEl, rowSliders, fvsSelect, btnNC, opacityRange, explodeXYRange, explodeYR
 // ============================
 // Índice FVS -> rows / lookup por nome
 // ============================
-function buildFVSIndex(rows){
-  const byFVS = new Map();
-  for (const r of (rows || [])){
-    const label = String(r?.fvs || '').trim();
-    if (!label) continue;
-    const key = normFVSKey(label);
-    if (!key) continue;
+// ============================
+// Índice FVS -> rows / lookup por nome
+// ============================
+function buildFVSIndex(apartamentos){
+  // Map<FVS_KEY, { label, rows, rowsByNameKey(Map<string,row>), counts:{total,withNC} }>
+  const buckets = new Map();
 
-    let bucket = byFVS.get(key);
-    if (!bucket){
-      bucket = { label, rows: [], rowsByNameKey: new Map(), counts:{ total:0, withNC:0 } };
-      byFVS.set(key, bucket);
+  for (const r of (apartamentos || [])){
+    const fvsKey = normFVSKey(r.fvs ?? r.FVS ?? '');
+    if (!fvsKey) continue;
+
+    let b = buckets.get(fvsKey);
+    if (!b){
+      b = {
+        label: String(r.fvs ?? r.FVS ?? ''),
+        rows: [],
+        rowsByNameKey: new Map(),
+        counts: { total: 0, withNC: 0 }
+      };
+      buckets.set(fvsKey, b);
     }
-    bucket.rows.push(r);
-    bucket.counts.total++;
 
-    const nc = Number(r?.qtd_nao_conformidades_ultima_inspecao ?? r?.nao_conformidades ?? 0) || 0;
-    if (nc > 0) bucket.counts.withNC++;
+    // acumula linhas
+    b.rows.push(r);
+    b.counts.total++;
 
-    // 🔄 CHAVE PASSA A SER 'local_origem' (antes: 'apartamento')
-    const kName = String(r?.local_origem ?? '').trim();
-    if (kName && !bucket.rowsByNameKey.has(kName)) bucket.rowsByNameKey.set(kName, r);
+    // conta NC (cobre ambos campos possíveis)
+    const ncVal = Number(r.qtd_nao_conformidades_ultima_inspecao ?? r.nao_conformidades ?? 0) || 0;
+    if (ncVal > 0) b.counts.withNC++;
+
+    // 🔒 chave exata (apenas trim)
+    const exactKey = String((r.local_origem ?? r.nome ?? '')).trim();
+    if (exactKey && !b.rowsByNameKey.has(exactKey)) {
+      b.rowsByNameKey.set(exactKey, r);
+    }
   }
-  return byFVS;
+
+  return buckets;
 }
+
+
+
 
 // === Compat: applyFVSAndRefresh (chamada pelo viewer.js) ===
 export function applyFVSAndRefresh(){
@@ -69,28 +86,69 @@ export function applyFVSAndRefresh(){
 }
 
 function populateFVSSelect(selectEl, fvsIndex, showNCOnly=false){
+  if (!selectEl) return;
+
+  const prevVal = selectEl.value;
   selectEl.innerHTML = '';
+
   const keys = Array.from(fvsIndex.keys()).sort((a,b)=>{
     const la = fvsIndex.get(a)?.label || a;
     const lb = fvsIndex.get(b)?.label || b;
     return la.localeCompare(lb, 'pt-BR');
   });
 
+  let added = 0;
+
   for (const k of keys){
     const b = fvsIndex.get(k);
-    const c = b?.counts || { total:0, withNC:0 };
-    if (showNCOnly && (c.withNC || 0) === 0) continue;
+    // Garante counts mesmo que venha faltando em algum bucket
+    const c = b?.counts || { total: (b?.rows?.length || 0), withNC: (b?.rows || []).reduce((acc, r)=>{
+      const ncVal = Number(r.qtd_nao_conformidades_ultima_inspecao ?? r.nao_conformidades ?? 0) || 0;
+      return acc + (ncVal > 0 ? 1 : 0);
+    }, 0) };
 
-    const label = showNCOnly
-      ? `${b.label} (NC:${c.withNC||0})`
-      : `${b.label} (${c.total||0})`;
+    if (showNCOnly && (c.withNC || 0) === 0) continue;
 
     const opt = document.createElement('option');
     opt.value = k;
-    opt.textContent = label;
+    opt.textContent = showNCOnly
+      ? `${b.label} (NC:${c.withNC||0})`
+      : `${b.label} (${c.total||0})`;
     selectEl.appendChild(opt);
+    added++;
+  }
+
+  // Se o filtro NC zerou a lista por algum motivo, faz fallback mostrando todos
+  if (added === 0){
+    for (const k of keys){
+      const b = fvsIndex.get(k);
+      const c = b?.counts || { total: (b?.rows?.length || 0), withNC: 0 };
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = `${b.label} (${c.total||0})`;
+      selectEl.appendChild(opt);
+    }
+  }
+
+  // Tenta restaurar a seleção anterior, senão fica no primeiro
+  if (prevVal && [...selectEl.options].some(o => o.value === prevVal)){
+    selectEl.value = prevVal;
+  } else if (selectEl.options.length){
+    selectEl.value = selectEl.options[0].value;
   }
 }
+
+
+// === Helpers de Hierarquia (match do mais específico para o mais genérico) ===
+
+/**
+ * Procura a melhor linha da FVS para um nome completo (layout-3d.json),
+ * subindo na hierarquia: Ambiente → Apartamento → Pavimento → Torre.
+ * @param {string} rawName  Nome cru do layout (ex: "Torre - Pavimento 03 - Apartamento 301 - Banheiro")
+ * @param {Map<string,object>} mapByName  Mapa com chaves de nome exatas
+ * @returns {object|null}
+ */
+
 
 function applyFVSSelection(fvsKey, fvsIndex){
   const bucket = fvsIndex.get(fvsKey);
@@ -99,12 +157,18 @@ function applyFVSSelection(fvsKey, fvsIndex){
   State.CURRENT_FVS_KEY   = fvsKey;
   State.CURRENT_FVS_LABEL = bucket?.label || '';
 
+  // 2D recebe lista bruta
   setRowsResolver2D(() => rows);
 
-  // ⚙️ Resolver 3D agora por 'local_origem'
+  // 3D: tenta match exato; se não houver, sobe na hierarquia textual exata
   const byName = bucket?.rowsByNameKey || new Map();
-  setRowResolver3D((raw)=> byName.get(String(raw).trim()) || null);
+  setRowResolver3D((rawName)=>{
+    const nm = String(rawName||'').trim();
+    if (!nm) return null;
+    return bestRowForName(nm, byName);
+  });
 
+  // Mapas de cor (ver colors.js) — também usarão hierarquia exata
   State.COLOR_MAP = State.NC_MODE
     ? buildColorMapForFVS_NC(rows)
     : buildColorMapForFVS(rows);
@@ -114,6 +178,11 @@ function applyFVSSelection(fvsKey, fvsIndex){
   syncSelectedColor();
   render();
 }
+
+
+
+
+
 
 // ============================
 // Inicialização pública
@@ -162,12 +231,18 @@ export function initHUD(){
   if (explodeYRange)  explodeYRange.value  = String(State.explodeY  ?? 0);
   if (opacityRange)   opacityRange.value   = String(Math.round((State.faceOpacity ?? 1) * 100));
 
-  const is2D = (State.flatten2D >= 0.95);
-  btn2D?.setAttribute('aria-pressed', String(is2D));
-  btn2D?.classList.toggle('active', is2D);
-  if (rowSliders)      rowSliders.style.display      = is2D ? 'none' : '';
-  if (floorLimitGroup) floorLimitGroup.style.display = is2D ? 'none' : '';
+const is2D = (State.flatten2D >= 0.95);
+btn2D?.setAttribute('aria-pressed', String(is2D));
+btn2D?.classList.toggle('active', is2D);
+if (rowSliders)      rowSliders.style.display      = is2D ? 'none' : '';
+if (floorLimitGroup) floorLimitGroup.style.display = is2D ? 'none' : '';
 
+// 🔧 GARANTE ESTADO INICIAL DO OVERLAY 2D
+if (is2D) {
+  show2D();
+} else {
+  hide2D();
+}
   // Dropdown FVS
   const fvsIndex = buildFVSIndex(apartamentos || []);
   populateFVSSelect(fvsSelect, fvsIndex, /*showNCOnly=*/State.NC_MODE);

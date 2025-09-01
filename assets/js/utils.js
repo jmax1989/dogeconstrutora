@@ -42,6 +42,32 @@ export function normAptoId(s) {
 export const normAptoKey = normAptoId;
 export const normApto    = normAptoId;
 
+// === Hierarquia EXATA (compartilhada pelo 2D e 3D) ===
+export function splitHierarchy(name){
+  return String(name||'')
+    .split(/\s*-\s*/g)     // só quebra por " - "
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+export function joinHierarchy(parts, n){
+  return parts.slice(0, n).join(' - ');
+}
+
+/**
+ * Busca a melhor linha por hierarquia **EXATA**:
+ * tenta o nome completo; se não achar, remove o último termo e tenta de novo.
+ * (Sem normalização/sinônimos; apenas trim e quebra por " - ")
+ */
+export function bestRowForName(rawName, mapByName){
+  const parts = splitHierarchy(rawName);
+  for (let n = parts.length; n >= 1; n--){
+    const key = joinHierarchy(parts, n);
+    if (mapByName.has(key)) return mapByName.get(key);
+  }
+  return null;
+}
+
 /**
  * Normaliza CHAVE de FVS (para dropdown/lookup estável)
  * Estratégia:
@@ -65,15 +91,10 @@ export function normFVSKey(s){
  */
 export function keyFromAny(obj){
   if (!obj) return '';
-  return normNameKey(
-    obj.nome ??
-    obj.apartamento ??
-    obj.apto ??
-    obj.id ??
-    obj.name ??
-    ''
-  );
+  return String((obj.local_origem ?? obj.nome ?? '')).trim();
 }
+
+
 
 // Formatação de data (yyyy-mm-dd → dd/mm/yyyy)
 export function formatDateBR(dateStr){
