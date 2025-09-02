@@ -188,6 +188,7 @@ function applyFVSSelection(fvsKey, fvsIndex){
 // Inicialização pública
 // ============================
 export function initHUD(){
+  // refs
   hudEl        = document.getElementById('hud');
   fvsSelect    = document.getElementById('fvsSelect');
   btnNC        = document.getElementById('btnNC');
@@ -195,59 +196,91 @@ export function initHUD(){
   btnZoom2D    = document.getElementById('btnZoom2D');
   btnResetAll  = document.getElementById('btnResetAll');
 
-  rowSliders       = document.getElementById('row-sliders');
-  opacityRange     = document.getElementById('opacity');
-  explodeXYRange   = document.getElementById('explodeXY');
-  explodeYRange    = document.getElementById('explodeY');
+  rowSliders     = document.getElementById('row-sliders');
+  opacityRange   = document.getElementById('opacity');
+  explodeXYRange = document.getElementById('explodeXY');
+  explodeYRange  = document.getElementById('explodeY');
 
-  // --- Slider de pavimento (modo solo) ---
-  floorLimitRange  = document.getElementById('floorLimit');
-  floorLimitValue  = document.getElementById('floorLimitValue');
-  floorLimitGroup  = document.getElementById('floorLimitGroup')
+  // --- Slider de pavimento (“escadinha”) ---
+  floorLimitRange = document.getElementById('floorLimit');
+  floorLimitValue = document.getElementById('floorLimitValue');
+  floorLimitGroup = document.getElementById('floorLimitGroup')
                         || floorLimitRange?.closest('.control')
                         || floorLimitRange?.parentElement;
 
   if (!hudEl) return;
+// ===== Tela inicial: garantir obra escolhida =====
+{
+  const qs        = new URL(location.href).searchParams;
+  const obraQS    = qs.get('obra') || '';
+  const obraCache = localStorage.getItem('obraId') || '';
 
-  // Prefs + QS iniciais
+  // Se não tem ?obra= mas há cache → redireciona automaticamente
+  if (!obraQS && obraCache){
+    const url = new URL(location.href);
+    url.searchParams.set('obra', obraCache);
+    location.replace(url.toString());
+    return; // evita continuar a init até carregar a obra
+  }
+
+  // Se não tem obra nenhuma → abre modal imediatamente
+  if (!obraQS && !obraCache){
+    // abre após pintar o HUD
+    setTimeout(()=> openSettingsModal?.(), 0);
+  }
+}
+
+  // Prefs + QS
   const prefs = loadPrefs();
   const qsFvs = getQS('fvs');
   const qsNc  = getQS('nc');
   State.NC_MODE = (qsNc != null) ? (qsNc === '1' || qsNc === 'true') : !!prefs.nc;
 
-  // estados visuais iniciais
+  // estado visual do NC
   btnNC?.setAttribute('aria-pressed', String(!!State.NC_MODE));
   btnNC?.classList.toggle('active', !!State.NC_MODE);
 
-  // sliders compactos (cabem melhor no mobile)
+  // sliders compactos
   [opacityRange, explodeXYRange, explodeYRange].forEach(inp=>{
     if (!inp) return;
     inp.classList.add('slim');
     inp.style.maxWidth = '140px';
   });
 
-  // carrega valores atuais
+  // valores iniciais
   if (explodeXYRange) explodeXYRange.value = String(State.explodeXY ?? 0);
   if (explodeYRange)  explodeYRange.value  = String(State.explodeY  ?? 0);
   if (opacityRange)   opacityRange.value   = String(Math.round((State.faceOpacity ?? 1) * 100));
 
-const is2D = (State.flatten2D >= 0.95);
-btn2D?.setAttribute('aria-pressed', String(is2D));
-btn2D?.classList.toggle('active', is2D);
-if (rowSliders)      rowSliders.style.display      = is2D ? 'none' : '';
-if (floorLimitGroup) floorLimitGroup.style.display = is2D ? 'none' : '';
+  // ===== 2D: só esconder a “escadinha” + esconder linha de sliders =====
+  const is2D = (State.flatten2D >= 0.95);
+  btn2D?.setAttribute('aria-pressed', String(is2D));
+  btn2D?.classList.toggle('active', is2D);
 
-// 🔧 GARANTE ESTADO INICIAL DO OVERLAY 2D
-if (is2D) {
-  show2D();
-} else {
-  hide2D();
-}
-  // Dropdown FVS
+  const floorLabel = document.querySelector('label[for="floorLimit"]');
+
+  const toggle2DUI = (on /* true=2D ligado */) => {
+    // linha de sliders some no 2D
+    if (rowSliders) rowSliders.style.display = on ? 'none' : '';
+    // 🔒 SOMENTE a “escadinha” (label + input + valor)
+    [floorLabel, floorLimitRange, floorLimitValue].forEach(el=>{
+      if (el) el.style.display = on ? 'none' : '';
+    });
+    // lupa do 2D visível só quando 2D
+    if (btnZoom2D){
+      btnZoom2D.textContent = '🔍' + getNextGridZoomSymbol();
+      btnZoom2D.style.display = on ? 'inline-flex' : 'none';
+    }
+  };
+
+  toggle2DUI(is2D);
+  if (is2D) { show2D(); } else { hide2D(); }
+
+  // ===== Dropdown FVS
   const fvsIndex = buildFVSIndex(apartamentos || []);
   populateFVSSelect(fvsSelect, fvsIndex, /*showNCOnly=*/State.NC_MODE);
 
-  // Seleção inicial
+  // seleção inicial
   let initialKey = '';
   const prefKey  = prefs?.fvs ? normFVSKey(prefs.fvs) : '';
   const qsKey    = qsFvs ? normFVSKey(qsFvs) : '';
@@ -260,15 +293,14 @@ if (is2D) {
     applyFVSSelection(initialKey, fvsIndex);
   }
 
-  // ---- Pavimento (modo solo) - configurações iniciais ----
+  // ---- Pavimento (modo solo)
   const maxLvl = getMaxLevel();
   if (floorLimitRange){
     floorLimitRange.min  = '0';
     floorLimitRange.max  = String(maxLvl);
     floorLimitRange.step = '1';
 
-    // Começa mostrando TODOS os pavimentos (modo solo desativado)
-    showAllFloors();
+    showAllFloors(); // começa sem corte
     if (!floorLimitRange.value) floorLimitRange.value = '0';
     if (floorLimitValue) floorLimitValue.textContent = '—';
 
@@ -280,19 +312,13 @@ if (is2D) {
     });
   }
 
-  // Zoom 2D: ícone mostra o PRÓXIMO passo (+ ou −)
-  if (btnZoom2D){
-    btnZoom2D.textContent = '🔍' + getNextGridZoomSymbol();
-    btnZoom2D.style.display = is2D ? 'inline-flex' : 'none';
-  }
-
-  // Listeners padrão
+  // Listeners padrão (NC, FVS, sliders etc)
   wireEvents(fvsIndex);
 
   // Observer para mudanças no HUD (recalcula cards 2D)
   setupHudResizeObserver();
 
-  // === Handle (grabber) para expandir/recolher o HUD ===
+  // === Handle (grabber) expandir/recolher HUD (2 estados) ===
   const hudHandle = document.getElementById('hudHandle');
   if (hudHandle && hudEl) {
     hudHandle.setAttribute('role', 'button');
@@ -304,10 +330,10 @@ if (is2D) {
       const collapsed = hudEl.classList.contains('collapsed');
       hudHandle.setAttribute('aria-expanded', String(!collapsed));
     };
-
     const toggleHud = () => {
       hudEl.classList.toggle('collapsed');
       syncExpanded();
+      try{ window.dispatchEvent(new Event('resize')); }catch(_){}
     };
 
     hudHandle.addEventListener('click', toggleHud, { passive: true });
@@ -318,67 +344,91 @@ if (is2D) {
       }
     }, { passive:false });
 
+    // gesto simples
+    let dragging=false, startY=0, curY=0;
+    const THRESHOLD=28;
+    const onPD = (ev)=>{
+      if (ev.button!==undefined && ev.button!==0) return;
+      dragging=true;
+      startY = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      curY   = startY;
+      hudEl.classList.add('dragging');
+      hudHandle.setPointerCapture?.(ev.pointerId);
+    };
+    const onPM = (ev)=>{
+      if (!dragging) return;
+      curY = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      const dy = curY - startY;
+      const clamped = Math.max(-60, Math.min(60, dy));
+      hudEl.style.transform = `translateY(${clamped}px)`;
+    };
+    const onPU = ()=>{
+      if (!dragging) return;
+      dragging=false;
+      hudEl.classList.remove('dragging');
+      hudEl.style.transform='';
+      const dy = curY - startY;
+      if (dy <= -THRESHOLD){ hudEl.classList.remove('collapsed'); }
+      else if (dy >= THRESHOLD){ hudEl.classList.add('collapsed'); }
+      syncExpanded();
+      try{ window.dispatchEvent(new Event('resize')); }catch(_){}
+    };
+    hudHandle.addEventListener('pointerdown', onPD, { passive:true });
+    hudHandle.addEventListener('pointermove', onPM, { passive:true });
+    hudHandle.addEventListener('pointerup', onPU, { passive:true });
+    hudHandle.addEventListener('pointercancel', onPU, { passive:true });
+    hudHandle.addEventListener('lostpointercapture', onPU, { passive:true });
+
     syncExpanded();
   }
-    // ===== Configurações: selecionar obra =====
+
+  // ===== Configurações (dot) — selecionar obra =====
   const btnSettings = document.getElementById('btnHudSettings');
   if (btnSettings) {
-    btnSettings.addEventListener('click', openSettingsModal, { passive: true });
+    // não deixar propagar para o handle
+    btnSettings.addEventListener('pointerdown', (e)=>{ e.preventDefault(); e.stopPropagation(); }, { passive:false });
+    btnSettings.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openSettingsModal(); }, { passive:false });
   }
 
   async function openSettingsModal(){
-    // 1) Monta UI do modal (reutilizando doge-modal existente)
     const backdrop = document.getElementById('doge-modal-backdrop');
     const modal    = document.getElementById('doge-modal');
     const titleEl  = document.getElementById('doge-modal-title');
     const content  = document.getElementById('doge-modal-content');
     const closeBtn = document.getElementById('doge-modal-close');
+    const pill     = document.getElementById('doge-modal-pill');
 
     if (!backdrop || !modal || !titleEl || !content) return;
 
     titleEl.textContent = 'Configurações';
-    const pill = document.getElementById('doge-modal-pill');
     if (pill) { pill.textContent = 'Obra'; pill.style.display = 'inline-block'; }
 
-    // 2) Carrega lista de obras
     let obras = [];
     let errorMsg = '';
-
     try{
-      const url = './data/obras.json'; // relativo a index.html
-      const resp = await fetch(url, { cache: 'no-store' });
-      if (!resp.ok) {
-        errorMsg = `Não encontrei ${url} (status ${resp.status}).`;
+      const resp = await fetch('./data/obras.json', { cache:'no-store' });
+      if (!resp.ok){
+        errorMsg = `Não encontrei ./data/obras.json (status ${resp.status}).`;
       } else {
-        try {
-          const json = await resp.json();
-          if (Array.isArray(json)) {
-            obras = json.filter(o => o && typeof o.id === 'string');
-            if (obras.length === 0) {
-              errorMsg = 'obras.json está vazio ou sem objetos { id, label }.';
-            }
-          } else {
-            errorMsg = 'obras.json não é um array JSON.';
-          }
-        } catch (e) {
-          errorMsg = 'Falha ao parsear obras.json (JSON inválido).';
-          console.error('[obras.json] parse error:', e);
+        const json = await resp.json();
+        if (Array.isArray(json)) {
+          obras = json.filter(o => o && typeof o.id === 'string');
+          if (obras.length === 0) errorMsg = 'obras.json está vazio ou sem objetos { id, label }.';
+        } else {
+          errorMsg = 'obras.json não é um array JSON.';
         }
       }
-    } catch (e) {
+    }catch(e){
       errorMsg = 'Falha ao requisitar obras.json.';
-      console.error('[obras.json] fetch error:', e);
+      console.error('[obras.json] fetch/parse:', e);
     }
 
-    // Fallback: obra atual da URL (se houver)
     const qs = new URL(location.href).searchParams;
     const obraAtual = qs.get('obra') || '';
-
     if ((!Array.isArray(obras) || obras.length === 0) && obraAtual) {
       obras = [{ id: obraAtual, label: obraAtual }];
     }
 
-    // 3) Monta conteúdo do modal
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `
       <div class="form-grid" style="display:grid; gap:12px; padding:6px 0;">
@@ -386,79 +436,72 @@ if (is2D) {
           <span style="font-size:12px; color:#9fb0c3;">Selecione a obra</span>
           <select id="obraSelectModal" style="background:#0b1220; border:1px solid #30363d; color:#c9d1d9; padding:8px; border-radius:8px; min-width:240px;"></select>
         </label>
-
         ${(!obras || obras.length === 0) ? `
           <div id="obraEmptyHint" style="font-size:12px; color:#d29922;">
             ${errorMsg ? errorMsg : 'Nenhuma obra encontrada. Crie <code>./data/obras.json</code> com [{"id":"Pasta","label":"Nome"}].'}
           </div>` : ''}
-
         <div style="display:flex; gap:8px; justify-content:flex-end; padding-top:4px;">
           <button id="obraCancel" type="button" style="background:transparent; border:1px solid #30363d; color:#c9d1d9; padding:8px 12px; border-radius:8px;">Cancelar</button>
           <button id="obraApply"  type="button" style="background:#238636; border:1px solid #1f6f2d; color:#fff; padding:8px 12px; border-radius:8px;">Abrir</button>
         </div>
       </div>
     `;
-
     content.innerHTML = '';
     content.appendChild(wrapper);
 
     const obraSelect = wrapper.querySelector('#obraSelectModal');
     obraSelect.innerHTML = '';
-
-    if (Array.isArray(obras)) {
-      for (const o of obras) {
+    if (Array.isArray(obras)){
+      for (const o of obras){
         const opt = document.createElement('option');
         opt.value = o.id;
         opt.textContent = o.label || o.id;
         obraSelect.appendChild(opt);
       }
     }
-
     if (obraAtual && [...obraSelect.options].some(o => o.value === obraAtual)){
       obraSelect.value = obraAtual;
     }
 
-
-    // 4) Ações dos botões
     const closeModal = () => {
       backdrop.setAttribute('aria-hidden', 'true');
       backdrop.style.display = 'none';
+      document.body.classList.remove('modal-open');
       if (pill) pill.style.display = '';
     };
     wrapper.querySelector('#obraCancel')?.addEventListener('click', closeModal, { passive:true });
     closeBtn?.addEventListener('click', closeModal, { passive:true });
 
-    wrapper.querySelector('#obraApply')?.addEventListener('click', () => {
-      const chosen = obraSelect.value;
-      if (!chosen) return;
-      // navega mantendo outros parâmetros que não sejam 'obra'
-      const url = new URL(location.href);
-      url.searchParams.set('obra', chosen);
-      location.href = url.toString();
-    }, { passive:true });
+wrapper.querySelector('#obraApply')?.addEventListener('click', ()=>{
+  const chosen = obraSelect.value;
+  if (!chosen) return;
+  localStorage.setItem('obraId', chosen);  // <<<< salva no cache
+  const url = new URL(location.href);
+  url.searchParams.set('obra', chosen);
+  location.href = url.toString();
+}, { passive:true });
 
-    // 5) Exibe o modal
-    backdrop.style.display = 'block';
+
+    // abrir modal (centralizado via CSS)
+    backdrop.style.display = 'flex';
     backdrop.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
   }
-  const settingsBtn = document.getElementById('btnHudSettings');
-if (settingsBtn){
-  // impede o clique de “bater” no handle e retrair o HUD
-  settingsBtn.addEventListener('click', (e)=>{
-    e.preventDefault();
-    e.stopPropagation();
-    openSettingsModal?.(); // sua função que abre o modal
-  }, { passive: false });
 
-  // também bloquear pointerdown para não iniciar gesto do handle
-  settingsBtn.addEventListener('pointerdown', (e)=>{
-    e.preventDefault();
-    e.stopPropagation();
-  }, { passive: false });
+  // ===== Sync UI 2D após clique no botão 2D
+  const sync2DUI = () => {
+    const on = (btn2D?.getAttribute('aria-pressed') === 'true')
+            ||  btn2D?.classList.contains('active')
+            || (State.flatten2D >= 0.95);
+    toggle2DUI(on);
+    if (on) show2D(); else hide2D();
+  };
+  btn2D?.addEventListener('click', ()=> setTimeout(sync2DUI, 0), { passive:true });
+  btn2D?.addEventListener('keydown', (e)=>{
+    if (e.key==='Enter' || e.key===' '){ setTimeout(sync2DUI, 0); }
+  }, { passive:true });
 }
 
-
-}
 
 // ============================
 // Eventos do HUD
@@ -637,9 +680,6 @@ btnZoom2D?.addEventListener('click', ()=>{
     btnZoom2D.textContent = (sym === '+') ? '🔍+' : '🔍−';
   }, { focalY, focalX });
 });
-
-
-
 
 }
 

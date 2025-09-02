@@ -18,66 +18,70 @@ export let apartamentos = [];
  * - Normaliza fvs-list no formato novo ([{alvo_id, fvs: [...] }]) e antigo ([ "FVS ..." ])
  */
 export async function loadAllData(){
-  // 1) Detecta obra pela query string (?obra=PASTA_DA_OBRA)
-  const obra = new URL(location.href).searchParams.get('obra') || '';
+  // 1) Detecta obra pela query string (?obra=PASTA_DA_OBRA) ou pelo cache
+  const qs        = new URL(location.href).searchParams;
+  const obraQS    = qs.get('obra') || '';
+  const obraCache = localStorage.getItem('obraId') || '';
+  const obra      = obraQS || obraCache;
 
-  // 2) Resolve caminhos (se obra existir, usa ./data/{obra}/..., senão mantém as constantes atuais)
-  const base = obra ? `./data/${obra}` : null;
-  const layoutUrl    = base ? `${base}/layout-3d.json`       : LAYOUT_URL;
-  const fvsByObraUrl = base ? `${base}/fvs-list_by_obra.json`: null;        // preferencial
-  const fvsUrl       = base ? `${base}/fvs-list.json`         : FVS_LIST_URL;
-  const aptsUrl      = base ? `${base}/apartamentos.json`     : APTS_URL;
-
-  // 3) Helper: tenta várias URLs e retorna o primeiro JSON válido
-  async function fetchFirstJson(urls){
-    for (const u of urls){
-      if (!u) continue;
-      try{
-        const r = await fetch(u, { cache: 'no-store' });
-        if (r.ok) return await r.json();
-      }catch(_){ /* tenta próxima */ }
-    }
-    return []; // fallback
+  // Se vier pela QS, atualiza o cache
+  if (obraQS) {
+    try { localStorage.setItem('obraId', obraQS); } catch(_) {}
   }
 
-  // 4) Helper p/ normalizar fvs-list (aceita novo e antigo)
+  // 2) Se não houver obra definida ainda, devolve vazio (HUD abrirá o modal)
+  if (!obra){
+    layoutData   = { placements: [], meta:{} };
+    fvsList      = [];
+    apartamentos = [];
+    return;
+  }
+
+  // 3) Caminhos por obra (sem fallbacks globais)
+  const base        = `./data/${obra}`;
+  const layoutUrl   = `${base}/layout-3d.json`;
+  const fvsByObraUrl= `${base}/fvs-list_by_obra.json`;
+  const aptsUrl     = `${base}/apartamentos.json`;
+
+  // 4) Normalizador do fvs-list (suporta novo e antigo)
   const normalizeFvsList = (raw) => {
     if (!raw) return [];
-    // Formato novo: [{ alvo_id, fvs: [...] }, ...]
-    if (Array.isArray(raw) && raw.length && raw[0] && typeof raw[0] === 'object' && Array.isArray(raw[0].fvs)){
+    if (Array.isArray(raw) && raw.length && typeof raw[0] === 'object' && Array.isArray(raw[0].fvs)){
       const all = [];
-      for (const blk of raw){
-        if (blk && Array.isArray(blk.fvs)) all.push(...blk.fvs);
-      }
-      // remove duplicadas preservando ordem
+      for (const blk of raw){ if (blk && Array.isArray(blk.fvs)) all.push(...blk.fvs); }
       return [...new Set(all.map(s => String(s)))];
     }
-    // Formato antigo: ["FVS ...", ...]
     if (Array.isArray(raw) && (raw.length === 0 || typeof raw[0] === 'string')){
       return raw.map(String);
     }
-    // Fallback: objeto com .fvs
     if (raw && Array.isArray(raw.fvs)) return raw.fvs.map(String);
     return [];
   };
 
   try{
-    // Layout
+    // Layout (obrigatório por obra)
     layoutData = await fetch(layoutUrl, { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : { placements: [], meta:{} })
-      .catch(() => ({ placements: [], meta:{} }));
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('layout-3d.json não encontrado')))
+      .catch(err => {
+        console.error('[data] layout:', err);
+        return { placements: [], meta:{} };
+      });
 
-    // FVS (tenta by_obra -> fvs-list da obra -> global)
-    const fvsRaw = await fetchFirstJson([
-      fvsByObraUrl,
-      fvsUrl,
-      FVS_LIST_URL
-    ]);
+    // FVS (somente fvs-list_by_obra.json)
+    const fvsRaw = await fetch(fvsByObraUrl, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('fvs-list_by_obra.json não encontrado')))
+      .catch(err => {
+        console.error('[data] fvs-list_by_obra:', err);
+        return [];
+      });
 
-    // Apartamentos
+    // Apartamentos (somente por obra)
     const aptsRaw = await fetch(aptsUrl, { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : [])
-      .catch(() => []);
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('apartamentos.json não encontrado')))
+      .catch(err => {
+        console.error('[data] apartamentos:', err);
+        return [];
+      });
 
     fvsList      = normalizeFvsList(fvsRaw);
     apartamentos = Array.isArray(aptsRaw) ? aptsRaw : [];
@@ -88,3 +92,4 @@ export async function loadAllData(){
     apartamentos = [];
   }
 }
+

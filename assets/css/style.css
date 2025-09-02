@@ -253,6 +253,12 @@ body.grid2d-on #overlay2d {
 #hud .row > button:focus{ outline: none; }
 #hud .row > button:focus-visible{ box-shadow: 0 0 0 2px rgba(88,166,255,.25); }
 
+/* quando o 2D está ativo, esconda o grupo de corte por pavimento */
+#btn2D[aria-pressed="true"] ~ #row-fvs label[for="floorLimit"],
+#btn2D[aria-pressed="true"] ~ #row-fvs #floorLimit,
+#btn2D[aria-pressed="true"] ~ #row-fvs #floorLimitValue {
+  display: none !important;
+}
 /* ===== Botão 2D (estado ativo) ===== */
 :root{ --c-2d-off:#8b949e; --c-2d-on:#ff3b30; }
 #btn2D.mode2d{
@@ -288,6 +294,7 @@ body.grid2d-on #overlay2d {
   fill: rgba(248,81,73,.18);
   stroke: rgba(248,81,73,.75);
 }
+
 
 /* ===== Botão NC (cor muda quando ativo) ===== */
 #btnNC{
