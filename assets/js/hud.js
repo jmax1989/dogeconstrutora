@@ -441,6 +441,22 @@ if (is2D) {
     backdrop.style.display = 'block';
     backdrop.setAttribute('aria-hidden', 'false');
   }
+  const settingsBtn = document.getElementById('btnHudSettings');
+if (settingsBtn){
+  // impede o clique de “bater” no handle e retrair o HUD
+  settingsBtn.addEventListener('click', (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+    openSettingsModal?.(); // sua função que abre o modal
+  }, { passive: false });
+
+  // também bloquear pointerdown para não iniciar gesto do handle
+  settingsBtn.addEventListener('pointerdown', (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+  }, { passive: false });
+}
+
 
 }
 
