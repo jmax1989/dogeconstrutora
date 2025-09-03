@@ -4,7 +4,7 @@
 
 const LAYOUT_URL   = './data/layout-3d.json';
 const FVS_LIST_URL = './data/fvs-list.json';
-const APTS_URL     = './data/apartamentos.json';
+const APTS_URL     = './data/66bd4f46bb62c7729f045d6e/apartamentos.json';
 
 export let layoutData   = null;
 export let fvsList      = [];
