@@ -513,7 +513,7 @@ body.grid2d-on #overlay2d {
 #btnHudSettings.hud-gear{
   position: absolute;
   top: 6px; left: 8px;
-  width: 24px; height: 24px;
+  width: 20px; height: 20px;
   border-radius: 999px;
   border: 1px solid var(--border, #30363d);
   background: rgba(0,0,0,.35);
@@ -622,7 +622,7 @@ body.modal-open{ overflow: hidden; }
 /* ===== Botão de configurações (DOT pequeno) ===== */
 #btnHudSettings.hud-dot{
   position: absolute;
-  top: 6px; left: 8px;          /* canto superior esquerdo do HUD */
+  top: 12px; left: 12px;          /* canto superior esquerdo do HUD */
   width: 12px; height: 12px;
   border-radius: 999px;
   border: 1px solid rgba(255,199,0,.9);
