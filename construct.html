@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -289,7 +288,16 @@ let cacheTop   = new Map();
 let frontZoom=1, frontPanX=0, frontPanY=0;
 let topZoom=1,   topPanX=0,   topPanY=0;
 let isSpaceDown=false;
+window.addEventListener('keydown', (e)=>{ if (e.code === 'Space') isSpaceDown = true; }, {capture:true});
+window.addEventListener('keyup',   (e)=>{ if (e.code === 'Space') isSpaceDown = false; }, {capture:true});
+
 let panDrag=null;
+// estado (fora das funções)
+let cTopPanX=0, cTopPanY=0;
+let cFrontPanX=0, cFrontPanY=0;
+let cSidePanX=0, cSidePanY=0;
+let cTopZoom=1, cFrontZoom=1, cSideZoom=1;
+let cPanDrag = null; // {which:'top'|'front'|'side', lastX, lastY}
 
 // Undo/Redo/Clipboard
 let undoStack=[], redoStack=[];
@@ -492,80 +500,100 @@ function ySubFromPixelY(py){
   return Math.round(subFloat);
 }
 /* ==================== 2D: Frontal ==================== */
+// ==================== 3) 2D FRONTAL (principal) ====================
 function drawFrontal(){
-  const c = frontCanvas, w=c.clientWidth, h=c.clientHeight;
-  const cum = buildCumHeights();
-  ctxF.clearRect(0,0,w,h);
-  ctxF.fillStyle='#0b111b'; ctxF.fillRect(0,0,w,h);
-
-  ctxF.save(); ctxF.translate(frontPanX, frontPanY); ctxF.scale(frontZoom, frontZoom);
-
-  const baseY = h - GRID_PAD;
-  const cx = w/2;
+  const c = frontCanvas, w = c.clientWidth, h = c.clientHeight;
   const LABEL_W = 76;
+  const leftMargin = GRID_PAD + LABEL_W;
 
-  // régua lateral para clique nos pavimentos
-  ctxF.fillStyle='rgba(18,26,40,.85)';
-  ctxF.fillRect(0, 0, GRID_PAD + LABEL_W, h);
+  // fundo
+  ctxF.clearRect(0,0,w,h);
+  ctxF.fillStyle = '#0b111b';
+  ctxF.fillRect(0,0,w,h);
 
-  floorHits = [];
-  ctxF.strokeStyle='#16233a';
-  ctxF.lineWidth=1/Math.max(0.001, frontZoom);
-  ctxF.textAlign='right'; ctxF.textBaseline='middle';
-  ctxF.font = `${12/Math.max(0.001, frontZoom)}px system-ui, sans-serif`;
+  // === GRID INFINITO VERTICAL (em TELA) ===
+  const cx = leftMargin + Math.floor((w - leftMargin) / 2); // centro útil
+  const stepX   = Math.max(4, Math.round(UNIT_XZ * frontZoom));
+  const originX = Math.round(frontPanX + frontZoom * cx);
+  const startX  = ((originX % stepX) + stepX) % stepX;
 
-  for(let i=0;i<=floors.length;i++){
-    const y = baseY - (cum[i]||0);
-    ctxF.strokeStyle='#2b3b55';
-    ctxF.beginPath(); ctxF.moveTo(GRID_PAD, y); ctxF.lineTo(w-GRID_PAD, y); ctxF.stroke();
-
-    const x1 = 0, x2 = GRID_PAD + LABEL_W, y1 = y-14, y2 = y+14;
-    floorHits.push({floor:i, x1, y1, x2, y2});
-
-    ctxF.fillStyle = (isolatedFloor===i? '#ffc107' : '#9fb0c3');
-    ctxF.fillText(String(i), GRID_PAD + LABEL_W - 14, y);
-    ctxF.fillStyle='#16233a';
+  ctxF.strokeStyle = '#16233a';
+  ctxF.lineWidth = 1;
+  for (let x = startX; x <= w; x += stepX){
+    ctxF.beginPath(); ctxF.moveTo(x, 0); ctxF.lineTo(x, h); ctxF.stroke();
   }
 
-  // eixo vertical central
-  ctxF.strokeStyle='#2b3b55'; ctxF.lineWidth=2/Math.max(0.001, frontZoom);
-  ctxF.beginPath(); ctxF.moveTo(cx, GRID_PAD); ctxF.lineTo(cx, h-GRID_PAD); ctxF.stroke();
+  // eixo Y do mundo (vertical) em TELA
+  ctxF.strokeStyle = '#2b3b55';
+  ctxF.lineWidth = 2;
+  ctxF.beginPath(); ctxF.moveTo(originX, 0); ctxF.lineTo(originX, h); ctxF.stroke();
 
+  // === DESENHO NO MUNDO (acompanha pan/zoom) ===
+  ctxF.save();
+  ctxF.translate(frontPanX, frontPanY);
+  ctxF.scale(frontZoom, frontZoom);
+
+  const cum   = buildCumHeights();
+  const baseY = h - GRID_PAD;
+
+  // ---- HITS no MUNDO ALINHADOS À FAIXA FIXA EM TELA ----
+  // Não desenhamos faixa no mundo (nada de fillRect(0,..)).
+  // Convertemos [0, leftMargin] (tela) para [x1_world, x2_world] (mundo),
+  // assim o clique bate exatamente na faixa fixa.
+  floorHits = []; // em MUNDO
+  const x1_world = (0 - frontPanX) / frontZoom;
+  const x2_world = (leftMargin - frontPanX) / frontZoom;
+
+  // linhas horizontais (mundo) e hits por pavimento
+  for (let i=0; i<=floors.length; i++){
+    const y = baseY - (cum[i] || 0);
+
+    // hit na régua (mundo)
+    const y1 = y - 14 / frontZoom;
+    const y2 = y + 14 / frontZoom;
+    floorHits.push({ floor:i, x1:x1_world, y1, x2:x2_world, y2 });
+
+    // linha do pavimento (do limite da régua até a direita)
+    ctxF.strokeStyle = '#2b3b55';
+    ctxF.lineWidth = 1 / Math.max(0.001, frontZoom);
+    ctxF.beginPath();
+    ctxF.moveTo(x2_world, y);
+    ctxF.lineTo((w - GRID_PAD)/frontZoom, y);
+    ctxF.stroke();
+  }
+
+  // ---- ELEMENTOS (contornos) ----
   cacheFront.clear();
-  ctxF.lineWidth = 2/Math.max(0.001, frontZoom);
-
+  ctxF.lineWidth = 2 / Math.max(0.001, frontZoom);
   for (const e of elements){
     const dimF = dimsFromSet(e.frontMask);
     const dimT = dimsFromSet(e.topMask);
     const hasWidth = (dimT.width>0);
     const minCol = hasWidth ? dimT.minX : 0;
-    const wCols  = hasWidth ? Math.max(0, dimT.maxX-minCol+1) : Math.max(1, dimF.width);
+    const wCols  = hasWidth ? Math.max(0, dimT.maxX - minCol + 1) : Math.max(1, dimF.width);
 
-    // retângulo de pick (bound) calculado por blocos globais
+    // bounds p/ pick
     const ySubBottom = ySubOfLocal(e, Math.max(0, dimF.minY));
-    const ySubTop    = ySubOfLocal(e, Math.max(0, dimF.maxY+1)); // exclusivo
+    const ySubTop    = ySubOfLocal(e, Math.max(0, dimF.maxY+1));
     const yBottomPx  = baseY - yWorldOfYSub(ySubBottom);
     const yTopPx     = baseY - yWorldOfYSub(ySubTop);
     const rx = cx + (e.x + minCol) * UNIT_XZ;
     const ry = yTopPx;
     const rw = wCols * UNIT_XZ;
     const rh = Math.max(1, yBottomPx - yTopPx);
-    cacheFront.set(e.id, {x:rx,y:ry,w:rw,h:rh});
+    cacheFront.set(e.id, {x:rx, y:ry, w:rw, h:rh});
 
-    // contorno a partir da máscara frontal (em blocos)
+    // contorno
     const segs = segmentsFromMask(e.frontMask);
-    ctxF.strokeStyle = selectedIds.has(e.id)? '#ffc107' : hexToRgba(e.color, 0.95);
+    ctxF.strokeStyle = selectedIds.has(e.id) ? '#ffc107' : hexToRgba(e.color, 0.95);
     ctxF.beginPath();
     for (const s of segs){
       const px1 = cx + (e.x + s.x1)*UNIT_XZ;
       const px2 = cx + (e.x + s.x2)*UNIT_XZ;
-
       const ySub1 = ySubOfLocal(e, s.y1);
       const ySub2 = ySubOfLocal(e, s.y2);
-
       const py1 = baseY - yWorldOfYSub(ySub1);
       const py2 = baseY - yWorldOfYSub(ySub2);
-
       ctxF.moveTo(px1, py1);
       ctxF.lineTo(px2, py2);
     }
@@ -573,7 +601,33 @@ function drawFrontal(){
   }
 
   ctxF.restore();
+
+  // === RÓTULOS FIXOS À ESQUERDA (em TELA), com highlight ===
+  ctxF.fillStyle = 'rgba(18,26,40,.85)';
+  ctxF.fillRect(0, 0, leftMargin, h);
+
+  ctxF.textAlign='right';
+  ctxF.textBaseline='middle';
+  ctxF.font = '12px system-ui, sans-serif';
+
+  // Y do mundo -> Y de tela p/ posicionar rótulos (em tela)
+  const worldYToScreenY = (yw) => Math.round(frontPanY + frontZoom * yw);
+  for (let i=0; i<=floors.length; i++){
+    const y_world  = (h - GRID_PAD) - (cum[i] || 0);
+    const y_screen = worldYToScreenY(y_world);
+    ctxF.fillStyle = (isolatedFloor === i ? '#ffc107' : '#9fb0c3');
+    ctxF.fillText(String(i), leftMargin - 14, y_screen);
+  }
 }
+
+
+function screenToWorldFront(px, py){
+  // px/py: coordenadas em pixels de tela relativas ao canvas
+  const wx = (px - frontPanX) / frontZoom;
+  const wy = (py - frontPanY) / frontZoom;
+  return { x: wx, y: wy };
+}
+
 
 /* ==================== 2D: Superior ==================== */
 function computeFloorTopMask(e, floorIndex){
@@ -593,43 +647,74 @@ function computeFloorTopMask(e, floorIndex){
   });
   return out;
 }
+// ==================== 4) 2D SUPERIOR (principal) ====================
 function drawSuperior(){
-  const c=topCanvas, w=c.clientWidth, h=c.clientHeight;
+  const c = topCanvas, w = c.clientWidth, h = c.clientHeight;
   ctxT.clearRect(0,0,w,h);
-  ctxT.fillStyle='#0b111b'; ctxT.fillRect(0,0,w,h);
 
-  ctxT.save(); ctxT.translate(topPanX, topPanY); ctxT.scale(topZoom, topZoom);
+  // --- fundo
+  ctxT.fillStyle = '#0b111b';
+  ctxT.fillRect(0,0,w,h);
 
-  const cell = Math.max(MIN_CELL_XZ, Math.floor(Math.min((w-GRID_PAD*2)/60, (h-GRID_PAD*2)/60)));
-  const ox = Math.floor(w/2), oy = Math.floor(h/2);
+  // === parâmetros do "mundo" (sem zoom) ===
+  // mantém sua lógica de célula (pode trocar depois por UNIT_XZ se preferir)
+  const cell = Math.max(MIN_CELL_XZ, Math.floor(Math.min((w - GRID_PAD*2)/60, (h - GRID_PAD*2)/60)));
+  const ox = Math.floor(w/2);   // origem X do mundo (sem zoom)
+  const oy = Math.floor(h/2);   // origem Y do mundo (sem zoom)
 
-  ctxT.strokeStyle='#16233a'; ctxT.lineWidth=1/Math.max(0.001, topZoom);
-  for (let x=ox%cell; x<=w; x+=cell){ ctxT.beginPath(); ctxT.moveTo(x,0); ctxT.lineTo(x,h); ctxT.stroke(); }
-  for (let y=oy%cell; y<=h; y+=cell){ ctxT.beginPath(); ctxT.moveTo(0,y); ctxT.lineTo(0+w,y); ctxT.stroke(); }
-  ctxT.strokeStyle='#1c2a3f'; ctxT.lineWidth=2/Math.max(0.001, topZoom);
-  ctxT.beginPath(); ctxT.moveTo(0, oy); ctxT.lineTo(w, oy); ctxT.stroke();
-  ctxT.beginPath(); ctxT.moveTo(ox, 0); ctxT.lineTo(ox, h); ctxT.stroke();
+  // === GRID INFINITO em coordenadas de tela (antes do translate/scale) ===
+  const step = Math.max(4, Math.round(cell * topZoom));   // espaçamento do grid em pixels de tela
+  const originX = Math.round(topPanX + topZoom * ox);     // posição da origem (0,0 do mundo) na tela
+  const originY = Math.round(topPanY + topZoom * oy);
+
+  // ponto inicial do traçado (módulo do passo)
+  const startX = ((originX % step) + step) % step;
+  const startY = ((originY % step) + step) % step;
+
+  // linhas do grid
+  ctxT.strokeStyle = '#16233a';
+  ctxT.lineWidth = 1; // constante na tela (não fica "fina" no zoom)
+  for (let x = startX; x <= w; x += step){
+    ctxT.beginPath(); ctxT.moveTo(x, 0); ctxT.lineTo(x, h); ctxT.stroke();
+  }
+  for (let y = startY; y <= h; y += step){
+    ctxT.beginPath(); ctxT.moveTo(0, y); ctxT.lineTo(w, y); ctxT.stroke();
+  }
+
+  // eixos (X/Y do mundo) — também em tela
+  ctxT.strokeStyle = '#1c2a3f';
+  ctxT.lineWidth = 2;
+  // eixo X (horizontal) passa por originY
+  ctxT.beginPath(); ctxT.moveTo(0, originY); ctxT.lineTo(w, originY); ctxT.stroke();
+  // eixo Y (vertical) passa por originX
+  ctxT.beginPath(); ctxT.moveTo(originX, 0); ctxT.lineTo(originX, h); ctxT.stroke();
+
+  // === agora desenhamos os ELEMENTOS em coordenadas do mundo ===
+  ctxT.save();
+  ctxT.translate(topPanX, topPanY);
+  ctxT.scale(topZoom, topZoom);
 
   cacheTop.clear();
+  ctxT.lineWidth = 2 / Math.max(0.001, topZoom); // contornos com espessura "constante" visual
 
-  ctxT.lineWidth=2/Math.max(0.001, topZoom);
   for (const e of elements){
     const topSetForView = computeFloorTopMask(e, isolatedFloor);
-    if (topSetForView.size===0) continue;
+    if (topSetForView.size === 0) continue;
 
-    let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
+    let minX=Infinity, minZ=Infinity, maxX=-Infinity, maxZ=-Infinity;
     topSetForView.forEach(key=>{
-      const [lx,lz]=key.split(',').map(Number);
+      const [lx, lz] = key.split(',').map(Number);
       const gx = e.x + lx, gz = e.z + lz;
-      minX=Math.min(minX,gx); maxX=Math.max(maxX,gx);
-      minZ=Math.min(minZ,gz); maxZ=Math.max(maxZ,gz);
+      minX = Math.min(minX, gx); maxX = Math.max(maxX, gx);
+      minZ = Math.min(minZ, gz); maxZ = Math.max(maxZ, gz);
     });
+
     const rx = ox + minX*cell, ry = oy + minZ*cell;
-    const rw = (maxX-minX+1)*cell, rh = (maxZ-minZ+1)*cell;
-    cacheTop.set(e.id, {x:rx,y:ry,w:rw,h:rh, cell, ox, oy});
+    const rw = (maxX - minX + 1) * cell, rh = (maxZ - minZ + 1) * cell;
+    cacheTop.set(e.id, {x:rx, y:ry, w:rw, h:rh, cell, ox, oy});
 
     const segs = segmentsFromMask(topSetForView);
-    ctxT.strokeStyle = selectedIds.has(e.id)? '#ffc107' : hexToRgba(e.color, 0.95);
+    ctxT.strokeStyle = selectedIds.has(e.id) ? '#ffc107' : hexToRgba(e.color, 0.95);
     ctxT.beginPath();
     for (const s of segs){
       const px1 = ox + (e.x + s.x1)*cell;
@@ -641,9 +726,15 @@ function drawSuperior(){
     ctxT.stroke();
   }
 
-  topCanvas._cell = cell; topCanvas._ox = ox; topCanvas._oy = oy;
+  // metadados de hit-test (em mundo, sem zoom)
+  topCanvas._cell = cell;
+  topCanvas._ox = ox;
+  topCanvas._oy = oy;
+
   ctxT.restore();
 }
+
+
 
 /* ==================== Segments (contorno de máscaras) ==================== */
 function segmentsFromMask(mask){
@@ -754,39 +845,50 @@ frontCanvas.addEventListener('wheel', (e)=>{ e.preventDefault(); zoomAt(frontCan
 topCanvas.addEventListener('wheel',   (e)=>{ e.preventDefault(); zoomAt(topCanvas,  'top',   e.deltaY, e.clientX, e.clientY); }, {passive:false});
 
 /* Clique na régua + mover em grupo (frontal) */
+// SUBSTITUA por este ÚNICO listener (remova os outros mousedown do frontCanvas)
 frontCanvas.addEventListener('mousedown', (e)=>{
   if (e.button!==0 || isSpaceDown) return;
-  const r=frontCanvas.getBoundingClientRect();
-  const mx=e.clientX-r.left, my=e.clientY-r.top;
-  const wPos = mouseToWorld(mx,my,'front');
 
-  // clique na régua (isolar pavimento)
+  const r = frontCanvas.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+
+  // posição no MUNDO (usa seu helper existente)
+  const wPos = mouseToWorld(mx, my, 'front');
+
+  // 1) clique na régua (isolar pavimento + selecionar elementos do pavimento)
   for (const hit of floorHits){
     if (wPos.x>=hit.x1 && wPos.x<=hit.x2 && wPos.y>=hit.y1 && wPos.y<=hit.y2){
-      if (isolatedFloor===hit.floor) { isolatedFloor = null; selectedIds.clear(); selId=null; }
-      else {
+      if (isolatedFloor===hit.floor){
+        isolatedFloor = null; selectedIds.clear(); selId=null;
+      } else {
         isolatedFloor = hit.floor; selectedIds.clear(); selId=null;
-        for (const e of elements){ if (elementTouchesFloor(e, hit.floor)){ selectedIds.add(e.id); selId = selId || e.id; } }
+        for (const e of elements){
+          if (elementTouchesFloor(e, hit.floor)){
+            selectedIds.add(e.id);
+            if (!selId) selId = e.id;
+          }
+        }
       }
-      updateButtonsState(); drawAll(); return;
+      updateButtonsState(); drawAll();
+      e.preventDefault();
+      return;
     }
   }
 
-  const hitId = pickIn(cacheFront, mx,my,'front');
+  // 2) clique normal em elemento
+  const hitId = pickIn(cacheFront, mx, my, 'front');
   if (!hitId){ selectId(null); return; }
 
   const additive = e.ctrlKey||e.metaKey;
   if (!selectedIds.has(hitId) || additive){ selectId(hitId, additive); }
 
+  // 3) início de drag (mantido do seu código)
   startAction();
 
-  // âncora vertical em BLOCO GLOBAL
   const elClicked = elements.find(x=>x.id===hitId);
   const dimF = dimsFromSet(elClicked.frontMask);
   const bottomLocalBlock = Math.max(0, dimF.minY);
   const anchorYSub = ySubOfLocal(elClicked, bottomLocalBlock);
-
-  // ySub “snapado” no ponto de clique
   const startYSubAtMouse = ySubFromPixelY(wPos.y);
 
   const starts = new Map();
@@ -795,17 +897,13 @@ frontCanvas.addEventListener('mousedown', (e)=>{
     if (e) starts.set(id, {x:e.x, y:e.y, z:e.z, yb:(e.yb|0)});
   });
 
-  drag = { 
-    view:'front', ids: Array.from(selectedIds),
-    start:{ mx,my, wx:wPos.x, wy:wPos.y, xById: starts, anchorYSub, ySubAtMouse:startYSubAtMouse }
+  drag = {
+    view:'front',
+    ids: Array.from(selectedIds),
+    start:{ mx:mx, my:my, wx:wPos.x, wy:wPos.y, xById: starts, anchorYSub, ySubAtMouse:startYSubAtMouse }
   };
 });
-frontCanvas.addEventListener('dblclick', (e)=>{
-  const r=frontCanvas.getBoundingClientRect();
-  const mx=e.clientX-r.left, my=e.clientY-r.top;
-  const id = pickIn(cacheFront, mx,my,'front');
-  if (id){ selectId(id,false); openCreator('edit'); }
-});
+
 window.addEventListener('mousemove', (e)=>{
   if (!drag || drag.view!=='front') return;
   const r=frontCanvas.getBoundingClientRect();
@@ -1700,146 +1798,301 @@ const sideCtx2 = shapeSideCanvas.getContext('2d');
 let tempTop = new Set(), tempFront = new Set(), tempSide = new Set();
 let painting = null, editMode=false, editId=null;
 
+// === Função para pan no modal ===
+function enableCreatorPan(canvas, getPanRef, redraw){
+  let dragging=null;
+  canvas.addEventListener('mousedown', (e)=>{
+    if (!(e.button===1 || e.button===2 || (e.button===0 && isSpaceDown))) return;
+    dragging = {x:e.clientX, y:e.clientY};
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e)=>{
+    if (!dragging) return;
+    const dx = e.clientX - dragging.x, dy = e.clientY - dragging.y;
+    dragging = {x:e.clientX, y:e.clientY};
+    const pan = getPanRef(); pan.x += dx; pan.y += dy;
+    redraw();
+  });
+  window.addEventListener('mouseup', ()=> dragging=null);
+}
 function fitCanvasHiDPI(c){ const dpr=Math.max(1, window.devicePixelRatio||1); const r=c.getBoundingClientRect(); c.width=Math.round(r.width*dpr); c.height=Math.round(r.height*dpr); c.getContext('2d').setTransform(dpr,0,0,dpr,0,0); }
-function drawGridGeneric(ctx, c, cols, rows){
+
+// ==================== 1) GRID GENÉRICO (com pan opcional) ====================
+function drawGridGeneric(ctx, c, cols, rows, panX=0, panY=0, zoom=1){
   const w=c.clientWidth, h=c.clientHeight;
-  ctx.clearRect(0,0,w,h); ctx.fillStyle='#0a0f19'; ctx.fillRect(0,0,w,h);
-  const cell = Math.max(16, Math.floor(Math.min((w-GRID_PAD*2)/cols, (h-GRID_PAD*2)/rows)));
-  const offX = Math.floor((w - cell*cols)/2), offY = Math.floor((h - cell*rows)/2);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle='#0a0f19';
+  ctx.fillRect(0,0,w,h);
+
+  // baseCell e baseOff (independentes do zoom)
+  const baseCell = Math.max(16, Math.floor(Math.min((w-GRID_PAD*2)/cols, (h-GRID_PAD*2)/rows)));
+  const baseOffX = Math.floor((w - baseCell*cols)/2);
+  const baseOffY = Math.floor((h - baseCell*rows)/2);
+
+  // aplica zoom e pan
+  const cell = baseCell * zoom;           // tamanho efetivo da célula
+  const offX = baseOffX + Math.round(panX);
+  const offY = baseOffY + Math.round(panY);
+
+  // grid
   ctx.strokeStyle='#1a2740'; ctx.lineWidth=1;
-  for (let i=0;i<=cols;i++){ ctx.beginPath(); ctx.moveTo(offX + i*cell, offY); ctx.lineTo(offX + i*cell, offY + rows*cell); ctx.stroke(); }
-  for (let j=0;j<=rows;j++){ ctx.beginPath(); ctx.moveTo(offX, offY + j*cell); ctx.lineTo(offX + cols*cell, offY + j*cell); ctx.stroke(); }
-  return {cell, offX, offY};
-}
-function drawCreatorGrids(){
-  const Wv = Math.max(1, parseInt(cW.value,10)||1);
-  const Hv = Math.max(1, parseInt(cH.value,10)||1);
-  const Dv = Math.max(1, parseInt(cD.value,10)||1);
-
-  fitCanvasHiDPI(shapeTopCanvas);
-  fitCanvasHiDPI(shapeFrontCanvas);
-  fitCanvasHiDPI(shapeSideCanvas);
-
-  // --- Superior (W × D) ---
-  const gt = drawGridGeneric(topCtx2, shapeTopCanvas, Wv, Dv);
-  tempTop.forEach(key=>{
-    const [x,z]=key.split(',').map(Number);
-    if (x>=0&&x<Wv&&z>=0&&z<Dv){
-      topCtx2.fillStyle='rgba(88,166,255,0.25)';
-      topCtx2.fillRect(gt.offX + x*gt.cell +1, gt.offY + z*gt.cell +1, gt.cell-2, gt.cell-2);
-    }
-  });
-
-  // --- Frontal (W × H) ---
-  const gf = drawGridGeneric(frontCtx2, shapeFrontCanvas, Wv, Hv);
-  tempFront.forEach(key=>{
-    const [x,y]=key.split(',').map(Number);
-    if (x>=0&&x<Wv&&y>=0&&y<Hv){
-      const sy=(Hv-1-y);
-      frontCtx2.fillStyle='rgba(255,198,40,0.25)';
-      frontCtx2.fillRect(gf.offX + x*gf.cell +1, gf.offY + sy*gf.cell +1, gf.cell-2, gf.cell-2);
-    }
-  });
-
-  // --- Lateral (D × H) ---
-  const gs = drawGridGeneric(sideCtx2, shapeSideCanvas, Dv, Hv);
-  tempSide.forEach(key=>{
-    const [z,y]=key.split(',').map(Number);
-    if (z>=0&&z<Dv&&y>=0&&y<Hv){
-      const sy=(Hv-1-y);
-      sideCtx2.fillStyle='rgba(80,227,194,0.25)'; // verde-água leve
-      sideCtx2.fillRect(gs.offX + z*gs.cell +1, gs.offY + sy*gs.cell +1, gs.cell-2, gs.cell-2);
-    }
-  });
-
-  // --- Contornos das máscaras (superior/frontal/lateral) ---
-  function strokeMask(ctx, mask, offX, offY, cell, color, invertY=false, rows=0){
-    const segs = segmentsFromMask(mask);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const toY = invertY ? (t)=> offY + (rows - t) * cell : (t)=> offY + t * cell;
-    for (const s of segs){
-      ctx.moveTo(offX + s.x1*cell, toY(s.y1));
-      ctx.lineTo(offX + s.x2*cell, toY(s.y2));
-    }
-    ctx.stroke();
+  for (let i=0;i<=cols;i++){
+    const x = offX + i*cell;
+    ctx.beginPath(); ctx.moveTo(x, offY); ctx.lineTo(x, offY + rows*cell); ctx.stroke();
   }
-  strokeMask(topCtx2,   tempTop,   gt.offX, gt.offY, gt.cell, 'rgba(88,166,255,0.9)', false, Dv);
-  strokeMask(frontCtx2, tempFront, gf.offX, gf.offY, gf.cell, 'rgba(255,198,40,0.9)', true,  Hv);
-  strokeMask(sideCtx2,  tempSide,  gs.offX, gs.offY, gs.cell, 'rgba(80,227,194,0.9)',  true,  Hv);
+  for (let j=0;j<=rows;j++){
+    const y = offY + j*cell;
+    ctx.beginPath(); ctx.moveTo(offX, y); ctx.lineTo(offX + cols*cell, y); ctx.stroke();
+  }
 
-  // guardar metadados p/ hit-test no modal
-  shapeTopCanvas._cell=gt.cell; shapeTopCanvas._offX=gt.offX; shapeTopCanvas._offY=gt.offY; shapeTopCanvas._cols=Wv; shapeTopCanvas._rows=Dv;
-  shapeFrontCanvas._cell=gf.cell; shapeFrontCanvas._offX=gf.offX; shapeFrontCanvas._offY=gf.offY; shapeFrontCanvas._cols=Wv; shapeFrontCanvas._rows=Hv;
-  shapeSideCanvas._cell=gs.cell; shapeSideCanvas._offX=gs.offX; shapeSideCanvas._offY=gs.offY; shapeSideCanvas._cols=Dv; shapeSideCanvas._rows=Hv;
+  // metadados para hit-test e zoom ancorado
+  c._cell      = cell;       // efetivo (já com zoom)
+  c._offX      = offX;
+  c._offY      = offY;
+  c._baseCell  = baseCell;   // base (sem zoom)
+  c._baseOffX  = baseOffX;
+  c._baseOffY  = baseOffY;
+
+  return {cell, offX, offY, baseCell, baseOffX, baseOffY};
 }
+
+
+// ==================== 2) MODAL: DESENHO DOS TRÊS GRIDS ====================
+function drawCreatorGrids(){
+const Wv = Math.max(1, parseInt(cW.value,10)||1);
+const Hv = Math.max(1, parseInt(cH.value,10)||1);
+const Dv = Math.max(1, parseInt(cD.value,10)||1);
+
+fitCanvasHiDPI(shapeTopCanvas);
+fitCanvasHiDPI(shapeFrontCanvas);
+fitCanvasHiDPI(shapeSideCanvas);
+
+// --- Superior (W × D) ---
+// use cTopPanX / cTopPanY (globais) para pan do modal
+const gt = drawGridGeneric(topCtx2,   shapeTopCanvas,   Wv, Dv, cTopPanX,   cTopPanY,   cTopZoom);
+tempTop.forEach(key=>{
+  const [x,z]=key.split(',').map(Number);
+  if (x>=0&&x<Wv&&z>=0&&z<Dv){
+    topCtx2.fillStyle='rgba(88,166,255,0.25)';
+    topCtx2.fillRect(gt.offX + x*gt.cell +1, gt.offY + z*gt.cell +1, gt.cell-2, gt.cell-2);
+  }
+});
+
+// --- Frontal (W × H) ---
+const gf = drawGridGeneric(frontCtx2, shapeFrontCanvas, Wv, Hv, cFrontPanX, cFrontPanY, cFrontZoom);
+tempFront.forEach(key=>{
+  const [x,y]=key.split(',').map(Number);
+  if (x>=0&&x<Wv&&y>=0&&y<Hv){
+    const sy=(Hv-1-y);
+    frontCtx2.fillStyle='rgba(255,198,40,0.25)';
+    frontCtx2.fillRect(gf.offX + x*gf.cell +1, gf.offY + sy*gf.cell +1, gf.cell-2, gf.cell-2);
+  }
+});
+
+// --- Lateral (D × H) ---
+const gs = drawGridGeneric(sideCtx2,  shapeSideCanvas,  Dv, Hv, cSidePanX,  cSidePanY,  cSideZoom);
+tempSide.forEach(key=>{
+  const [z,y]=key.split(',').map(Number);
+  if (z>=0&&z<Dv&&y>=0&&y<Hv){
+    const sy=(Hv-1-y);
+    sideCtx2.fillStyle='rgba(80,227,194,0.25)';
+    sideCtx2.fillRect(gs.offX + z*gs.cell +1, gs.offY + sy*gs.cell +1, gs.cell-2, gs.cell-2);
+  }
+});
+
+// --- Contornos das máscaras (usam MESMOS offX/offY/cell) ---
+function strokeMask(ctx, mask, offX, offY, cell, color, invertY=false, rows=0){
+  const segs = segmentsFromMask(mask);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const toY = invertY ? (t)=> offY + (rows - t) * cell : (t)=> offY + t * cell;
+  for (const s of segs){
+    ctx.moveTo(offX + s.x1*cell, toY(s.y1));
+    ctx.lineTo(offX + s.x2*cell, toY(s.y2));
+  }
+  ctx.stroke();
+}
+strokeMask(topCtx2,   tempTop,   gt.offX, gt.offY, gt.cell, 'rgba(88,166,255,0.9)', false, Dv);   // :contentReference[oaicite:6]{index=6}
+strokeMask(frontCtx2, tempFront, gf.offX, gf.offY, gf.cell, 'rgba(255,198,40,0.9)', true,  Hv);   // :contentReference[oaicite:7]{index=7}
+strokeMask(sideCtx2,  tempSide,  gs.offX, gs.offY, gs.cell, 'rgba(80,227,194,0.9)',  true,  Hv);  // :contentReference[oaicite:8]{index=8}
+
+// metadados para hit-test no modal (cellAtCreator)
+shapeTopCanvas._cell=gt.cell;   shapeTopCanvas._offX=gt.offX;   shapeTopCanvas._offY=gt.offY;   shapeTopCanvas._cols=Wv; shapeTopCanvas._rows=Dv;   // :contentReference[oaicite:9]{index=9}
+shapeFrontCanvas._cell=gf.cell; shapeFrontCanvas._offX=gf.offX; shapeFrontCanvas._offY=gf.offY; shapeFrontCanvas._cols=Wv; shapeFrontCanvas._rows=Hv; // :contentReference[oaicite:10]{index=10}
+shapeSideCanvas._cell=gs.cell;  shapeSideCanvas._offX=gs.offX;  shapeSideCanvas._offY=gs.offY;  shapeSideCanvas._cols=Dv; shapeSideCanvas._rows=Hv;  // :contentReference[oaicite:11]{index=11}
+}
+
+// habilita pan nos três canvases do modal
+enableCreatorPan(shapeTopCanvas,   ()=>({get x(){return cTopPanX},   set x(v){cTopPanX=v},   get y(){return cTopPanY},   set y(v){cTopPanY=v}}),   drawCreatorGrids);
+enableCreatorPan(shapeFrontCanvas, ()=>({get x(){return cFrontPanX}, set x(v){cFrontPanX=v}, get y(){return cFrontPanY}, set y(v){cFrontPanY=v}}), drawCreatorGrids);
+enableCreatorPan(shapeSideCanvas,  ()=>({get x(){return cSidePanX},  set x(v){cSidePanX=v},  get y(){return cSidePanY},  set y(v){cSidePanY=v}}),  drawCreatorGrids);
+
+// desabilita menu de contexto (clique direito) nos canvases do modal
+[shapeTopCanvas, shapeFrontCanvas, shapeSideCanvas].forEach(cv=>{
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+});
+
+function modalZoomAt(canvas, which, deltaY, clientX, clientY){
+  // estado atual
+  let zoom, panX, panY;
+  if (which==='top'){ zoom=cTopZoom; panX=cTopPanX; panY=cTopPanY; }
+  else if (which==='front'){ zoom=cFrontZoom; panX=cFrontPanX; panY=cFrontPanY; }
+  else { zoom=cSideZoom; panX=cSidePanX; panY=cSidePanY; }
+
+  const factor = deltaY>0 ? (1/1.1) : 1.1;
+  const newZoom = Math.max(0.3, Math.min(8, zoom*factor));
+  const ratio   = newZoom/zoom;
+  if (newZoom===zoom) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const mx = clientX - rect.left, my = clientY - rect.top;
+
+  // usamos valores já desenhados na última chamada
+  const cell    = canvas._cell || 16;          // efetivo (com zoom)
+  const offX    = canvas._offX || 0;
+  const offY    = canvas._offY || 0;
+  const baseOffX= canvas._baseOffX || 0;       // independente do zoom
+  const baseOffY= canvas._baseOffY || 0;
+
+  // ponto do "mundo" sob o cursor
+  const wx = (mx - offX) / cell;
+  const wy = (my - offY) / cell;
+
+  // novo off (p/ manter âncora)
+  const newCell = cell * ratio;
+  const offXTarget = mx - wx * newCell;
+  const offYTarget = my - wy * newCell;
+
+  // converte off alvo em pan alvo (pan = off - baseOff)
+  const newPanX = offXTarget - baseOffX;
+  const newPanY = offYTarget - baseOffY;
+
+  // grava nos estados corretos
+  if (which==='top'){ cTopZoom=newZoom; cTopPanX=newPanX; cTopPanY=newPanY; }
+  else if (which==='front'){ cFrontZoom=newZoom; cFrontPanX=newPanX; cFrontPanY=newPanY; }
+  else { cSideZoom=newZoom; cSidePanX=newPanX; cSidePanY=newPanY; }
+
+  drawCreatorGrids();
+}
+
+
+function isPanningModal(){ return !!cPanDrag; }
+
+// util: identifica qual canvas do modal
+function whichModalCanvas(cv){
+  if (cv === shapeTopCanvas)   return 'top';
+  if (cv === shapeFrontCanvas) return 'front';
+  return 'side';
+}
+
+// listeners do zoom (roda do mouse) nos três canvases do modal
+[shapeTopCanvas, shapeFrontCanvas, shapeSideCanvas].forEach(cv=>{
+  const which = (cv===shapeTopCanvas) ? 'top' : (cv===shapeFrontCanvas ? 'front' : 'side');
+  cv.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    modalZoomAt(cv, which, e.deltaY, e.clientX, e.clientY);
+  }, {passive:false});
+});
+
 function cellAtCreator(c, mx,my){
   const cell=c._cell||16, offX=c._offX||0, offY=c._offY||0, cols=c._cols||1, rows=c._rows||1;
   const x = Math.floor((mx - offX)/cell), y = Math.floor((my - offY)/cell);
   if (x<0||x>=cols||y<0||y>=rows) return null;
   return {x,y};
 }
+// helper: indica se estamos pan-eando no modal
+function isPanningModal(){ return !!cPanDrag; }
+
+// =================== MOUSE DOWN (só pinta com botão ESQUERDO) ===================
 shapeTopCanvas.addEventListener('mousedown', (e)=>{
-  const r=shapeTopCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeTopCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
-  painting = {target:'top', mode: e.shiftKey?'del':'add'};
-  const key = `${p.x},${p.y}`; if (painting.mode==='add') tempTop.add(key); else tempTop.delete(key);
+  // bloqueia pintura se não for botão esquerdo ou se estiver em pan
+  if (e.button !== 0 || isPanningModal()) return;
+
+  const r = shapeTopCanvas.getBoundingClientRect();
+  const p = cellAtCreator(shapeTopCanvas, e.clientX - r.left, e.clientY - r.top);
+  if (!p) return;
+
+  painting = { target:'top', mode: e.shiftKey ? 'del' : 'add' };
+  const key = `${p.x},${p.y}`;
+  if (painting.mode === 'add') tempTop.add(key); else tempTop.delete(key);
   drawCreatorGrids();
 });
+
 shapeFrontCanvas.addEventListener('mousedown', (e)=>{
-  const r=shapeFrontCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeFrontCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
-  painting = {target:'front', mode: e.shiftKey?'del':'add'};
-  const Hv = shapeFrontCanvas._rows||1; const yBase = (Hv-1-p.y);
-  const key = `${p.x},${yBase}`; if (painting.mode==='add') tempFront.add(key); else tempFront.delete(key);
+  if (e.button !== 0 || isPanningModal()) return;
+
+  const r = shapeFrontCanvas.getBoundingClientRect();
+  const p = cellAtCreator(shapeFrontCanvas, e.clientX - r.left, e.clientY - r.top);
+  if (!p) return;
+
+  painting = { target:'front', mode: e.shiftKey ? 'del' : 'add' };
+  const Hv = shapeFrontCanvas._rows || 1;
+  const yBase = (Hv - 1 - p.y);
+  const key = `${p.x},${yBase}`;
+  if (painting.mode === 'add') tempFront.add(key); else tempFront.delete(key);
   drawCreatorGrids();
 });
+
 shapeSideCanvas.addEventListener('mousedown', (e)=>{
-  const r=shapeSideCanvas.getBoundingClientRect();
-  const p=cellAtCreator(shapeSideCanvas, e.clientX-r.left, e.clientY-r.top);
-  if(!p) return;
-  painting = {target:'side', mode: e.shiftKey?'del':'add'};
-  const Hv = shapeSideCanvas._rows||1;
-  const yBase = (Hv-1-p.y);
+  if (e.button !== 0 || isPanningModal()) return;
+
+  const r = shapeSideCanvas.getBoundingClientRect();
+  const p = cellAtCreator(shapeSideCanvas, e.clientX - r.left, e.clientY - r.top);
+  if (!p) return;
+
+  painting = { target:'side', mode: e.shiftKey ? 'del' : 'add' };
+  const Hv = shapeSideCanvas._rows || 1;
+  const yBase = (Hv - 1 - p.y);
   const key = `${p.x},${yBase}`; // (z,y)
-  if (painting.mode==='add') tempSide.add(key); else tempSide.delete(key);
+  if (painting.mode === 'add') tempSide.add(key); else tempSide.delete(key);
   drawCreatorGrids();
 });
 
+// =================== MOUSE MOVE (não pinta durante pan) ===================
 window.addEventListener('mousemove', (e)=>{
   if (!painting) return;
-  if (painting.target==='side'){
-    const r=shapeSideCanvas.getBoundingClientRect();
-    const p=cellAtCreator(shapeSideCanvas, e.clientX-r.left, e.clientY-r.top);
-    if(!p) return;
-    const Hv = shapeSideCanvas._rows||1;
-    const yBase = (Hv-1-p.y);
-    const key = `${p.x},${yBase}`; // (z,y)
-    if (painting.mode==='add') tempSide.add(key); else tempSide.delete(key);
-    drawCreatorGrids();
-  }
-});
-window.addEventListener('mousemove', (e)=>{
-  if (!painting) return;
-  if (painting.target==='top'){
-    const r=shapeTopCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeTopCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
-    const key = `${p.x},${p.y}`; if (painting.mode==='add') tempTop.add(key); else tempTop.delete(key);
-    drawCreatorGrids();
-  } else {
-    const r=shapeFrontCanvas.getBoundingClientRect(); const p=cellAtCreator(shapeFrontCanvas, e.clientX-r.left, e.clientY-r.top); if(!p) return;
-    const Hv = shapeFrontCanvas._rows||1; const yBase = (Hv-1-p.y);
-    const theKey = `${p.x},${yBase}`;
-    if (painting.mode==='add') tempFront.add(theKey); else tempFront.delete(theKey);
-    drawCreatorGrids();
-  }
-});
-window.addEventListener('mouseup', ()=> painting=null);
+  if (isPanningModal()) return; // se entrou em pan, não continua pintando
 
-function makeUniqueId(base){
-  let id = (base||'').trim() || rndId();
-  if (!elements.some(e=>e.id===id)) return id;
-  let i=2; while (elements.some(e=>e.id===`${id}-${i}`)) i++;
-  return `${id}-${i}`;
-}
+  if (painting.target === 'top'){
+    const r = shapeTopCanvas.getBoundingClientRect();
+    const p = cellAtCreator(shapeTopCanvas, e.clientX - r.left, e.clientY - r.top);
+    if (!p) return;
+    const key = `${p.x},${p.y}`;
+    if (painting.mode === 'add') tempTop.add(key); else tempTop.delete(key);
+    drawCreatorGrids();
+    return;
+  }
+
+  if (painting.target === 'front'){
+    const r = shapeFrontCanvas.getBoundingClientRect();
+    const p = cellAtCreator(shapeFrontCanvas, e.clientX - r.left, e.clientY - r.top);
+    if (!p) return;
+    const Hv = shapeFrontCanvas._rows || 1;
+    const yBase = (Hv - 1 - p.y);
+    const key = `${p.x},${yBase}`;
+    if (painting.mode === 'add') tempFront.add(key); else tempFront.delete(key);
+    drawCreatorGrids();
+    return;
+  }
+
+  if (painting.target === 'side'){
+    const r = shapeSideCanvas.getBoundingClientRect();
+    const p = cellAtCreator(shapeSideCanvas, e.clientX - r.left, e.clientY - r.top);
+    if (!p) return;
+    const Hv = shapeSideCanvas._rows || 1;
+    const yBase = (Hv - 1 - p.y);
+    const key = `${p.x},${yBase}`; // (z,y)
+    if (painting.mode === 'add') tempSide.add(key); else tempSide.delete(key);
+    drawCreatorGrids();
+    return;
+  }
+});
+
+// =================== MOUSE UP ===================
+window.addEventListener('mouseup', ()=> { painting = null; });
+
+
 function minGlobalXZAtFloor(e,f){
   const xs = new Set();
   e.frontMask.forEach(k=>{
@@ -1955,6 +2208,49 @@ function openCreator(mode='new'){
 
 
 
+// === 1) Helper: remove células fora dos novos limites ===
+function sanitizeCreatorTempSets(Wv, Hv, Dv){
+  // TOP (x,z)
+  for (const key of tempTop){
+    const [x,z] = key.split(',').map(Number);
+    if (x<0 || x>=Wv || z<0 || z>=Dv) tempTop.delete(key);
+  }
+  // FRONT (x,yBase)  -> yBase já está invertido (0 = base)
+  for (const key of tempFront){
+    const [x,yBase] = key.split(',').map(Number);
+    if (x<0 || x>=Wv || yBase<0 || yBase>=Hv) tempFront.delete(key);
+  }
+  // SIDE (z,yBase)
+  for (const key of tempSide){
+    const [z,yBase] = key.split(',').map(Number);
+    if (z<0 || z>=Dv || yBase<0 || yBase>=Hv) tempSide.delete(key);
+  }
+}
+// === 2) Handler único pra mudanças de W/D/H ===
+function onCreatorDimsChange(){
+  const Wv = Math.max(1, parseInt(cW.value,10) || 1);
+  const Dv = Math.max(1, parseInt(cD.value,10) || 1);
+  const Hv = Math.max(1, parseInt(cH.value,10) || 1);
+
+  // normaliza os campos (impede 0, vazio, etc.)
+  cW.value = Wv; cD.value = Dv; cH.value = Hv;
+
+  // apaga quadradinhos fora dos novos limites
+  sanitizeCreatorTempSets(Wv, Hv, Dv);
+
+  // redesenha imediatamente
+  drawCreatorGrids();
+}
+// === 3) Listeners que disparam no ato ===
+// (cole perto de onde você já pega cW/cD/cH do DOM)
+['input','change'].forEach(ev=>{
+  cW.addEventListener(ev, onCreatorDimsChange);
+  cD.addEventListener(ev, onCreatorDimsChange);
+  cH.addEventListener(ev, onCreatorDimsChange);
+});
+
+// se você tiver botões +/- que alteram os valores via JS,
+// chame onCreatorDimsChange() após atualizar o value.
 
 
 function closeCreator(){ document.getElementById('creatorOverlay').style.display='none'; painting=null; editMode=false; editId=null; }
