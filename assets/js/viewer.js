@@ -126,24 +126,163 @@ recenterCamera({ bbox, theta: INITIAL_THETA, phi: INITIAL_PHI, animate: false, m
 // Selecionar também o grupo 3D ao clicar num card 2D
 // (o overlay já abre o modal; aqui apenas sincronizamos a seleção 3D)
 // ============================
-(function wireSelect3DFrom2D(){
-  const host = document.getElementById('cards2d');
-  if (!host) return;
-  host.addEventListener('click', (e)=>{
-    const card = e.target.closest?.('.card');
-    if (!card || card.classList.contains('disabled')) return;
+// === Input unificado (mouse + touch) ===
+// Requer: orbitDelta(dx,dy,isTouch?), panDelta(dx,dy), zoomDelta(sign,isTouch?)
+function wireUnifiedInput(){
+  const cvs =
+    document.getElementById('doge-canvas') ||
+    document.querySelector('#app canvas') ||
+    document.querySelector('canvas');
 
-    const apt = card.dataset.apto || '';
-    const torre = getTorre();
-    if (!torre) return;
+  if (!cvs) {
+    console.warn('[input] canvas não encontrado para bind de gestos');
+    return;
+  }
 
-    const target = torre.children.find(g => String(g.userData?.nome || '').trim() === apt);
-    if (target) {
-      selectGroup(target);
-      render();
+  // -------- Mouse (desktop) --------
+  let isDragging = false;
+  let lastX = 0, lastY = 0;
+  let dragButton = 0; // 0 nenhum, 1 esquerdo, 2 meio, 3 direito
+
+  // rolagem = zoom proporcional (isTouch=false)
+  const onWheel = (e)=>{
+    // evita zoom da página
+    e.preventDefault();
+    const dy = e.deltaY || 0;
+    const sign = dy > 0 ? +1 : -1;
+    // passo calculado dentro de zoomDelta (modo desktop)
+    zoomDelta(sign, /*isTouch=*/false);
+  };
+
+  const onPointerDown = (e)=>{
+    // apenas primário inicia “drag de órbita”; botões 2/3 → pan
+    isDragging = true;
+    dragButton = (e.buttons === 4) ? 2 : (e.buttons === 2 ? 3 : 1);
+    lastX = e.clientX; lastY = e.clientY;
+    cvs.setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e)=>{
+    if (!isDragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+
+    if (dragButton === 1){
+      // botão esquerdo → ORBIT
+      orbitDelta(dx, dy, /*isTouch=*/false);
+    } else {
+      // botão do meio ou direito → PAN
+      panDelta(dx, dy);
     }
-  });
-})();
+  };
+
+  const onPointerUp = (e)=>{
+    isDragging = false;
+    dragButton = 0;
+    cvs.releasePointerCapture?.(e.pointerId);
+  };
+
+  // -------- Touch (mobile) --------
+  // 1 dedo: orbit suave   |  2 dedos: pinch-zoom suave (+ pan a dois dedos)
+  const touches = new Map(); // id -> {x,y}
+  let lastOneX=0, lastOneY=0;
+  let lastPinchDist = null;
+  let lastPinchCenter = null;
+
+  const dist = (a,b)=> Math.hypot(a.x - b.x, a.y - b.y);
+  const center = (a,b)=> ({ x:(a.x+b.x)/2, y:(a.y+b.y)/2 });
+
+  const onTouchStart = (e)=>{
+    // precisamos do preventDefault para bloquear o zoom do navegador
+    e.preventDefault();
+    for (const t of e.changedTouches){
+      touches.set(t.identifier, { x:t.clientX, y:t.clientY });
+    }
+    if (touches.size === 1){
+      const [only] = touches.values();
+      lastOneX = only.x; lastOneY = only.y;
+    } else if (touches.size === 2){
+      const it = touches.values();
+      const A = it.next().value, B = it.next().value;
+      lastPinchDist = dist(A,B);
+      lastPinchCenter = center(A,B);
+    }
+  };
+
+  const onTouchMove = (e)=>{
+    e.preventDefault();
+    for (const t of e.changedTouches){
+      if (touches.has(t.identifier)){
+        touches.set(t.identifier, { x:t.clientX, y:t.clientY });
+      }
+    }
+
+    if (touches.size === 1){
+      // ORBIT (suave)
+      const [cur] = touches.values();
+      const dx = cur.x - lastOneX;
+      const dy = cur.y - lastOneY;
+      lastOneX = cur.x; lastOneY = cur.y;
+      orbitDelta(dx, dy, /*isTouch=*/true);
+
+    } else if (touches.size >= 2){
+      // PINCH-ZOOM (suave) + PAN a dois dedos
+      const it = touches.values();
+      const A = it.next().value, B = it.next().value;
+
+      const d = dist(A,B);
+      const c = center(A,B);
+
+      if (lastPinchDist != null){
+        // delta de zoom: sinal do gesto (abrindo/fechando)
+        const delta = d - lastPinchDist;
+        if (Math.abs(delta) > 0.1){
+          const sign = delta > 0 ? -1 : +1; // abrir = aproximar (sign negativo reduz radius)
+          zoomDelta(sign, /*isTouch=*/true);
+        }
+        // pan “a dois dedos”: deslocamento do centro
+        const cdx = c.x - lastPinchCenter.x;
+        const cdy = c.y - lastPinchCenter.y;
+        if (Math.abs(cdx) + Math.abs(cdy) > 0.1){
+          panDelta(cdx, cdy);
+        }
+      }
+
+      lastPinchDist = d;
+      lastPinchCenter = c;
+    }
+  };
+
+  const onTouchEnd = (e)=>{
+    e.preventDefault();
+    for (const t of e.changedTouches){
+      touches.delete(t.identifier);
+    }
+    if (touches.size < 2){
+      lastPinchDist = null;
+      lastPinchCenter = null;
+    }
+    if (touches.size === 1){
+      const [only] = touches.values();
+      lastOneX = only.x; lastOneY = only.y;
+    }
+  };
+
+  // Bind listeners
+  cvs.addEventListener('wheel', onWheel, { passive:false });
+
+  cvs.addEventListener('pointerdown', onPointerDown, { passive:true });
+  window.addEventListener('pointermove', onPointerMove, { passive:true });
+  window.addEventListener('pointerup',   onPointerUp,   { passive:true });
+  window.addEventListener('pointercancel', onPointerUp, { passive:true });
+
+  // Touch separado para usar preventDefault (impede zoom do navegador)
+  cvs.addEventListener('touchstart', onTouchStart, { passive:false });
+  cvs.addEventListener('touchmove',  onTouchMove,  { passive:false });
+  cvs.addEventListener('touchend',   onTouchEnd,   { passive:false });
+  cvs.addEventListener('touchcancel',onTouchEnd,   { passive:false });
+}
 
 // ============================
 // Input unificado (Pointer Events)
@@ -297,5 +436,6 @@ window.addEventListener('keydown', (e)=>{
   if (modalOpen) return;
 
   // Se 2D estiver ativo, desliga
+
 
 });
