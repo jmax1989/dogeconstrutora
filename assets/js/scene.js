@@ -285,22 +285,12 @@ export function panDelta(dx, dy){
   applyOrbitToCamera();
   render();
 }
-
 
-export function zoomDelta(delta, isPinch=false){
-  if (isPinch){
-    // === Pinça: zoom suave contínuo ===
-    const factor = 0.015; // sensibilidade (quanto menor, mais suave)
-    State.radius *= (1 - delta * factor);
-  } else {
-    // === Scroll do mouse: zoom proporcional à distância ===
-    const step = Math.max(0.5, (State.radius || 20) * 0.001);
-    State.radius += delta * step;
-  }
-
-  // Limites seguros
-  State.radius = Math.max(2, Math.min(400, State.radius));
-
+// Aplica zoom relativo (delta de wheel)
+export function zoomDelta(sign){
+  const step = Math.max(0.5, (State.radius || 20) * ZOOM_STEP_FACTOR);
+  State.radius += sign * step;
+  State.radius = Math.max(4, Math.min(400, State.radius));
   applyOrbitToCamera();
   render();
 }
