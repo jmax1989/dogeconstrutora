@@ -235,30 +235,32 @@ function wireUnifiedInput(){
         // ORBIT – usa sensibilidade mobile igual à do 2D
         orbitDelta(dx, dy, p.ptype !== 'mouse');
       }
-    } else if (pointers.size === 2){
-      // 2 ponteiros: PINCH + PAN pelo centro
-      const dist = getDistance();
-      const mid  = getMidpoint();
+ else if (pointers.size === 2){
+  // 2 ponteiros: PINCH + PAN pelo centro
+  const dist = getDistance();
+  const mid  = getMidpoint();
 
-      if (pinchPrevDist > 0){
-        const dScale = dist - pinchPrevDist;
-        if (Math.abs(dScale) > 0.5){
-          // aproximação suave: sinal do delta
-          zoomDelta(-Math.sign(dScale)); // gesto padrão: afastar dedos -> zoom out
-        }
-      }
-      if (pinchPrevMid){
-        const mdx = mid.x - pinchPrevMid.x;
-        const mdy = mid.y - pinchPrevMid.y;
-        if (Math.abs(mdx) > 0 || Math.abs(mdy) > 0){
-          panDelta(mdx, mdy);
-        }
-      }
+  if (pinchPrevDist > 0){
+    const dScale = dist - pinchPrevDist;
 
-      pinchPrevDist = dist;
-      pinchPrevMid  = mid;
+    // Em vez de Math.sign, usamos o delta contínuo (dScale normalizado)
+    const normalizedDelta = dScale / 200; // divisor ajusta a velocidade
+    if (Math.abs(normalizedDelta) > 0.001){
+      zoomDelta(normalizedDelta, true); // modo pinch
     }
+  }
 
+  if (pinchPrevMid){
+    const mdx = mid.x - pinchPrevMid.x;
+    const mdy = mid.y - pinchPrevMid.y;
+    if (Math.abs(mdx) > 0 || Math.abs(mdy) > 0){
+      panDelta(mdx, mdy);
+    }
+  }
+
+  pinchPrevDist = dist;
+  pinchPrevMid  = mid;
+}
     e.preventDefault();
   }, { passive:false });
 
