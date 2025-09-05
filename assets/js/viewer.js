@@ -9,7 +9,6 @@ import {
   initScene,
   applyOrbitToCamera,
   render,
-  camera,
   orbitDelta,
   panDelta,
   zoomDelta,
@@ -22,105 +21,88 @@ import {
   getTorre,
   apply2DVisual
 } from './geometry.js';
-import { initOverlay2D, render2DCards, hide2D } from './overlay2d.js';
+import { initOverlay2D, render2DCards, hide2D, show2D } from './overlay2d.js';
 import { initPicking, selectGroup } from './picking.js';
 import { initModal } from './modal.js';
 import { initHUD, applyFVSAndRefresh } from './hud.js';
-
 
 // ============================
 // Boot
 // ============================
 (async function boot(){
-  // UI base
-  initTooltip();
-  initModal();
+  try {
+    // UI base
+    initTooltip();
+    initModal();
 
-  // Loading on
-  const loading = document.getElementById('doge-loading');
-  loading?.classList.remove('hidden');
+    // Loading on
+    const loading = document.getElementById('doge-loading');
+    loading?.classList.remove('hidden');
 
-  // 1) Carrega dados
-  await loadAllData();
+    // 1) Carrega dados
+    await loadAllData();
 
-  // 2) Cena / câmera / renderer
-  initScene();
+    // 2) Cena / câmera / renderer
+    initScene();
 
-  // 3) Monta a torre
-const { bbox } = buildFromLayout(layoutData || { meta:{}, placements:[] });
+    // 3) Monta a torre
+    buildFromLayout(layoutData || { meta: {}, placements: [] });
 
+    // 4) Primeiro render
+    render();
 
-// ...
+    // === Fit inicial adiado (garante viewport/HUD estabilizados) ===
+    (function fitInitialView(){
+      // 1º frame: deixa layout/CSS assentarem
+      requestAnimationFrame(()=>{
+        // força um recálculo de aspect se algo mudou
+        window.dispatchEvent(new Event('resize'));
 
-// No final do boot(), depois do primeiro render():
-render();
-
-// === Fit inicial adiado (garante viewport/HUD estabilizados) ===
-(function fitInitialView(){
-  // 1º frame: deixa layout/CSS assentarem
-  requestAnimationFrame(()=>{
-    // força um recálculo de aspect se algo mudou
-    window.dispatchEvent(new Event('resize'));
-
-    // 2º frame: faz o fit-to-bbox já com aspect correto
-    requestAnimationFrame(()=>{
-      recenterCamera({
-        // sem bbox: ele computa a BBox atual da torre
-        theta: INITIAL_THETA,    // 90° anti-horário (a “frente” que você pediu)
-        phi:   INITIAL_PHI,      // inclinação padrão (~63°)
-        margin: 1.20,            // pode ajustar se quiser mais “respiro”
-        animate: false
+        // 2º frame: faz o fit-to-bbox já com aspect correto
+        requestAnimationFrame(()=>{
+          recenterCamera({
+            // sem bbox: ele computa a BBox atual da torre
+            theta: INITIAL_THETA,    // 90° anti-horário
+            phi:   INITIAL_PHI,      // inclinação padrão
+            margin: 1.20,
+            animate: false
+          });
+          render();
+        });
       });
-      render();
-    });
-  });
-})();
+    })();
 
+    // 5) HUD (dropdowns, botões, sliders)
+    initHUD();
 
-// Enquadra 100% e coloca “de frente”
-recenterCamera({ bbox, theta: INITIAL_THETA, phi: INITIAL_PHI, animate: false, margin: 1.18 });
+    // 6) Aplica FVS/NC — injeta resolvers e COLOR_MAP
+    applyFVSAndRefresh();
 
-  // 4) Ajuste inicial — mesmo enquadramento usado no recenter
-  if (bbox && bbox.isBox3){
-    recenterCamera({ bbox, verticalOffsetRatio: 0.12 });
-  } else {
-    applyOrbitToCamera();
+    // 7) Overlay 2D (render já com resolvers prontos)
+    initOverlay2D();
+    render2DCards();
+
+    // 8) Picking (hover + click) no 3D
+    initPicking();
+
+    // 9) Loading off
+    loading?.classList.add('hidden');
+
+    // 10) Render final pós-setup
+    render();
+
+    // 11) Reaplica o offset vertical no resize mantendo enquadramento
+    window.addEventListener('resize', ()=> {
+      // Sem usar THREE aqui; o recenter calcula a bbox atual
+      recenterCamera({ verticalOffsetRatio: 0.12 });
+    }, { passive:true });
+
+    // 12) Input unificado (mouse + touch) – suave no mobile
+    wireUnifiedInput();
+  } catch (err){
+    console.error('[viewer] erro no boot:', err);
   }
-
-  // 5) HUD (dropdowns, botões, sliders)
-  initHUD();
-
-  // 6) Aplica FVS/NC — injeta resolvers e COLOR_MAP
-  applyFVSAndRefresh();
-
-  // 7) Overlay 2D (render já com resolvers prontos)
-  initOverlay2D();
-  render2DCards();
-
-  // 8) Picking (hover + click) no 3D
-  initPicking();
-
-  // 9) Loading off
-  loading?.classList.add('hidden');
-
-  // 10) Render inicial
-  render();
-
-  // 11) Reaplica o offset vertical no resize mantendo enquadramento
-  window.addEventListener('resize', ()=> {
-    const torre = getTorre();
-    if (!torre) return;
-    const bb = new THREE.Box3().setFromObject(torre);
-    if (!bb || !bb.isBox3) return;
-    recenterCamera({ bbox: bb, verticalOffsetRatio: 0.12 });
-  }, { passive:true });
-
-  // 12) Input unificado (mouse + touch) – suave no mobile
-  wireUnifiedInput();
-})().catch(err=>{
-  console.error('[viewer] erro no boot:', err);
-});
-
+})();
 
 // ============================
 // Selecionar também o grupo 3D ao clicar num card 2D
@@ -144,6 +126,26 @@ recenterCamera({ bbox, theta: INITIAL_THETA, phi: INITIAL_PHI, animate: false, m
     }
   });
 })();
+
+// ============================
+// ESC fecha 2D se ativo (quando o modal não está aberto)
+// ============================
+window.addEventListener('keydown', (e)=>{
+  if (e.key !== 'Escape') return;
+
+  // Se o modal estiver aberto, deixamos o handler do modal agir.
+  const backdrop = document.getElementById('doge-modal-backdrop');
+  const modalOpen = backdrop && backdrop.getAttribute('aria-hidden') === 'false';
+  if (modalOpen) return;
+
+  // Se 2D estiver ativo, desliga
+  if (State.flatten2D >= 0.95){
+    State.flatten2D = 0;
+    hide2D();
+    apply2DVisual(false);
+    render();
+  }
+}, { passive:true });
 
 // ============================
 // Input unificado (Pointer Events)
@@ -242,10 +244,10 @@ function wireUnifiedInput(){
 
       if (pinchPrevDist > 0){
         const dScale = dist - pinchPrevDist;
-        // delta contínuo (não apenas Math.sign)
-        const normalizedDelta = dScale / 200; // ajuste fino da sensibilidade
+        // delta contínuo (não apenas Math.sign) → zoom leve como imagem
+        const normalizedDelta = dScale / 200; // sensibilidade
         if (Math.abs(normalizedDelta) > 0.001){
-          zoomDelta(normalizedDelta, true); // pinch suave
+          zoomDelta(normalizedDelta, true); // pinch suave (2º arg pode ser ignorado por zoomDelta)
         }
       }
 
@@ -280,24 +282,9 @@ function wireUnifiedInput(){
   cvs.addEventListener('wheel', (e)=>{
     e.preventDefault();
     const sign = Math.sign(e.deltaY);
-    zoomDelta(sign, false); // scroll do mouse
+    zoomDelta(sign, false); // scroll do mouse (2º arg pode ser ignorado)
   }, { passive:false });
 
   // Botão direito = pan (somente mouse)
   cvs.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
 }
-
-// ============================
-// ESC fecha 2D se ativo (quando o modal não está aberto)
-// ============================
-window.addEventListener('keydown', (e)=>{
-  if (e.key !== 'Escape') return;
-
-  // Se o modal estiver aberto, deixamos o handler do modal agir.
-  const modalBackdrop = document.getElementById('doge-modal-backdrop');
-  const modalOpen = modalBackdrop && modalBackdrop.classList.contains('show');
-  if (modalOpen) return;
-
-  // Se 2D estiver ativo, desliga
-
-});
