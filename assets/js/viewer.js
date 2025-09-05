@@ -160,61 +160,44 @@ function wireUnifiedInput(){
   const cvs = document.getElementById('doge-canvas') || document.querySelector('#app canvas');
   if (!cvs) return;
 
-  // Importantíssimo: já definimos touch-action: none no scene.js
-  // Aqui só garantimos que não há seleção/zoom do navegador
-  cvs.addEventListener('gesturestart', e => e.preventDefault?.(), { passive:false });
+  // Bloqueia gestos nativos do navegador (iOS, etc.)
+  cvs.addEventListener('gesturestart',  e => e.preventDefault?.(), { passive:false });
   cvs.addEventListener('gesturechange', e => e.preventDefault?.(), { passive:false });
-  cvs.addEventListener('gestureend', e => e.preventDefault?.(), { passive:false });
+  cvs.addEventListener('gestureend',    e => e.preventDefault?.(), { passive:false });
 
-  // Estado de ponteiros
   const pointers = new Map(); // id -> {x,y,button,ptype,mode}
   let pinchPrevDist = 0;
   let pinchPrevMid  = null;
 
   const setModeForPointer = (pe) => {
-    // mouse: botão direito (2) = pan; caso contrário orbit
-    if (pe.pointerType === 'mouse'){
-      return (pe.button === 2) ? 'pan' : 'orbit';
-    }
-    // touch: 1 dedo -> orbit (pan fica para gesto de 2 dedos)
-    return 'orbit';
+    if (pe.pointerType === 'mouse') return (pe.button === 2) ? 'pan' : 'orbit';
+    return 'orbit'; // touch 1 dedo = orbit
   };
 
   const getMidpoint = () => {
     const arr = [...pointers.values()];
     if (arr.length < 2) return null;
-    return {
-      x: (arr[0].x + arr[1].x) * 0.5,
-      y: (arr[0].y + arr[1].y) * 0.5
-    };
+    return { x:(arr[0].x+arr[1].x)*0.5, y:(arr[0].y+arr[1].y)*0.5 };
   };
+
   const getDistance = () => {
     const arr = [...pointers.values()];
     if (arr.length < 2) return 0;
-    const dx = arr[0].x - arr[1].x;
-    const dy = arr[0].y - arr[1].y;
-    return Math.hypot(dx, dy);
+    return Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y);
   };
 
   // Pointer Down
   cvs.addEventListener('pointerdown', (e)=>{
-    // Captura o ponteiro para evitar "pulos" ao sair da área
     cvs.setPointerCapture?.(e.pointerId);
-
     pointers.set(e.pointerId, {
       x: e.clientX, y: e.clientY,
-      button: e.button,
-      ptype: e.pointerType,
+      button: e.button, ptype: e.pointerType,
       mode: setModeForPointer(e)
     });
-
-    // Se virou pinch (2 dedos), inicializa estado
     if (pointers.size === 2){
       pinchPrevDist = getDistance();
       pinchPrevMid  = getMidpoint();
     }
-
-    // Evita texto/scroll do navegador
     e.preventDefault();
   }, { passive:false });
 
@@ -223,40 +206,38 @@ function wireUnifiedInput(){
     if (!pointers.has(e.pointerId)) return;
 
     const p = pointers.get(e.pointerId);
-    const prevX = p.x, prevY = p.y;
+    const px = p.x, py = p.y;
     p.x = e.clientX; p.y = e.clientY;
 
     if (pointers.size === 1){
-      // 1 ponteiro: ORBIT ou PAN
-      const dx = p.x - prevX;
-      const dy = p.y - prevY;
+      const dx = p.x - px, dy = p.y - py;
+      if (p.mode === 'pan') panDelta(dx, dy);
+      else                  orbitDelta(dx, dy, p.ptype !== 'mouse');
 
-      if (p.mode === 'pan'){
-        panDelta(dx, dy);
-      } else {
-        // ORBIT – usa sensibilidade mobile igual à do 2D
-        orbitDelta(dx, dy, p.ptype !== 'mouse');
-      }
     } else if (pointers.size === 2){
-      // 2 ponteiros: PINCH + PAN pelo centro
+      // PINCH multiplicativo + PAN pelo centro
       const dist = getDistance();
       const mid  = getMidpoint();
 
-      if (pinchPrevDist > 0){
-        const dScale = dist - pinchPrevDist;
-        // delta contínuo (não apenas Math.sign) → zoom leve como imagem
-        const normalizedDelta = dScale / 200; // sensibilidade
-        if (Math.abs(normalizedDelta) > 0.001){
-          zoomDelta(normalizedDelta, true); // pinch suave (2º arg pode ser ignorado por zoomDelta)
-        }
+      if (pinchPrevDist > 0 && dist > 0){
+        // fator = novaDist / distAnterior (ex.: 1.02 = afasta 2%)
+        let scale = dist / pinchPrevDist;
+
+        // “temperar” sensibilidade do pinch:
+        // exponent < 1 reduz sensibilidade; > 1 aumenta
+        const exponent = 0.85; // deixe 0.75–1.20 conforme seu gosto
+        scale = Math.pow(scale, exponent);
+
+        // limita por quadro para não “saltar”
+        scale = Math.max(0.8, Math.min(1.25, scale));
+
+        zoomDelta({ scale }, true); // true = pinch
       }
 
-      if (pinchPrevMid){
+      if (pinchPrevMid && mid){
         const mdx = mid.x - pinchPrevMid.x;
         const mdy = mid.y - pinchPrevMid.y;
-        if (Math.abs(mdx) > 0 || Math.abs(mdy) > 0){
-          panDelta(mdx, mdy);
-        }
+        if (mdx || mdy) panDelta(mdx, mdy);
       }
 
       pinchPrevDist = dist;
@@ -274,15 +255,27 @@ function wireUnifiedInput(){
       pinchPrevMid  = null;
     }
   };
-  cvs.addEventListener('pointerup', clearPointer, { passive:true });
-  cvs.addEventListener('pointercancel', clearPointer, { passive:true });
-  cvs.addEventListener('lostpointercapture', clearPointer, { passive:true });
+  cvs.addEventListener('pointerup', clearPointer,        { passive:true });
+  cvs.addEventListener('pointercancel', clearPointer,    { passive:true });
+  cvs.addEventListener('lostpointercapture', clearPointer,{ passive:true });
 
-  // Wheel (desktop)
+  // Wheel (desktop/trackpad)
   cvs.addEventListener('wheel', (e)=>{
     e.preventDefault();
-    const sign = Math.sign(e.deltaY);
-    zoomDelta(sign, false); // scroll do mouse (2º arg pode ser ignorado)
+
+    // Normaliza delta independente do deltaMode
+    const unit = (e.deltaMode === 1) ? 33 : (e.deltaMode === 2) ? 120 : 1;
+    const dy   = e.deltaY * unit;
+
+    // Converte para fator multiplicativo
+    //  dy=+100  -> ~1.12 (afasta 12%)
+    //  dy=-100  -> ~0.89 (aproxima 11%)
+    let scale = Math.exp(dy * 0.0011);
+
+    // limita por evento para suavidade
+    scale = Math.max(0.8, Math.min(1.25, scale));
+
+    zoomDelta({ scale }, /*isPinch=*/false);
   }, { passive:false });
 
   // Botão direito = pan (somente mouse)
