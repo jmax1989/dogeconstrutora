@@ -170,7 +170,7 @@ function wireUnifiedInput(){
   let pinchPrevMid  = null;
 
   const setModeForPointer = (pe) => {
-    // mouse: button 2 = pan; caso contrário orbit
+    // mouse: botão direito (2) = pan; caso contrário orbit
     if (pe.pointerType === 'mouse'){
       return (pe.button === 2) ? 'pan' : 'orbit';
     }
@@ -235,32 +235,32 @@ function wireUnifiedInput(){
         // ORBIT – usa sensibilidade mobile igual à do 2D
         orbitDelta(dx, dy, p.ptype !== 'mouse');
       }
- else if (pointers.size === 2){
-  // 2 ponteiros: PINCH + PAN pelo centro
-  const dist = getDistance();
-  const mid  = getMidpoint();
+    } else if (pointers.size === 2){
+      // 2 ponteiros: PINCH + PAN pelo centro
+      const dist = getDistance();
+      const mid  = getMidpoint();
 
-  if (pinchPrevDist > 0){
-    const dScale = dist - pinchPrevDist;
+      if (pinchPrevDist > 0){
+        const dScale = dist - pinchPrevDist;
+        // delta contínuo (não apenas Math.sign)
+        const normalizedDelta = dScale / 200; // ajuste fino da sensibilidade
+        if (Math.abs(normalizedDelta) > 0.001){
+          zoomDelta(normalizedDelta, true); // pinch suave
+        }
+      }
 
-    // Em vez de Math.sign, usamos o delta contínuo (dScale normalizado)
-    const normalizedDelta = dScale / 200; // divisor ajusta a velocidade
-    if (Math.abs(normalizedDelta) > 0.001){
-      zoomDelta(normalizedDelta, true); // modo pinch
+      if (pinchPrevMid){
+        const mdx = mid.x - pinchPrevMid.x;
+        const mdy = mid.y - pinchPrevMid.y;
+        if (Math.abs(mdx) > 0 || Math.abs(mdy) > 0){
+          panDelta(mdx, mdy);
+        }
+      }
+
+      pinchPrevDist = dist;
+      pinchPrevMid  = mid;
     }
-  }
 
-  if (pinchPrevMid){
-    const mdx = mid.x - pinchPrevMid.x;
-    const mdy = mid.y - pinchPrevMid.y;
-    if (Math.abs(mdx) > 0 || Math.abs(mdy) > 0){
-      panDelta(mdx, mdy);
-    }
-  }
-
-  pinchPrevDist = dist;
-  pinchPrevMid  = mid;
-}
     e.preventDefault();
   }, { passive:false });
 
@@ -280,7 +280,7 @@ function wireUnifiedInput(){
   cvs.addEventListener('wheel', (e)=>{
     e.preventDefault();
     const sign = Math.sign(e.deltaY);
-    zoomDelta(sign);
+    zoomDelta(sign, false); // scroll do mouse
   }, { passive:false });
 
   // Botão direito = pan (somente mouse)
