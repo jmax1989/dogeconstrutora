@@ -287,61 +287,45 @@ export function panDelta(dx, dy){
   render();
 }
 
-// Aplica zoom relativo (wheel ou pinch) com animação suave
-// - delta: número pequeno. Wheel costuma mandar ±1; pinch manda delta contínuo (ex.: 0.05, -0.03)
-// - isPinch: true quando veio de gesto de pinça, para sensibilidade/tempo levemente diferentes
+// Zoom suave e “leve de imagem”: multiplicativo + easing curto
+// delta: contínuo (pinça) ou ±1 (wheel). isPinch: true se veio da pinça.
 export function zoomDelta(delta = 0, isPinch = false){
   if (!Number.isFinite(delta) || delta === 0) return;
 
-  // estado atual
+  // raio atual e limites
   const r0 = Math.max(4, Math.min(400, Number(State.radius) || 20));
+  const ZOOM_MIN = 4, ZOOM_MAX = 400;
 
-  // sensibilidade adaptativa (depende do raio atual pra “manter a mão”)
-  // - pinch: mais sensível por pixel de afastamento dos dedos
-  // - wheel: um pouco menos sensível, pra evitar “saltos”
-  const baseFrac = isPinch ? 0.06 : 0.08;     // fração do raio por unidade de delta
-  const step     = Math.max(0.35, r0 * baseFrac);
-  let r1         = r0 + (delta * step);
+  // ganho BEM baixo (sensação leve). Wheel um pouco mais forte que pinch.
+  const k = isPinch ? 0.018 : 0.035;        // << ajuste de sensibilidade
+  // zoom multiplicativo (delta>0 => zoom out; delta<0 => zoom in)
+  let target = r0 * Math.exp(delta * k);
+  target = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, target));
 
-  // limites
-  const ZOOM_MIN = 4;
-  const ZOOM_MAX = 400;
-  r1 = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, r1));
-
-  // se diferença é muito pequena, aplica direto (evita anim desnecessária)
-  if (Math.abs(r1 - r0) < 0.01){
-    State.radius = r1;
+  // se variação é mínima, aplica direto
+  if (Math.abs(target - r0) < 0.01){
+    State.radius = target;
     applyOrbitToCamera();
     render();
     return;
   }
 
-  // cancela anima anterior, se existir
-  if (_zoomAnim) {
-    cancelAnimationFrame(_zoomAnim);
-    _zoomAnim = null;
-  }
-
-  const dur  = isPinch ? 90 : 120; // pinch um pouco mais “rápido”
+  // animação curtinha p/ tirar aspereza, sem “peso”
+  if (_zoomAnim){ cancelAnimationFrame(_zoomAnim); _zoomAnim = null; }
+  const dur  = isPinch ? 70 : 90;                 // bem curta
   const t0   = performance.now();
-  const ease = (t)=> 1 - Math.pow(1 - t, 3); // easeOutCubic
+  const ease = t => 1 - Math.pow(1 - t, 3);       // easeOutCubic
+  const step = (now)=>{
+    const kx = Math.min(1, (now - t0) / dur);
+    const e  = ease(kx);
 
-  const stepAnim = (now)=>{
-    const k = Math.min(1, (now - t0) / dur);
-    const e = ease(k);
-    // interpolação suave no espaço do raio
-    State.radius = r0 + (r1 - r0) * e;
+    // interpola multiplicativamente no espaço do raio (log-space)
+    // equivalente a r = r0 * (target/r0)^e
+    State.radius = r0 * Math.pow(target / r0, e);
 
     applyOrbitToCamera();
     render();
-
-    if (k < 1){
-      _zoomAnim = requestAnimationFrame(stepAnim);
-    } else {
-      _zoomAnim = null;
-    }
+    if (kx < 1) _zoomAnim = requestAnimationFrame(step); else _zoomAnim = null;
   };
-
-  _zoomAnim = requestAnimationFrame(stepAnim);
+  _zoomAnim = requestAnimationFrame(step);
 }
-
