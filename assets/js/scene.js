@@ -287,22 +287,40 @@ export function panDelta(dx, dy){
   render();
 }
 
-// Zoom suave e “leve de imagem”: multiplicativo + easing curto
-// delta: contínuo (pinça) ou ±1 (wheel). isPinch: true se veio da pinça.
-export function zoomDelta(delta = 0, isPinch = false){
-  if (!Number.isFinite(delta) || delta === 0) return;
+
+
+// Zoom suave multiplicativo (estilo imagem).
+// Aceita dois formatos de chamada:
+//   - zoomDelta({ scale: <fator> })  -> 'scale' multiplicativo (>1=afasta, <1=aproxima)
+//   - zoomDelta(delta, isPinch=false)-> delta contínuo; converte para fator internamente
+export function zoomDelta(deltaOrObj = 0, isPinch = false){
+  // clamp local para evitar import
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   // raio atual e limites
-  const r0 = Math.max(4, Math.min(400, Number(State.radius) || 20));
   const ZOOM_MIN = 4, ZOOM_MAX = 400;
+  const r0 = clamp(Number(State.radius) || 20, ZOOM_MIN, ZOOM_MAX);
 
-  // ganho BEM baixo (sensação leve). Wheel um pouco mais forte que pinch.
-  const k = isPinch ? 0.018 : 0.035;        // << ajuste de sensibilidade
-  // zoom multiplicativo (delta>0 => zoom out; delta<0 => zoom in)
-  let target = r0 * Math.exp(delta * k);
-  target = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, target));
+  // converte entrada para fator multiplicativo
+  let factor = 1;
+  if (deltaOrObj && typeof deltaOrObj === 'object' && typeof deltaOrObj.scale === 'number'){
+    factor = Number(deltaOrObj.scale) || 1;
+  } else {
+    const delta = Number(deltaOrObj) || 0;
+    if (delta === 0) return;
+    // ganho separado para pinch e wheel
+    // (ganhos moderados; podemos ajustar fino se quiser)
+    const k = isPinch ? 0.35 : 0.25;
+    // delta>0 => zoom out (aumenta raio); delta<0 => zoom in
+    factor = Math.exp(delta * k);
+  }
 
-  // se variação é mínima, aplica direto
+  // evita saltos gigantes por evento
+  factor = clamp(factor, 0.5, 2.0);
+
+  const target = clamp(r0 * factor, ZOOM_MIN, ZOOM_MAX);
+
+  // se a mudança é minúscula, aplica direto sem animar
   if (Math.abs(target - r0) < 0.01){
     State.radius = target;
     applyOrbitToCamera();
@@ -310,22 +328,22 @@ export function zoomDelta(delta = 0, isPinch = false){
     return;
   }
 
-  // animação curtinha p/ tirar aspereza, sem “peso”
-  if (_zoomAnim){ cancelAnimationFrame(_zoomAnim); _zoomAnim = null; }
-  const dur  = isPinch ? 70 : 90;                 // bem curta
+  // animação curtinha para suavizar, sem “peso”
+  if (_zoomAnim) { cancelAnimationFrame(_zoomAnim); _zoomAnim = null; }
+
+  const dur  = isPinch ? 60 : 90;              // pinch um tico mais ágil
   const t0   = performance.now();
-  const ease = t => 1 - Math.pow(1 - t, 3);       // easeOutCubic
+  const ease = t => 1 - Math.pow(1 - t, 3);    // easeOutCubic
+
+  // interpola no espaço multiplicativo: r = r0 * (target/r0)^e
+  const ratio = target / r0;
   const step = (now)=>{
-    const kx = Math.min(1, (now - t0) / dur);
-    const e  = ease(kx);
-
-    // interpola multiplicativamente no espaço do raio (log-space)
-    // equivalente a r = r0 * (target/r0)^e
-    State.radius = r0 * Math.pow(target / r0, e);
-
+    const k = Math.min(1, (now - t0) / dur);
+    const e = ease(k);
+    State.radius = r0 * Math.pow(ratio, e);
     applyOrbitToCamera();
     render();
-    if (kx < 1) _zoomAnim = requestAnimationFrame(step); else _zoomAnim = null;
+    if (k < 1) _zoomAnim = requestAnimationFrame(step); else _zoomAnim = null;
   };
   _zoomAnim = requestAnimationFrame(step);
 }
