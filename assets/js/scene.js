@@ -287,22 +287,18 @@ export function panDelta(dx, dy){
 }
 
 
-// Zoom (scroll desktop + pinch mobile)
-// ============================
-export function zoomDelta(signOrDelta, isTouch=false){
-  if (isTouch){
-    // === Modo pinça: zoom leve e contínuo (como imagem) ===
-    const delta = Number(signOrDelta) || 0;
-    const factor = 0.02; // ajuste a sensibilidade aqui
-    State.radius *= (1 - delta * factor); 
+export function zoomDelta(delta, isPinch=false){
+  if (isPinch){
+    // === Pinça: zoom suave contínuo ===
+    const factor = 0.015; // sensibilidade (quanto menor, mais suave)
+    State.radius *= (1 - delta * factor);
   } else {
-    // === Modo roda do mouse: proporcional à distância ===
-    const sign = (signOrDelta >= 0) ? +1 : -1;
-    const step = Math.max(0.5, (State.radius || 20) * 0.001); // ZOOM_STEP_FACTOR
-    State.radius += sign * step;
+    // === Scroll do mouse: zoom proporcional à distância ===
+    const step = Math.max(0.5, (State.radius || 20) * 0.001);
+    State.radius += delta * step;
   }
 
-  // Limites de zoom
+  // Limites seguros
   State.radius = Math.max(2, Math.min(400, State.radius));
 
   applyOrbitToCamera();
