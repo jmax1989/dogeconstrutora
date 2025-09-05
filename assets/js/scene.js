@@ -6,6 +6,7 @@ import { State } from './state.js';
 // import { clamp } from './utils.js'; // (não usado)
 export let scene, renderer, camera;
 
+let _zoomAnim = null; // animação de zoom em andamento (requestAnimationFrame id)
 // Alvo do orbit (reutiliza State.orbitTarget)
 const ORBIT_MIN_PHI = 0.05;
 const ORBIT_MAX_PHI = Math.PI - 0.05;
@@ -286,11 +287,61 @@ export function panDelta(dx, dy){
   render();
 }
 
-// Aplica zoom relativo (delta de wheel)
-export function zoomDelta(sign){
-  const step = Math.max(0.5, (State.radius || 20) * ZOOM_STEP_FACTOR);
-  State.radius += sign * step;
-  State.radius = Math.max(4, Math.min(400, State.radius));
-  applyOrbitToCamera();
-  render();
+// Aplica zoom relativo (wheel ou pinch) com animação suave
+// - delta: número pequeno. Wheel costuma mandar ±1; pinch manda delta contínuo (ex.: 0.05, -0.03)
+// - isPinch: true quando veio de gesto de pinça, para sensibilidade/tempo levemente diferentes
+export function zoomDelta(delta = 0, isPinch = false){
+  if (!Number.isFinite(delta) || delta === 0) return;
+
+  // estado atual
+  const r0 = Math.max(4, Math.min(400, Number(State.radius) || 20));
+
+  // sensibilidade adaptativa (depende do raio atual pra “manter a mão”)
+  // - pinch: mais sensível por pixel de afastamento dos dedos
+  // - wheel: um pouco menos sensível, pra evitar “saltos”
+  const baseFrac = isPinch ? 0.06 : 0.08;     // fração do raio por unidade de delta
+  const step     = Math.max(0.35, r0 * baseFrac);
+  let r1         = r0 + (delta * step);
+
+  // limites
+  const ZOOM_MIN = 4;
+  const ZOOM_MAX = 400;
+  r1 = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, r1));
+
+  // se diferença é muito pequena, aplica direto (evita anim desnecessária)
+  if (Math.abs(r1 - r0) < 0.01){
+    State.radius = r1;
+    applyOrbitToCamera();
+    render();
+    return;
+  }
+
+  // cancela anima anterior, se existir
+  if (_zoomAnim) {
+    cancelAnimationFrame(_zoomAnim);
+    _zoomAnim = null;
+  }
+
+  const dur  = isPinch ? 90 : 120; // pinch um pouco mais “rápido”
+  const t0   = performance.now();
+  const ease = (t)=> 1 - Math.pow(1 - t, 3); // easeOutCubic
+
+  const stepAnim = (now)=>{
+    const k = Math.min(1, (now - t0) / dur);
+    const e = ease(k);
+    // interpolação suave no espaço do raio
+    State.radius = r0 + (r1 - r0) * e;
+
+    applyOrbitToCamera();
+    render();
+
+    if (k < 1){
+      _zoomAnim = requestAnimationFrame(stepAnim);
+    } else {
+      _zoomAnim = null;
+    }
+  };
+
+  _zoomAnim = requestAnimationFrame(stepAnim);
 }
+
