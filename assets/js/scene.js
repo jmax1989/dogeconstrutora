@@ -17,8 +17,8 @@ const ORBIT_MAX_PHI = Math.PI - 0.05;
 export const INITIAL_THETA = Math.PI / 2;
 export const INITIAL_PHI = 1.1;
 
-const ROT_SPEED_DESKTOP = 0.003;
-const ROT_SPEED_TOUCH = 0.003;
+const ROT_SPEED_DESKTOP = 0.006;
+const ROT_SPEED_TOUCH = 0.006;
 const PAN_FACTOR = 0.3;
 
 function getAppEl() {
@@ -287,7 +287,7 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   } else {
     const delta = Number(deltaOrObj) || 0;
     if (delta === 0) return;
-    const k = isPinch ? 0.7 : 0.25; // ajuste o valor para pinch conforme preferir
+    const k = isPinch ? 0.9 : 0.25; // ajuste o valor para pinch conforme preferir
     factor = Math.exp(delta * k);
   }
 
@@ -319,3 +319,4 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   }
   _zoomAnim = requestAnimationFrame(stepZoom);
 }
+
