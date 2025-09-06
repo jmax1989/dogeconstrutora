@@ -29,10 +29,10 @@ const ZOOM_FACTOR_MAX = 2.0;
 const ZOOM_MIN = 4;
 const ZOOM_MAX = 400;
 
-// Auto-fit
+// Auto-fit inicial (opcional)
 let _autoFitTimer = null;
-const AUTO_FIT_MAX_MS = 4000;   // janela máxima para achar a Torre
-const AUTO_FIT_POLL_MS = 120;   // frequência de checagem
+const AUTO_FIT_MAX_MS = 4000;
+const AUTO_FIT_POLL_MS = 120;
 
 function getAppEl() {
   const el = document.getElementById('app');
@@ -65,7 +65,6 @@ export function initScene() {
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 
-  // Canvas: desabilita gestos padrão do navegador
   const cvs = renderer.domElement;
   cvs.id = 'doge-canvas';
   Object.assign(cvs.style, {
@@ -89,13 +88,13 @@ export function initScene() {
   window.addEventListener('resize', onResize, { passive: true });
   onResize();
 
-  // Aplica posição inicial
+  // Posição inicial
   applyOrbitToCamera();
 
-  // Inicia handler de toque unificado (pan vs pinch)
+  // Gestos touch
   setupUnifiedTouchGestureHandler(cvs);
 
-  // Auto-fit no centro da Torre assim que ela existir
+  // Auto-fit inicial (apenas uma vez)
   startAutoFitOnce();
 
   return { scene, renderer, camera };
@@ -128,19 +127,29 @@ export function applyOrbitToCamera() {
 }
 
 // -------- Bounding Box Utils --------
-function findTorre() {
-  let torre = null;
-  scene?.traverse(n => { if (!torre && n.name === 'Torre') torre = n; });
-  return torre;
-}
-
-// Aceita root opcional para forçar o cálculo do BBox a partir de um nó conhecido:
 function computeCurrentBBox(root = null) {
-  const targetRoot = root || findTorre();
+  const targetRoot = root || scene;
   if (!targetRoot) return null;
-  const bb = new THREE.Box3().setFromObject(targetRoot);
-  if (!Number.isFinite(bb.min.x) || !Number.isFinite(bb.max.x)) return null;
-  return bb;
+
+  const box = new THREE.Box3();
+  let has = false;
+
+  targetRoot.traverse((obj) => {
+    if (!obj.visible) return;
+    if (obj.isMesh && obj.geometry) {
+      const geomBox = new THREE.Box3().setFromObject(obj);
+      if (
+        Number.isFinite(geomBox.min.x) && Number.isFinite(geomBox.max.x) &&
+        Number.isFinite(geomBox.min.y) && Number.isFinite(geomBox.max.y) &&
+        Number.isFinite(geomBox.min.z) && Number.isFinite(geomBox.max.z)
+      ) {
+        box.union(geomBox);
+        has = true;
+      }
+    }
+  });
+
+  return has ? box : null;
 }
 
 function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.18 }) {
@@ -149,7 +158,7 @@ function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.18 }) {
   const w = Math.hypot(size.x, size.z);
 
   const vHalf = h * 0.5;
-  the const hHalf = w * 0.5;
+  const hHalf = w * 0.5;
 
   const distV = vHalf / Math.tan(vfovRad * 0.5);
   const hfovRad = 2 * Math.atan(Math.tan(vfovRad * 0.5) * aspect);
@@ -172,7 +181,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
 
   const {
     bbox = null,
-    root = null,                 // <— aceita root opcional
+    root = null,
     verticalOffsetRatio = 0.10,
     target = null,
     dist = null,
@@ -241,7 +250,7 @@ function startAutoFitOnce() {
 
   const t0 = performance.now();
   const tick = () => {
-    const bb = computeCurrentBBox(); // tenta por nome "Torre"
+    const bb = computeCurrentBBox();
     if (bb) {
       const center = bb.getCenter(new THREE.Vector3());
       const size = bb.getSize(new THREE.Vector3());
@@ -274,7 +283,7 @@ function startAutoFitOnce() {
   _autoFitTimer = setInterval(tick, AUTO_FIT_POLL_MS);
 }
 
-// Função utilitária pública: força centralização a partir de um root conhecido
+// Força centralização a partir de um root conhecido
 export function syncOrbitTargetToModel({ root = null, animate = false } = {}) {
   const bb = computeCurrentBBox(root);
   if (!bb) return;
@@ -294,14 +303,73 @@ export function render() {
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// ========== ROTATION ==========
+// ========== ROTATION (gira ao redor do CENTRO do modelo, sem recentrar na tela) ==========
 export function orbitDelta(dx, dy, isTouch = false) {
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
-  State.theta += dx * ROT;
-  State.phi -= dy * ROT;
-  State.phi = Math.max(ORBIT_MIN_PHI, Math.min(ORBIT_MAX_PHI, State.phi));
-  applyOrbitToCamera();
+
+  // 1) Centro do modelo como pivô (se não achar, usa o target atual)
+  const bb = computeCurrentBBox();
+  const pivot = bb ? bb.getCenter(new THREE.Vector3()) : State.orbitTarget.clone();
+
+  // 2) Vetores atuais relativos ao pivô
+  const P = camera.position.clone();
+  const T = State.orbitTarget.clone(); // ponto que a câmera está olhando
+  const vP = P.clone().sub(pivot);
+  const vT = T.clone().sub(pivot);
+
+  // 3) Eixos de rotação
+  const up = new THREE.Vector3(0, 1, 0);          // yaw em Y global
+  const right = new THREE.Vector3().crossVectors(vP, up).normalize() || new THREE.Vector3(1,0,0);
+
+  // 4) Quaternions de yaw/pitch
+  const yaw = dx * ROT;       // arrastar para a direita => yaw positivo
+  const pitch = -dy * ROT;    // arrastar para baixo => pitch negativo (padrão turntable)
+
+  const qYaw = new THREE.Quaternion().setFromAxisAngle(up, yaw);
+  const qPitch = new THREE.Quaternion().setFromAxisAngle(right, pitch);
+  const q = new THREE.Quaternion().multiplyQuaternions(qYaw, qPitch);
+
+  // 5) Aplica rotação aos vetores
+  const vP1 = vP.clone().applyQuaternion(q);
+  const vT1 = vT.clone().applyQuaternion(q);
+
+  // 6) Calcula phi e aplica clamp (se estourar, desfaz pitch e mantém só yaw)
+  const vCamToTarget = vP1.clone().sub(vT1); // direção câmera->target (em torno do pivô)
+  const r = vCamToTarget.length();
+  const n = vCamToTarget.clone().normalize();
+  let phi = Math.acos(THREE.MathUtils.clamp(n.y, -1, 1));
+  if (phi < ORBIT_MIN_PHI || phi > ORBIT_MAX_PHI) {
+    // só yaw
+    const vP2 = vP.clone().applyQuaternion(qYaw);
+    const vT2 = vT.clone().applyQuaternion(qYaw);
+    commitOrbitFromVectors(pivot, vP2, vT2);
+  } else {
+    commitOrbitFromVectors(pivot, vP1, vT1);
+  }
+
   render();
+}
+
+// Converte vetores (relativos ao pivô) para State.{orbitTarget, radius, theta, phi} e aplica
+function commitOrbitFromVectors(pivot, vP, vT) {
+  const Tnew = pivot.clone().add(vT);
+  const Pnew = pivot.clone().add(vP);
+
+  // Atualiza State.orbitTarget
+  ensureOrbitTargetVec3();
+  State.orbitTarget.copy(Tnew);
+
+  // Sféricas relativas a Tnew (para manter compatibilidade com applyOrbitToCamera)
+  const v = Pnew.clone().sub(Tnew);
+  const r = v.length();
+  const ph = Math.acos(THREE.MathUtils.clamp(v.y / r, -1, 1));
+  const th = Math.atan2(v.z, v.x);
+
+  State.radius = THREE.MathUtils.clamp(r, ZOOM_MIN, ZOOM_MAX);
+  State.theta = th;
+  State.phi = THREE.MathUtils.clamp(ph, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
+
+  applyOrbitToCamera();
 }
 
 // ========== PAN SUAVE ==========
@@ -335,6 +403,7 @@ function animatePan() {
   right.crossVectors(dir, up).normalize();
   const camUp = camera.up.clone().normalize();
 
+  // Move camera e target juntos (mantém offset de tela)
   State.orbitTarget.addScaledVector(right, -applyDx * base);
   State.orbitTarget.addScaledVector(camUp, applyDy * base);
 
@@ -364,7 +433,6 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
     factor = Math.exp(delta * k);
   }
 
-  // clamp por gesto para evitar saltos grandes
   factor = clamp(factor, ZOOM_FACTOR_MIN, ZOOM_FACTOR_MAX);
   const target = clamp(r0 * factor, ZOOM_MIN, ZOOM_MAX);
 
@@ -415,7 +483,7 @@ function setupUnifiedTouchGestureHandler(canvas) {
 
       // Critério: se a variação de distância for maior que a de centro → pinch; caso contrário, pan
       if (Math.abs(distDelta) > Math.max(Math.abs(centerDeltaX), Math.abs(centerDeltaY))) {
-        zoomDelta(distDelta / 120, true); // divisor ajusta sensibilidade do pinch
+        zoomDelta(distDelta / 120, true);
       } else {
         panDelta(centerDeltaX, centerDeltaY);
       }
