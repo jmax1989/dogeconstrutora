@@ -23,7 +23,7 @@ const ROT_SPEED_TOUCH = 0.004;
 const PAN_FACTOR = 0.4;
 const PAN_SMOOTH = 0.22;
 const ZOOM_EXP_K_WHEEL = 0.27;
-const ZOOM_EXP_K_PINCH = 0.37;
+const ZOOM_EXP_K_PINCH = 2;
 const ZOOM_FACTOR_MIN = 0.5;
 const ZOOM_FACTOR_MAX = 2.0;
 const ZOOM_MIN = 4;
@@ -378,4 +378,5 @@ function setupUnifiedTouchGestureHandler(canvas) {
     };
   }
 }
+
 
