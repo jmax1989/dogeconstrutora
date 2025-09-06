@@ -17,7 +17,7 @@ const ORBIT_MAX_PHI = Math.PI - 0.05;
 export const INITIAL_THETA = Math.PI / 2;
 export const INITIAL_PHI = 1.1;
 
-// Ajuste fino para suavidade e resposta natural
+// Ajuste fino p/ suavidade
 const ROT_SPEED_DESKTOP = 0.004;
 const ROT_SPEED_TOUCH = 0.004;
 const PAN_FACTOR = 0.4;
@@ -88,14 +88,10 @@ export function initScene() {
   window.addEventListener('resize', onResize, { passive: true });
   onResize();
 
-  // Posição inicial
   applyOrbitToCamera();
 
-  // Gestos touch
   setupUnifiedTouchGestureHandler(cvs);
-
-  // Auto-fit inicial (apenas uma vez)
-  startAutoFitOnce();
+  startAutoFitOnce(); // apenas para a posição inicial (não interfere depois)
 
   return { scene, renderer, camera };
 }
@@ -303,73 +299,53 @@ export function render() {
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// ========== ROTATION (gira ao redor do CENTRO do modelo, sem recentrar na tela) ==========
+// ========== ROTATION (sem recentrar; alvo FIXO; gira câmera ao redor do alvo) ==========
 export function orbitDelta(dx, dy, isTouch = false) {
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
 
-  // 1) Centro do modelo como pivô (se não achar, usa o target atual)
-  const bb = computeCurrentBBox();
-  const pivot = bb ? bb.getCenter(new THREE.Vector3()) : State.orbitTarget.clone();
-
-  // 2) Vetores atuais relativos ao pivô
-  const P = camera.position.clone();
-  const T = State.orbitTarget.clone(); // ponto que a câmera está olhando
-  const vP = P.clone().sub(pivot);
-  const vT = T.clone().sub(pivot);
-
-  // 3) Eixos de rotação
-  const up = new THREE.Vector3(0, 1, 0);          // yaw em Y global
-  const right = new THREE.Vector3().crossVectors(vP, up).normalize() || new THREE.Vector3(1,0,0);
-
-  // 4) Quaternions de yaw/pitch
-  const yaw = dx * ROT;       // arrastar para a direita => yaw positivo
-  const pitch = -dy * ROT;    // arrastar para baixo => pitch negativo (padrão turntable)
-
-  const qYaw = new THREE.Quaternion().setFromAxisAngle(up, yaw);
-  const qPitch = new THREE.Quaternion().setFromAxisAngle(right, pitch);
-  const q = new THREE.Quaternion().multiplyQuaternions(qYaw, qPitch);
-
-  // 5) Aplica rotação aos vetores
-  const vP1 = vP.clone().applyQuaternion(q);
-  const vT1 = vT.clone().applyQuaternion(q);
-
-  // 6) Calcula phi e aplica clamp (se estourar, desfaz pitch e mantém só yaw)
-  const vCamToTarget = vP1.clone().sub(vT1); // direção câmera->target (em torno do pivô)
-  const r = vCamToTarget.length();
-  const n = vCamToTarget.clone().normalize();
-  let phi = Math.acos(THREE.MathUtils.clamp(n.y, -1, 1));
-  if (phi < ORBIT_MIN_PHI || phi > ORBIT_MAX_PHI) {
-    // só yaw
-    const vP2 = vP.clone().applyQuaternion(qYaw);
-    const vT2 = vT.clone().applyQuaternion(qYaw);
-    commitOrbitFromVectors(pivot, vP2, vT2);
-  } else {
-    commitOrbitFromVectors(pivot, vP1, vT1);
-  }
-
-  render();
-}
-
-// Converte vetores (relativos ao pivô) para State.{orbitTarget, radius, theta, phi} e aplica
-function commitOrbitFromVectors(pivot, vP, vT) {
-  const Tnew = pivot.clone().add(vT);
-  const Pnew = pivot.clone().add(vP);
-
-  // Atualiza State.orbitTarget
+  // Pivô fixo = alvo atual (não mexemos nele)
   ensureOrbitTargetVec3();
-  State.orbitTarget.copy(Tnew);
+  const pivot = State.orbitTarget;
 
-  // Sféricas relativas a Tnew (para manter compatibilidade com applyOrbitToCamera)
-  const v = Pnew.clone().sub(Tnew);
-  const r = v.length();
-  const ph = Math.acos(THREE.MathUtils.clamp(v.y / r, -1, 1));
-  const th = Math.atan2(v.z, v.x);
+  // Vetor câmera relativo ao pivô
+  const v = camera.position.clone().sub(pivot);
+
+  // Eixos
+  const up = new THREE.Vector3(0, 1, 0);              // yaw em Y global
+  const dir = v.clone().normalize().negate();         // direção de visão: (pivot - camera).normalize()
+  const right = new THREE.Vector3().crossVectors(dir, up).normalize(); // eixo “right” da câmera
+
+  // Ângulos
+  const yaw = dx * ROT;
+  const pitch = -dy * ROT;
+
+  // Aplica yaw primeiro (global Y)
+  const qYaw = new THREE.Quaternion().setFromAxisAngle(up, yaw);
+  let v1 = v.clone().applyQuaternion(qYaw);
+
+  // Depois tentamos o pitch; se violar os limites, ignoramos o pitch
+  const qPitch = new THREE.Quaternion().setFromAxisAngle(right, pitch);
+  const v2 = v1.clone().applyQuaternion(qPitch);
+
+  // Calcula phi do candidato
+  const r2 = v2.length();
+  const ph2 = Math.acos(THREE.MathUtils.clamp(v2.y / r2, -1, 1));
+
+  // Decide qual vetor usar (com clamp de phi)
+  const usePitch = (ph2 >= ORBIT_MIN_PHI && ph2 <= ORBIT_MAX_PHI);
+  const vFinal = usePitch ? v2 : v1;
+
+  // Atualiza esféricas
+  const r = vFinal.length();
+  const ph = Math.acos(THREE.MathUtils.clamp(vFinal.y / r, -1, 1));
+  const th = Math.atan2(vFinal.z, vFinal.x);
 
   State.radius = THREE.MathUtils.clamp(r, ZOOM_MIN, ZOOM_MAX);
   State.theta = th;
   State.phi = THREE.MathUtils.clamp(ph, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
 
   applyOrbitToCamera();
+  render();
 }
 
 // ========== PAN SUAVE ==========
@@ -393,7 +369,6 @@ function animatePan() {
   _pendingPan.dx -= applyDx;
   _pendingPan.dy -= applyDy;
 
-  // Pan proporcional à distância da câmera, mas moderado
   const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
   const dir = new THREE.Vector3();
   const right = new THREE.Vector3();
@@ -403,7 +378,6 @@ function animatePan() {
   right.crossVectors(dir, up).normalize();
   const camUp = camera.up.clone().normalize();
 
-  // Move camera e target juntos (mantém offset de tela)
   State.orbitTarget.addScaledVector(right, -applyDx * base);
   State.orbitTarget.addScaledVector(camUp, applyDy * base);
 
@@ -462,7 +436,7 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   _zoomAnim = requestAnimationFrame(stepZoom);
 }
 
-// ========== TOQUE UNIFICADO: DISTINGUE PAN VS PINCH ==========
+// ========== TOQUE UNIFICADO ==========
 function setupUnifiedTouchGestureHandler(canvas) {
   let lastTouches = null;
 
@@ -481,7 +455,6 @@ function setupUnifiedTouchGestureHandler(canvas) {
       const centerDeltaX = now.centerX - lastTouches.centerX;
       const centerDeltaY = now.centerY - lastTouches.centerY;
 
-      // Critério: se a variação de distância for maior que a de centro → pinch; caso contrário, pan
       if (Math.abs(distDelta) > Math.max(Math.abs(centerDeltaX), Math.abs(centerDeltaY))) {
         zoomDelta(distDelta / 120, true);
       } else {
