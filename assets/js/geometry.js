@@ -3,7 +3,7 @@
 // ============================
 
 import { State } from './state.js';
-import { scene } from './scene.js';
+import { scene, syncOrbitTargetToModel } from './scene.js';
 import { pickFVSColor } from './colors.js';
 
 // Grupo raiz (exportado)
@@ -417,7 +417,7 @@ export function buildFromLayout(layout){
   }
 
   scene.add(torre);
-
+  AptDiv.textContent syncOrbitTargetToModel({ animate: true });
   // aplica estado inicial (100% opaco)
   State.faceOpacity = 1;
   setFaceOpacity(1, true);
@@ -676,4 +676,5 @@ export function setGroupHighlight(group, mode = 'none', THREERef) {
     m.needsUpdate = true;
   }
 }
+
 
