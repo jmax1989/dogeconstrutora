@@ -17,7 +17,7 @@ const ORBIT_MAX_PHI = Math.PI - 0.05;
 export const INITIAL_THETA = Math.PI / 2;
 export const INITIAL_PHI = 1.1;
 
-// Ajuste fino p/ suavidade
+// Ajuste fino para suavidade e resposta natural
 const ROT_SPEED_DESKTOP = 0.004;
 const ROT_SPEED_TOUCH = 0.004;
 const PAN_FACTOR = 0.4;
@@ -299,52 +299,74 @@ export function render() {
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// ========== ROTATION (sem recentrar; alvo FIXO; gira câmera ao redor do alvo) ==========
+// ========== ROTATION (arcball em torno do centro do prédio, sem recentrar) ==========
 export function orbitDelta(dx, dy, isTouch = false) {
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
-
-  // Pivô fixo = alvo atual (não mexemos nele)
-  ensureOrbitTargetVec3();
-  const pivot = State.orbitTarget;
-
-  // Vetor câmera relativo ao pivô
-  const v = camera.position.clone().sub(pivot);
-
-  // Eixos
-  const up = new THREE.Vector3(0, 1, 0);              // yaw em Y global
-  const dir = v.clone().normalize().negate();         // direção de visão: (pivot - camera).normalize()
-  const right = new THREE.Vector3().crossVectors(dir, up).normalize(); // eixo “right” da câmera
-
-  // Ângulos
   const yaw = dx * ROT;
   const pitch = -dy * ROT;
 
-  // Aplica yaw primeiro (global Y)
-  const qYaw = new THREE.Quaternion().setFromAxisAngle(up, yaw);
-  let v1 = v.clone().applyQuaternion(qYaw);
+  // 1) Pivô = centro do modelo (se não achar, usa o target atual)
+  const bb = computeCurrentBBox();
+  const pivot = bb ? bb.getCenter(new THREE.Vector3()) : State.orbitTarget.clone();
 
-  // Depois tentamos o pitch; se violar os limites, ignoramos o pitch
-  const qPitch = new THREE.Quaternion().setFromAxisAngle(right, pitch);
-  const v2 = v1.clone().applyQuaternion(qPitch);
+  // 2) Vetores relativos ao pivô
+  const P = camera.position.clone();
+  const T = State.orbitTarget.clone();
+  const up0 = camera.up.clone();
 
-  // Calcula phi do candidato
-  const r2 = v2.length();
-  const ph2 = Math.acos(THREE.MathUtils.clamp(v2.y / r2, -1, 1));
+  const vP = P.sub(pivot);
+  const vT = T.sub(pivot);
 
-  // Decide qual vetor usar (com clamp de phi)
-  const usePitch = (ph2 >= ORBIT_MIN_PHI && ph2 <= ORBIT_MAX_PHI);
-  const vFinal = usePitch ? v2 : v1;
+  // 3) Base atual (forward/right/up) re-ortonormalizada
+  const forward0 = vT.clone().sub(vP).normalize();                  // direção de visão
+  let right0 = new THREE.Vector3().crossVectors(forward0, up0).normalize();
+  if (!Number.isFinite(right0.x) || right0.lengthSq() === 0) right0.set(1, 0, 0);
+  const up1 = new THREE.Vector3().crossVectors(right0, forward0).normalize();
 
-  // Atualiza esféricas
-  const r = vFinal.length();
-  const ph = Math.acos(THREE.MathUtils.clamp(vFinal.y / r, -1, 1));
-  const th = Math.atan2(vFinal.z, vFinal.x);
+  // 4) Yaw em Y global, depois Pitch no eixo right já "yawado"
+  const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
+
+  const vP1 = vP.clone().applyQuaternion(qYaw);
+  const vT1 = vT.clone().applyQuaternion(qYaw);
+  const forward1 = forward0.clone().applyQuaternion(qYaw);
+  const right1 = right0.clone().applyQuaternion(qYaw);
+  const upYaw = up1.clone().applyQuaternion(qYaw);
+
+  const qPitch = new THREE.Quaternion().setFromAxisAngle(right1, pitch);
+
+  // Candidatos com pitch
+  const vP2 = vP1.clone().applyQuaternion(qPitch);
+  const vT2 = vT1.clone().applyQuaternion(qPitch);
+  const forward2 = forward1.clone().applyQuaternion(qPitch);
+  const up2 = upYaw.clone().applyQuaternion(qPitch);
+
+  // 5) Clamp de phi usando a direção de visão final (forward2)
+  const phiNew = Math.acos(THREE.MathUtils.clamp(forward2.y, -1, 1));
+  const outOfLimits = (phiNew < ORBIT_MIN_PHI || phiNew > ORBIT_MAX_PHI);
+
+  // 6) Commit: rotaciona câmera, alvo e também o UP pelo mesmo quaternion
+  const used_vP = outOfLimits ? vP1 : vP2;
+  const used_vT = outOfLimits ? vT1 : vT2;
+  const used_up = outOfLimits ? upYaw : up2;
+
+  const Pnew = pivot.clone().add(used_vP);
+  const Tnew = pivot.clone().add(used_vT);
+
+  camera.position.copy(Pnew);
+  camera.up.copy(used_up.normalize());
+  State.orbitTarget.copy(Tnew);
+
+  // Atualiza esféricas do State (compatível com applyOrbitToCamera)
+  const rel = camera.position.clone().sub(State.orbitTarget);
+  const r = rel.length();
+  const ph = Math.acos(THREE.MathUtils.clamp(rel.y / r, -1, 1));
+  const th = Math.atan2(rel.z, rel.x);
 
   State.radius = THREE.MathUtils.clamp(r, ZOOM_MIN, ZOOM_MAX);
   State.theta = th;
   State.phi = THREE.MathUtils.clamp(ph, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
 
-  applyOrbitToCamera();
+  camera.lookAt(State.orbitTarget);
   render();
 }
 
@@ -369,6 +391,7 @@ function animatePan() {
   _pendingPan.dx -= applyDx;
   _pendingPan.dy -= applyDy;
 
+  // Pan proporcional à distância da câmera
   const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
   const dir = new THREE.Vector3();
   const right = new THREE.Vector3();
