@@ -17,8 +17,8 @@ export const INITIAL_THETA = Math.PI / 2; // 90° anti-horário
 export const INITIAL_PHI = 1.1;
 
 // Sensibilidades
-const ROT_SPEED_DESKTOP = 0.003;
-const ROT_SPEED_TOUCH = 0.003;
+const ROT_SPEED_DESKTOP = 0.006;
+const ROT_SPEED_TOUCH = 0.006;
 const PAN_FACTOR = 0.3;
 const ZOOM_STEP_FACTOR = 0.001;
 
@@ -353,5 +353,6 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   }
   _zoomAnim = requestAnimationFrame(stepZoom);
 }
+
 
 
