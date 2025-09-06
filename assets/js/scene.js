@@ -5,6 +5,11 @@
 import { State } from './state.js';
 // import { clamp } from './utils.js'; // (não usado)
 export let scene, renderer, camera;
+// Parâmetros do zoom
+const ZOOM_MIN = 4;
+const ZOOM_MAX = 400;
+let _zoom3dRAF = null;
+
 
 // Alvo do orbit (reutiliza State.orbitTarget)
 const ORBIT_MIN_PHI = 0.05;
@@ -286,11 +291,43 @@ export function panDelta(dx, dy){
   render();
 }
 
-// Aplica zoom relativo (delta de wheel)
-export function zoomDelta(sign){
+
+
+// Função de zoom suave (animado)
+export function zoomDelta(sign) {
+  const ZOOM_STEP_FACTOR = 0.13; // Ajuste a sensibilidade como preferir
   const step = Math.max(0.5, (State.radius || 20) * ZOOM_STEP_FACTOR);
-  State.radius += sign * step;
-  State.radius = Math.max(4, Math.min(400, State.radius));
-  applyOrbitToCamera();
-  render();
+  const targetRadius = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, State.radius + sign * step));
+
+  // Se já está em animação, cancela
+  if (_zoom3dRAF) {
+    cancelAnimationFrame(_zoom3dRAF);
+    _zoom3dRAF = null;
+  }
+
+  const from = State.radius;
+  const to = targetRadius;
+  if (Math.abs(to - from) < 1e-3) return;
+
+  const dur = 180; // duração em ms
+  const start = performance.now();
+  const ease = t => 1 - Math.pow(1 - t, 3);
+
+  function stepZoom(now) {
+    const k = Math.min(1, (now - start) / dur);
+    const e = ease(k);
+    State.radius = from + (to - from) * e;
+    applyOrbitToCamera();
+    render();
+    if (k < 1) {
+      _zoom3dRAF = requestAnimationFrame(stepZoom);
+    } else {
+      State.radius = to;
+      applyOrbitToCamera();
+      render();
+      _zoom3dRAF = null;
+    }
+  }
+  _zoom3dRAF = requestAnimationFrame(stepZoom);
 }
+
