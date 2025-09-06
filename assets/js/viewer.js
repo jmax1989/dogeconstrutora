@@ -92,13 +92,19 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
     render();
 
     // 11) Reaplica o offset vertical no resize mantendo enquadramento
-    window.addEventListener('resize', ()=> {
-      // Sem usar THREE aqui; o recenter calcula a bbox atual
-      recenterCamera({ verticalOffsetRatio: 0.12 });
-    }, { passive:true });
+let lastW = window.innerWidth;
+let lastH = window.innerHeight;
+window.addEventListener('resize', () => {
+  // Só recenter se a janela realmente mudou de tamanho
+  if (window.innerWidth !== lastW || window.innerHeight !== lastH) {
+    lastW = window.innerWidth;
+    lastH = window.innerHeight;
+    recenterCamera({ verticalOffsetRatio: 0.12 });
+  }
+}, { passive: true });
 
-    // 12) Input unificado (mouse + touch) – suave no mobile
-    wireUnifiedInput();
+// 12) Input unificado (mouse + touch) – suave no mobile
+wireUnifiedInput();
   } catch (err){
     console.error('[viewer] erro no boot:', err);
   }
@@ -281,3 +287,4 @@ function wireUnifiedInput(){
   // Botão direito = pan (somente mouse)
   cvs.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
 }
+
