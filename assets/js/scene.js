@@ -3,12 +3,10 @@
 // ============================
 
 import { State } from './state.js';
-// import { clamp } from './utils.js'; // (não usado)
 export let scene, renderer, camera;
 
-
 // Parâmetros do zoom
-const ZOOM_STEP_FACTOR = 0.13;   // pode ajustar para mais/menos sensível
+const ZOOM_STEP_FACTOR = 0.13;   // sensibilidade do zoom (ajuste se quiser)
 const ZOOM_MIN = 4;
 const ZOOM_MAX = 400;
 let _zoom3dRAF = null;
@@ -24,7 +22,6 @@ export const INITIAL_PHI   = 1.1;
 const ROT_SPEED_DESKTOP = 0.003;   // antes 0.005
 const ROT_SPEED_TOUCH   = 0.003;
 const PAN_FACTOR        = 0.3;     // pan mais solto
-const ZOOM_STEP_FACTOR  = 0.001;   // mantido
 
 // Canvas host
 function getAppEl(){
@@ -197,7 +194,6 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined){
   // Se vieram ângulos, aplicamos agora (clamped)
   if (typeof theta === 'number' && isFinite(theta)) State.theta = theta;
   if (typeof phi   === 'number' && isFinite(phi)) {
-    const ORBIT_MIN_PHI = 0.05, ORBIT_MAX_PHI = Math.PI - 0.05;
     State.phi = Math.max(ORBIT_MIN_PHI, Math.min(ORBIT_MAX_PHI, phi));
   }
 
@@ -241,7 +237,6 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined){
   };
   requestAnimationFrame(step);
 }
-
 
 export function resetRotation(){
   // mantém alvo e raio; só reseta ângulos
@@ -294,23 +289,16 @@ export function panDelta(dx, dy){
   render();
 }
 
-
-// ... código anterior ...
-
-
 // Função de zoom suave (animado)
 export function zoomDelta(sign) {
-  // Calcula novo raio desejado
   const step = Math.max(0.5, (State.radius || 20) * ZOOM_STEP_FACTOR);
   const targetRadius = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, State.radius + sign * step));
 
-  // Se já está em animação, cancela
   if (_zoom3dRAF) {
     cancelAnimationFrame(_zoom3dRAF);
     _zoom3dRAF = null;
   }
 
-  // Parâmetros para animação
   const from = State.radius;
   const to = targetRadius;
   if (Math.abs(to - from) < 1e-3) return;
@@ -319,7 +307,6 @@ export function zoomDelta(sign) {
   const start = performance.now();
   const ease = t => 1 - Math.pow(1 - t, 3);
 
-  // Animação frame-a-frame
   function stepZoom(now) {
     const k = Math.min(1, (now - start) / dur);
     const e = ease(k);
@@ -337,6 +324,3 @@ export function zoomDelta(sign) {
   }
   _zoom3dRAF = requestAnimationFrame(stepZoom);
 }
-
-// ... resto do código ...
-
