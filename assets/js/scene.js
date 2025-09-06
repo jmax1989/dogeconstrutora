@@ -6,6 +6,13 @@ import { State } from './state.js';
 // import { clamp } from './utils.js'; // (não usado)
 export let scene, renderer, camera;
 
+
+// Parâmetros do zoom
+const ZOOM_STEP_FACTOR = 0.13;   // pode ajustar para mais/menos sensível
+const ZOOM_MIN = 4;
+const ZOOM_MAX = 400;
+let _zoom3dRAF = null;
+
 let _zoomAnim = null; // animação de zoom em andamento (requestAnimationFrame id)
 // Alvo do orbit (reutiliza State.orbitTarget)
 const ORBIT_MIN_PHI = 0.05;
@@ -290,11 +297,6 @@ export function panDelta(dx, dy){
 
 // ... código anterior ...
 
-// Parâmetros do zoom
-const ZOOM_STEP_FACTOR = 0.13;   // pode ajustar para mais/menos sensível
-const ZOOM_MIN = 4;
-const ZOOM_MAX = 400;
-let _zoom3dRAF = null;
 
 // Função de zoom suave (animado)
 export function zoomDelta(sign) {
@@ -337,3 +339,4 @@ export function zoomDelta(sign) {
 }
 
 // ... resto do código ...
+
