@@ -95,7 +95,7 @@ export function initScene() {
   // Inicia handler de toque unificado (pan vs pinch)
   setupUnifiedTouchGestureHandler(cvs);
 
-  // === NOVO: Auto-fit no centro da Torre assim que ela existir ===
+  // Auto-fit no centro da Torre assim que ela existir
   startAutoFitOnce();
 
   return { scene, renderer, camera };
@@ -134,10 +134,11 @@ function findTorre() {
   return torre;
 }
 
-function computeCurrentBBox() {
-  const torre = findTorre();
-  if (!torre) return null;
-  const bb = new THREE.Box3().setFromObject(torre);
+// Aceita root opcional para forçar o cálculo do BBox a partir de um nó conhecido:
+function computeCurrentBBox(root = null) {
+  const targetRoot = root || findTorre();
+  if (!targetRoot) return null;
+  const bb = new THREE.Box3().setFromObject(targetRoot);
   if (!Number.isFinite(bb.min.x) || !Number.isFinite(bb.max.x)) return null;
   return bb;
 }
@@ -148,7 +149,7 @@ function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.18 }) {
   const w = Math.hypot(size.x, size.z);
 
   const vHalf = h * 0.5;
-  const hHalf = w * 0.5;
+  the const hHalf = w * 0.5;
 
   const distV = vHalf / Math.tan(vfovRad * 0.5);
   const hfovRad = 2 * Math.atan(Math.tan(vfovRad * 0.5) * aspect);
@@ -171,6 +172,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
 
   const {
     bbox = null,
+    root = null,                 // <— aceita root opcional
     verticalOffsetRatio = 0.10,
     target = null,
     dist = null,
@@ -181,7 +183,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
     dur = 280
   } = options;
 
-  const bb = bbox || computeCurrentBBox();
+  const bb = bbox || computeCurrentBBox(root);
   const size = bb ? bb.getSize(new THREE.Vector3()) : new THREE.Vector3(20, 20, 20);
   const ctr = bb ? bb.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
 
@@ -233,15 +235,14 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   requestAnimationFrame(step);
 }
 
-// ---------- NOVO: centralizar o alvo no centro do prédio ----------
+// ---------- Auto-fit inicial ----------
 function startAutoFitOnce() {
   if (_autoFitTimer) return;
 
   const t0 = performance.now();
   const tick = () => {
-    const bb = computeCurrentBBox();
+    const bb = computeCurrentBBox(); // tenta por nome "Torre"
     if (bb) {
-      // Só aplica se o alvo atual está “longe” do centro do prédio
       const center = bb.getCenter(new THREE.Vector3());
       const size = bb.getSize(new THREE.Vector3());
       const desired = new THREE.Vector3(center.x, center.y + size.y * 0.10, center.z);
@@ -249,7 +250,6 @@ function startAutoFitOnce() {
       ensureOrbitTargetVec3();
       const distToDesired = State.orbitTarget.distanceTo(desired);
 
-      // Considera diferença significativa > 1 unidade
       if (distToDesired > 1) {
         const vfovRad = (camera.fov || 50) * Math.PI / 180;
         const idealDist = fitDistanceToBBox(bb, { vfovRad, aspect: camera.aspect || 1, margin: 1.18 });
@@ -274,9 +274,9 @@ function startAutoFitOnce() {
   _autoFitTimer = setInterval(tick, AUTO_FIT_POLL_MS);
 }
 
-// Função utilitária pública caso queira forçar após montar a geometria
-export function syncOrbitTargetToModel({ animate = false } = {}) {
-  const bb = computeCurrentBBox();
+// Função utilitária pública: força centralização a partir de um root conhecido
+export function syncOrbitTargetToModel({ root = null, animate = false } = {}) {
+  const bb = computeCurrentBBox(root);
   if (!bb) return;
   recenterCamera({ bbox: bb, animate });
 }
