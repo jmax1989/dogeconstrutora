@@ -17,7 +17,7 @@ const ORBIT_MAX_PHI = Math.PI - 0.05;
 export const INITIAL_THETA = Math.PI / 2;
 export const INITIAL_PHI = 1.1;
 
-// Ajuste fino para suavidade e resposta natural
+// Ajuste fino
 const ROT_SPEED_DESKTOP = 0.004;
 const ROT_SPEED_TOUCH = 0.004;
 const PAN_FACTOR = 0.4;
@@ -29,10 +29,27 @@ const ZOOM_FACTOR_MAX = 2.0;
 const ZOOM_MIN = 4;
 const ZOOM_MAX = 400;
 
-// Auto-fit inicial (opcional)
+// Auto-fit inicial
 let _autoFitTimer = null;
 const AUTO_FIT_MAX_MS = 4000;
 const AUTO_FIT_POLL_MS = 120;
+
+// Pose inicial (“Home”) para o Reset
+const Home = {
+  has: false,
+  target: new THREE.Vector3(),
+  radius: 0,
+  theta: 0,
+  phi: 0
+};
+
+function saveHomeFromState() {
+  Home.has = true;
+  Home.target.copy(State.orbitTarget);
+  Home.radius = State.radius;
+  Home.theta = State.theta;
+  Home.phi = State.phi;
+}
 
 function getAppEl() {
   const el = document.getElementById('app');
@@ -91,7 +108,7 @@ export function initScene() {
   applyOrbitToCamera();
 
   setupUnifiedTouchGestureHandler(cvs);
-  startAutoFitOnce(); // apenas para a posição inicial (não interfere depois)
+  startAutoFitOnce(); // configura a pose inicial + salva Home
 
   return { scene, renderer, camera };
 }
@@ -178,6 +195,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   const {
     bbox = null,
     root = null,
+    // OBS: mantive default neutro aqui; o auto-fit usa valores específicos
     verticalOffsetRatio = 0.10,
     target = null,
     dist = null,
@@ -240,7 +258,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   requestAnimationFrame(step);
 }
 
-// ---------- Auto-fit inicial ----------
+// ---------- Auto-fit inicial (não recentra depois) ----------
 function startAutoFitOnce() {
   if (_autoFitTimer) return;
 
@@ -250,20 +268,27 @@ function startAutoFitOnce() {
     if (bb) {
       const center = bb.getCenter(new THREE.Vector3());
       const size = bb.getSize(new THREE.Vector3());
-      const desired = new THREE.Vector3(center.x, center.y + size.y * 0.10, center.z);
+
+      // ↓↓↓ Ajustes que evitam "cortar" o topo no load:
+      const verticalOffsetRatio = -0.06; // mira um pouco ABAIXO do centro => mais “céu” visível
+      const margin = 1.28;               // mais folga de enquadramento
+
+      const desired = new THREE.Vector3(center.x, center.y + size.y * verticalOffsetRatio, center.z);
 
       ensureOrbitTargetVec3();
-      const distToDesired = State.orbitTarget.distanceTo(desired);
 
-      if (distToDesired > 1) {
-        const vfovRad = (camera.fov || 50) * Math.PI / 180;
-        const idealDist = fitDistanceToBBox(bb, { vfovRad, aspect: camera.aspect || 1, margin: 1.18 });
+      const vfovRad = (camera.fov || 50) * Math.PI / 180;
+      const idealDist = fitDistanceToBBox(bb, { vfovRad, aspect: camera.aspect || 1, margin });
 
-        State.orbitTarget.copy(desired);
-        State.radius = idealDist;
-        applyOrbitToCamera();
-        render();
-      }
+      // Mantém seus theta/phi atuais; só ajusta alvo e raio
+      State.orbitTarget.copy(desired);
+      State.radius = idealDist;
+
+      applyOrbitToCamera();
+      render();
+
+      // Salva a pose “Home” para o Reset
+      saveHomeFromState();
 
       clearInterval(_autoFitTimer);
       _autoFitTimer = null;
@@ -279,19 +304,30 @@ function startAutoFitOnce() {
   _autoFitTimer = setInterval(tick, AUTO_FIT_POLL_MS);
 }
 
-// Força centralização a partir de um root conhecido
-export function syncOrbitTargetToModel({ root = null, animate = false } = {}) {
+// Permite centralizar a partir de um root conhecido (opcional)
+export function syncOrbitTargetToModel({ root = null, animate = false, saveAsHome = false } = {}) {
   const bb = computeCurrentBBox(root);
   if (!bb) return;
   recenterCamera({ bbox: bb, animate });
+  if (saveAsHome) saveHomeFromState();
 }
 
-// ------------- Reset Camera Rotation -------------
+// ------------- Reset View (volta exatamente ao Home) -------------
 export function resetRotation() {
-  State.theta = 0;
-  State.phi = Math.min(Math.max(1.1, ORBIT_MIN_PHI), ORBIT_MAX_PHI);
-  applyOrbitToCamera();
-  render();
+  if (Home.has) {
+    State.orbitTarget.copy(Home.target);
+    State.radius = Home.radius;
+    State.theta = Home.theta;
+    State.phi = Home.phi;
+    applyOrbitToCamera();
+    render();
+  } else {
+    // fallback clássico
+    State.theta = 0;
+    State.phi = Math.min(Math.max(1.1, ORBIT_MIN_PHI), ORBIT_MAX_PHI);
+    applyOrbitToCamera();
+    render();
+  }
 }
 
 // ------------- Render -------------
