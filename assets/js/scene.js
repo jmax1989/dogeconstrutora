@@ -315,7 +315,7 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
 
   if (_zoomAnim) { cancelAnimationFrame(_zoomAnim); _zoomAnim = null; }
 
-  const dur = isPinch ? 30 : 60;
+  const dur = isPinch ? 60 : 120;
   const t0 = performance.now();
   const ease = t => 1 - Math.pow(1 - t, 3);
 
@@ -378,6 +378,7 @@ function setupUnifiedTouchGestureHandler(canvas) {
     };
   }
 }
+
 
 
 
