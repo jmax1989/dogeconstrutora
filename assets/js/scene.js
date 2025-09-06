@@ -29,6 +29,11 @@ const ZOOM_FACTOR_MAX = 2.0;
 const ZOOM_MIN = 4;
 const ZOOM_MAX = 400;
 
+// Auto-fit
+let _autoFitTimer = null;
+const AUTO_FIT_MAX_MS = 4000;   // janela máxima para achar a Torre
+const AUTO_FIT_POLL_MS = 120;   // frequência de checagem
+
 function getAppEl() {
   const el = document.getElementById('app');
   if (!el) throw new Error('[scene] #app não encontrado');
@@ -84,10 +89,14 @@ export function initScene() {
   window.addEventListener('resize', onResize, { passive: true });
   onResize();
 
+  // Aplica posição inicial
   applyOrbitToCamera();
 
-  // Touch gesture handler: distingue pan vs pinch
+  // Inicia handler de toque unificado (pan vs pinch)
   setupUnifiedTouchGestureHandler(cvs);
+
+  // === NOVO: Auto-fit no centro da Torre assim que ela existir ===
+  startAutoFitOnce();
 
   return { scene, renderer, camera };
 }
@@ -119,9 +128,14 @@ export function applyOrbitToCamera() {
 }
 
 // -------- Bounding Box Utils --------
-function computeCurrentBBox() {
+function findTorre() {
   let torre = null;
   scene?.traverse(n => { if (!torre && n.name === 'Torre') torre = n; });
+  return torre;
+}
+
+function computeCurrentBBox() {
+  const torre = findTorre();
   if (!torre) return null;
   const bb = new THREE.Box3().setFromObject(torre);
   if (!Number.isFinite(bb.min.x) || !Number.isFinite(bb.max.x)) return null;
@@ -217,6 +231,54 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
     if (k < 1) requestAnimationFrame(step); else render();
   };
   requestAnimationFrame(step);
+}
+
+// ---------- NOVO: centralizar o alvo no centro do prédio ----------
+function startAutoFitOnce() {
+  if (_autoFitTimer) return;
+
+  const t0 = performance.now();
+  const tick = () => {
+    const bb = computeCurrentBBox();
+    if (bb) {
+      // Só aplica se o alvo atual está “longe” do centro do prédio
+      const center = bb.getCenter(new THREE.Vector3());
+      const size = bb.getSize(new THREE.Vector3());
+      const desired = new THREE.Vector3(center.x, center.y + size.y * 0.10, center.z);
+
+      ensureOrbitTargetVec3();
+      const distToDesired = State.orbitTarget.distanceTo(desired);
+
+      // Considera diferença significativa > 1 unidade
+      if (distToDesired > 1) {
+        const vfovRad = (camera.fov || 50) * Math.PI / 180;
+        const idealDist = fitDistanceToBBox(bb, { vfovRad, aspect: camera.aspect || 1, margin: 1.18 });
+
+        State.orbitTarget.copy(desired);
+        State.radius = idealDist;
+        applyOrbitToCamera();
+        render();
+      }
+
+      clearInterval(_autoFitTimer);
+      _autoFitTimer = null;
+      return;
+    }
+
+    if (performance.now() - t0 > AUTO_FIT_MAX_MS) {
+      clearInterval(_autoFitTimer);
+      _autoFitTimer = null;
+    }
+  };
+
+  _autoFitTimer = setInterval(tick, AUTO_FIT_POLL_MS);
+}
+
+// Função utilitária pública caso queira forçar após montar a geometria
+export function syncOrbitTargetToModel({ animate = false } = {}) {
+  const bb = computeCurrentBBox();
+  if (!bb) return;
+  recenterCamera({ bbox: bb, animate });
 }
 
 // ------------- Reset Camera Rotation -------------
@@ -351,7 +413,7 @@ function setupUnifiedTouchGestureHandler(canvas) {
       const centerDeltaX = now.centerX - lastTouches.centerX;
       const centerDeltaY = now.centerY - lastTouches.centerY;
 
-      // Critérios: se a variação de distância for maior que a de centro → pinch; caso contrário, pan
+      // Critério: se a variação de distância for maior que a de centro → pinch; caso contrário, pan
       if (Math.abs(distDelta) > Math.max(Math.abs(centerDeltaX), Math.abs(centerDeltaY))) {
         zoomDelta(distDelta / 120, true); // divisor ajusta sensibilidade do pinch
       } else {
@@ -378,8 +440,3 @@ function setupUnifiedTouchGestureHandler(canvas) {
     };
   }
 }
-
-
-
-
-
