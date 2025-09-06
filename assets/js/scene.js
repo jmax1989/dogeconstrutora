@@ -17,9 +17,17 @@ const ORBIT_MAX_PHI = Math.PI - 0.05;
 export const INITIAL_THETA = Math.PI / 2;
 export const INITIAL_PHI = 1.1;
 
-const ROT_SPEED_DESKTOP = 0.006;
-const ROT_SPEED_TOUCH = 0.006;
-const PAN_FACTOR = 1;
+// Ajuste fino para suavidade e resposta natural
+const ROT_SPEED_DESKTOP = 0.004; // valores moderados, naturais
+const ROT_SPEED_TOUCH = 0.004;
+const PAN_FACTOR = 0.4;           // pan proporcional à distância, mas não exagerado
+const PAN_SMOOTH = 0.22;          // suavidade: 0.18 a 0.25 é bom para continuidade
+const ZOOM_EXP_K_WHEEL = 0.27;    // wheel mais sutil
+const ZOOM_EXP_K_PINCH = 0.37;    // pinch mais forte, mas não irreal
+const ZOOM_FACTOR_MIN = 0.5;      // zoom máximo por gesto
+const ZOOM_FACTOR_MAX = 2.0;
+const ZOOM_MIN = 4;
+const ZOOM_MAX = 400;
 
 function getAppEl() {
   const el = document.getElementById('app');
@@ -245,14 +253,14 @@ export function panDelta(dx, dy) {
 
 function animatePan() {
   if (!_pendingPan) return;
-  const PAN_SMOOTH = 0.3;
   let { dx, dy } = _pendingPan;
   const applyDx = dx * PAN_SMOOTH;
   const applyDy = dy * PAN_SMOOTH;
   _pendingPan.dx -= applyDx;
   _pendingPan.dy -= applyDy;
 
-  const base = (State.radius || 20) * (0.01 * PAN_FACTOR);
+  // Pan proporcional à distância da câmera, mas moderado
+  const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
   const dir = new THREE.Vector3();
   const right = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
@@ -278,7 +286,6 @@ function animatePan() {
 // ========== ZOOM SUAVE ==========
 export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const ZOOM_MIN = 4, ZOOM_MAX = 400;
   const r0 = clamp(Number(State.radius) || 20, ZOOM_MIN, ZOOM_MAX);
 
   let factor = 1;
@@ -287,11 +294,12 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   } else {
     const delta = Number(deltaOrObj) || 0;
     if (delta === 0) return;
-    const k = isPinch ? 0.9 : 0.25; // ajuste o valor para pinch conforme preferir
+    const k = isPinch ? ZOOM_EXP_K_PINCH : ZOOM_EXP_K_WHEEL;
     factor = Math.exp(delta * k);
   }
 
-  factor = clamp(factor, 0.1, 8.0);
+  // clamp por gesto para evitar saltos grandes
+  factor = clamp(factor, ZOOM_FACTOR_MIN, ZOOM_FACTOR_MAX);
   const target = clamp(r0 * factor, ZOOM_MIN, ZOOM_MAX);
 
   if (Math.abs(target - r0) < 0.01) {
@@ -319,5 +327,3 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   }
   _zoomAnim = requestAnimationFrame(stepZoom);
 }
-
-
