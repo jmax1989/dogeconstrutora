@@ -196,7 +196,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
     bbox = null,
     root = null,
     // default neutro; o auto-fit usa valores próprios
-    verticalOffsetRatio = 0.10,
+    verticalOffsetRatio = 0.22,
     target = null,
     dist = null,
     theta = null,
@@ -534,3 +534,4 @@ function setupUnifiedTouchGestureHandler(canvas) {
     };
   }
 }
+
