@@ -18,13 +18,13 @@ export const INITIAL_THETA = Math.PI / 2;
 export const INITIAL_PHI = 1.1;
 
 // Ajuste fino para suavidade e resposta natural
-const ROT_SPEED_DESKTOP = 0.004; // valores moderados, naturais
+const ROT_SPEED_DESKTOP = 0.004;
 const ROT_SPEED_TOUCH = 0.004;
-const PAN_FACTOR = 0.4;           // pan proporcional à distância, mas não exagerado
-const PAN_SMOOTH = 0.22;          // suavidade: 0.18 a 0.25 é bom para continuidade
-const ZOOM_EXP_K_WHEEL = 0.27;    // wheel mais sutil
-const ZOOM_EXP_K_PINCH = 0.37;    // pinch mais forte, mas não irreal
-const ZOOM_FACTOR_MIN = 0.5;      // zoom máximo por gesto
+const PAN_FACTOR = 0.4;
+const PAN_SMOOTH = 0.22;
+const ZOOM_EXP_K_WHEEL = 0.27;
+const ZOOM_EXP_K_PINCH = 0.37;
+const ZOOM_FACTOR_MIN = 0.5;
 const ZOOM_FACTOR_MAX = 2.0;
 const ZOOM_MIN = 4;
 const ZOOM_MAX = 400;
@@ -85,6 +85,10 @@ export function initScene() {
   onResize();
 
   applyOrbitToCamera();
+
+  // Touch gesture handler: distingue pan vs pinch
+  setupUnifiedTouchGestureHandler(cvs);
+
   return { scene, renderer, camera };
 }
 
@@ -326,4 +330,51 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
     else _zoomAnim = null;
   }
   _zoomAnim = requestAnimationFrame(stepZoom);
+}
+
+// ========== TOQUE UNIFICADO: DISTINGUE PAN VS PINCH ==========
+function setupUnifiedTouchGestureHandler(canvas) {
+  let lastTouches = null;
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      lastTouches = getTouchesInfo(e.touches);
+    } else {
+      lastTouches = null;
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && lastTouches) {
+      const now = getTouchesInfo(e.touches);
+      const distDelta = now.dist - lastTouches.dist;
+      const centerDeltaX = now.centerX - lastTouches.centerX;
+      const centerDeltaY = now.centerY - lastTouches.centerY;
+
+      // Critérios: se a variação de distância for maior que a de centro → pinch; caso contrário, pan
+      if (Math.abs(distDelta) > Math.max(Math.abs(centerDeltaX), Math.abs(centerDeltaY))) {
+        zoomDelta(distDelta / 120, true); // divisor ajusta sensibilidade do pinch
+      } else {
+        panDelta(centerDeltaX, centerDeltaY);
+      }
+      lastTouches = now;
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) {
+      lastTouches = null;
+    }
+  }, { passive: false });
+
+  function getTouchesInfo(touches) {
+    const [a, b] = touches;
+    const dx = b.clientX - a.clientX, dy = b.clientY - a.clientY;
+    return {
+      dist: Math.hypot(dx, dy),
+      centerX: (a.clientX + b.clientX) / 2,
+      centerY: (a.clientY + b.clientY) / 2
+    };
+  }
 }
