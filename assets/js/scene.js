@@ -3,26 +3,24 @@
 // ============================
 
 import { State } from './state.js';
-// import { clamp } from './utils.js'; // (não usado)
+
 export let scene, renderer, camera;
 
-let _zoomAnim = null; // zoom animation frame id
-let _panAnim = null;  // pan animation frame id
-let _pendingPan = null; // {dx, dy}
+// IDs de animação
+let _zoomAnim = null;
+let _panAnim = null;
+let _pendingPan = null;
 
-// Alvo do orbit (reutiliza State.orbitTarget)
+// Parâmetros de controle
 const ORBIT_MIN_PHI = 0.05;
 const ORBIT_MAX_PHI = Math.PI - 0.05;
-export const INITIAL_THETA = Math.PI / 2; // 90° anti-horário
+export const INITIAL_THETA = Math.PI / 2;
 export const INITIAL_PHI = 1.1;
 
-// Sensibilidades
-const ROT_SPEED_DESKTOP = 0.006;
-const ROT_SPEED_TOUCH = 0.006;
+const ROT_SPEED_DESKTOP = 0.003;
+const ROT_SPEED_TOUCH = 0.003;
 const PAN_FACTOR = 0.3;
-const ZOOM_STEP_FACTOR = 0.001;
 
-// Canvas host
 function getAppEl() {
   const el = document.getElementById('app');
   if (!el) throw new Error('[scene] #app não encontrado');
@@ -37,7 +35,6 @@ function ensureOrbitTargetVec3() {
 }
 
 export function initScene() {
-  // Cena + câmera
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0f141b);
 
@@ -45,19 +42,17 @@ export function initScene() {
   camera.position.set(8, 8, 8);
   camera.up.set(0, 1, 0);
 
-  // Luzes mínimas
-  const amb = new THREE.AmbientLight(0xffffff, 0.75);
-  scene.add(amb);
+  // Luzes
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
   const dir = new THREE.DirectionalLight(0xffffff, 0.65);
   dir.position.set(8, 12, 6);
   scene.add(dir);
 
-  // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 
-  // Canvas: desabilita gestos do navegador (pinch-zoom, duplo toque, etc.)
+  // Canvas: desabilita gestos padrão do navegador
   const cvs = renderer.domElement;
   cvs.id = 'doge-canvas';
   Object.assign(cvs.style, {
@@ -71,23 +66,17 @@ export function initScene() {
     msTouchAction: 'none'
   });
 
-  // Defaults seguros antes de qualquer uso
   ensureOrbitTargetVec3();
-  if (!Number.isFinite(State.theta)) State.theta = Math.PI * 0.25; // ~45°
-  if (!Number.isFinite(State.phi)) State.phi = Math.PI * 0.35; // inclinação
-  if (!Number.isFinite(State.radius)) State.radius = 28; // distância
+  if (!Number.isFinite(State.theta)) State.theta = Math.PI * 0.25;
+  if (!Number.isFinite(State.phi)) State.phi = Math.PI * 0.35;
+  if (!Number.isFinite(State.radius)) State.radius = 28;
 
-  // Container
-  const app = getAppEl();
-  app.prepend(cvs); // canvas fica atrás do grid 2D
+  getAppEl().prepend(cvs);
 
-  // Redimensiona
   window.addEventListener('resize', onResize, { passive: true });
   onResize();
 
-  // Primeira aplicação de câmera a partir do estado
   applyOrbitToCamera();
-
   return { scene, renderer, camera };
 }
 
@@ -101,9 +90,6 @@ function onResize() {
   render();
 }
 
-// ----------------------------
-// Câmera orbital (usa State.*)
-// ----------------------------
 export function applyOrbitToCamera() {
   ensureOrbitTargetVec3();
 
@@ -120,7 +106,7 @@ export function applyOrbitToCamera() {
   camera.lookAt(target);
 }
 
-// ---- BBox atual da "Torre" (sem importar geometry p/ evitar ciclo) ----
+// -------- Bounding Box Utils --------
 function computeCurrentBBox() {
   let torre = null;
   scene?.traverse(n => { if (!torre && n.name === 'Torre') torre = n; });
@@ -129,6 +115,7 @@ function computeCurrentBBox() {
   if (!Number.isFinite(bb.min.x) || !Number.isFinite(bb.max.x)) return null;
   return bb;
 }
+
 function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.18 }) {
   const size = bb.getSize(new THREE.Vector3());
   const h = size.y;
@@ -144,8 +131,7 @@ function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.18 }) {
   return Math.max(distV, distH) * margin;
 }
 
-// ---------------------------------------------------------
-// Recenter (retrocompat):
+// ------------- Camera recentre (fit) -------------
 export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   let options = {};
   if (a && typeof a === 'object' && !('x' in a)) {
@@ -221,6 +207,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   requestAnimationFrame(step);
 }
 
+// ------------- Reset Camera Rotation -------------
 export function resetRotation() {
   State.theta = 0;
   State.phi = Math.min(Math.max(1.1, ORBIT_MIN_PHI), ORBIT_MAX_PHI);
@@ -228,21 +215,12 @@ export function resetRotation() {
   render();
 }
 
-// ----------------------------
-// Render
-// ----------------------------
+// ------------- Render -------------
 export function render() {
-  if (renderer && scene && camera) {
-    renderer.render(scene, camera);
-  }
+  if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// =====================================================
-// INPUT BASE (opcional)
-// =====================================================
-
 // ========== ROTATION ==========
-// Rotation já é suave pois depende do mousemove contínuo (sem animação extra)
 export function orbitDelta(dx, dy, isTouch = false) {
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
   State.theta += dx * ROT;
@@ -252,27 +230,22 @@ export function orbitDelta(dx, dy, isTouch = false) {
   render();
 }
 
-// ========== PAN (agora suavizado) ==========
+// ========== PAN SUAVE ==========
 export function panDelta(dx, dy) {
   ensureOrbitTargetVec3();
-
-  // Acumula pan pendente
   if (_pendingPan) {
     _pendingPan.dx += dx;
     _pendingPan.dy += dy;
     return;
   }
   _pendingPan = { dx, dy };
-
   if (_panAnim) cancelAnimationFrame(_panAnim);
   _panAnim = requestAnimationFrame(animatePan);
 }
 
 function animatePan() {
   if (!_pendingPan) return;
-
-  // Suavização: aplica apenas parte do delta por frame
-  const PAN_SMOOTH = 0.18; // 0.2 = mais lento, 1 = instantâneo
+  const PAN_SMOOTH = 0.18;
   let { dx, dy } = _pendingPan;
   const applyDx = dx * PAN_SMOOTH;
   const applyDy = dy * PAN_SMOOTH;
@@ -294,7 +267,6 @@ function animatePan() {
   applyOrbitToCamera();
   render();
 
-  // Se ainda resta delta significativo, continua animando
   if (Math.abs(_pendingPan.dx) > 0.2 || Math.abs(_pendingPan.dy) > 0.2) {
     _panAnim = requestAnimationFrame(animatePan);
   } else {
@@ -303,12 +275,7 @@ function animatePan() {
   }
 }
 
-// ========== ZOOM (totalmente suavizado) ==========
-
-// Zoom suave multiplicativo (estilo imagem).
-// Aceita dois formatos de chamada:
-//   - zoomDelta({ scale: <fator> })  -> 'scale' multiplicativo (>1=afasta, <1=aproxima)
-//   - zoomDelta(delta, isPinch=false)-> delta contínuo; converte para fator internamente
+// ========== ZOOM SUAVE ==========
 export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const ZOOM_MIN = 4, ZOOM_MAX = 400;
@@ -320,12 +287,11 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   } else {
     const delta = Number(deltaOrObj) || 0;
     if (delta === 0) return;
-    const k = isPinch ? 0.5 : 0.25;
+    const k = isPinch ? 0.7 : 0.25; // ajuste o valor para pinch conforme preferir
     factor = Math.exp(delta * k);
   }
 
   factor = clamp(factor, 0.5, 2.0);
-
   const target = clamp(r0 * factor, ZOOM_MIN, ZOOM_MAX);
 
   if (Math.abs(target - r0) < 0.01) {
@@ -337,7 +303,7 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
 
   if (_zoomAnim) { cancelAnimationFrame(_zoomAnim); _zoomAnim = null; }
 
-  const dur = isPinch ? 60 : 120; // um pouco mais longo para suavidade
+  const dur = isPinch ? 90 : 120;
   const t0 = performance.now();
   const ease = t => 1 - Math.pow(1 - t, 3);
 
@@ -353,6 +319,3 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   }
   _zoomAnim = requestAnimationFrame(stepZoom);
 }
-
-
-
