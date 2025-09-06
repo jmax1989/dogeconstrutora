@@ -195,7 +195,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   const {
     bbox = null,
     root = null,
-    // OBS: mantive default neutro aqui; o auto-fit usa valores específicos
+    // default neutro; o auto-fit usa valores próprios
     verticalOffsetRatio = 0.10,
     target = null,
     dist = null,
@@ -258,7 +258,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   requestAnimationFrame(step);
 }
 
-// ---------- Auto-fit inicial (não recentra depois) ----------
+// ---------- Auto-fit inicial (define Home e evita topo cortado) ----------
 function startAutoFitOnce() {
   if (_autoFitTimer) return;
 
@@ -269,9 +269,9 @@ function startAutoFitOnce() {
       const center = bb.getCenter(new THREE.Vector3());
       const size = bb.getSize(new THREE.Vector3());
 
-      // ↓↓↓ Ajustes que evitam "cortar" o topo no load:
-      const verticalOffsetRatio = -0.06; // mira um pouco ABAIXO do centro => mais “céu” visível
-      const margin = 1.28;               // mais folga de enquadramento
+      // Ajustes para não cortar o topo:
+      const verticalOffsetRatio = -0.18; // mira mais ABAIXO do centro
+      const margin = 1.42;               // mais folga
 
       const desired = new THREE.Vector3(center.x, center.y + size.y * verticalOffsetRatio, center.z);
 
@@ -280,7 +280,7 @@ function startAutoFitOnce() {
       const vfovRad = (camera.fov || 50) * Math.PI / 180;
       const idealDist = fitDistanceToBBox(bb, { vfovRad, aspect: camera.aspect || 1, margin });
 
-      // Mantém seus theta/phi atuais; só ajusta alvo e raio
+      // Mantém theta/phi atuais; ajusta alvo e raio
       State.orbitTarget.copy(desired);
       State.radius = idealDist;
 
@@ -322,7 +322,7 @@ export function resetRotation() {
     applyOrbitToCamera();
     render();
   } else {
-    // fallback clássico
+    // fallback
     State.theta = 0;
     State.phi = Math.min(Math.max(1.1, ORBIT_MIN_PHI), ORBIT_MAX_PHI);
     applyOrbitToCamera();
@@ -354,12 +354,12 @@ export function orbitDelta(dx, dy, isTouch = false) {
   const vT = T.sub(pivot);
 
   // 3) Base atual (forward/right/up) re-ortonormalizada
-  const forward0 = vT.clone().sub(vP).normalize();                  // direção de visão
+  const forward0 = vT.clone().sub(vP).normalize();
   let right0 = new THREE.Vector3().crossVectors(forward0, up0).normalize();
   if (!Number.isFinite(right0.x) || right0.lengthSq() === 0) right0.set(1, 0, 0);
   const up1 = new THREE.Vector3().crossVectors(right0, forward0).normalize();
 
-  // 4) Yaw em Y global, depois Pitch no eixo right já "yawado"
+  // 4) Yaw global + Pitch no eixo right yawado
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
 
   const vP1 = vP.clone().applyQuaternion(qYaw);
@@ -370,17 +370,14 @@ export function orbitDelta(dx, dy, isTouch = false) {
 
   const qPitch = new THREE.Quaternion().setFromAxisAngle(right1, pitch);
 
-  // Candidatos com pitch
   const vP2 = vP1.clone().applyQuaternion(qPitch);
   const vT2 = vT1.clone().applyQuaternion(qPitch);
   const forward2 = forward1.clone().applyQuaternion(qPitch);
   const up2 = upYaw.clone().applyQuaternion(qPitch);
 
-  // 5) Clamp de phi usando a direção de visão final (forward2)
   const phiNew = Math.acos(THREE.MathUtils.clamp(forward2.y, -1, 1));
   const outOfLimits = (phiNew < ORBIT_MIN_PHI || phiNew > ORBIT_MAX_PHI);
 
-  // 6) Commit: rotaciona câmera, alvo e também o UP pelo mesmo quaternion
   const used_vP = outOfLimits ? vP1 : vP2;
   const used_vT = outOfLimits ? vT1 : vT2;
   const used_up = outOfLimits ? upYaw : up2;
@@ -392,7 +389,7 @@ export function orbitDelta(dx, dy, isTouch = false) {
   camera.up.copy(used_up.normalize());
   State.orbitTarget.copy(Tnew);
 
-  // Atualiza esféricas do State (compatível com applyOrbitToCamera)
+  // Atualiza esféricas
   const rel = camera.position.clone().sub(State.orbitTarget);
   const r = rel.length();
   const ph = Math.acos(THREE.MathUtils.clamp(rel.y / r, -1, 1));
@@ -406,7 +403,7 @@ export function orbitDelta(dx, dy, isTouch = false) {
   render();
 }
 
-// ========== PAN SUAVE ==========
+// ========== PAN SUAVE (em eixos de TELA; nunca inverte) ==========
 export function panDelta(dx, dy) {
   ensureOrbitTargetVec3();
   if (_pendingPan) {
@@ -427,18 +424,15 @@ function animatePan() {
   _pendingPan.dx -= applyDx;
   _pendingPan.dy -= applyDy;
 
-  // Pan proporcional à distância da câmera
+  // Pan em espaço de TELA: usa eixos locais da câmera (colunas 0 e 1 da matrixWorld)
   const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
-  const dir = new THREE.Vector3();
-  const right = new THREE.Vector3();
-  const up = new THREE.Vector3(0, 1, 0);
 
-  camera.getWorldDirection(dir);
-  right.crossVectors(dir, up).normalize();
-  const camUp = camera.up.clone().normalize();
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera
+  const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera
 
+  // Arrasto na tela: direita -> +right; baixo -> -upScreen
   State.orbitTarget.addScaledVector(right, -applyDx * base);
-  State.orbitTarget.addScaledVector(camUp, applyDy * base);
+  State.orbitTarget.addScaledVector(upScreen, applyDy * base);
 
   applyOrbitToCamera();
   render();
