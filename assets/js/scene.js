@@ -320,7 +320,7 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   } else {
     const delta = Number(deltaOrObj) || 0;
     if (delta === 0) return;
-    const k = isPinch ? 0.35 : 0.25;
+    const k = isPinch ? 0.6 : 0.25;
     factor = Math.exp(delta * k);
   }
 
@@ -353,3 +353,4 @@ export function zoomDelta(deltaOrObj = 0, isPinch = false) {
   }
   _zoomAnim = requestAnimationFrame(stepZoom);
 }
+
