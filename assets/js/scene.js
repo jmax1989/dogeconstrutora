@@ -10,6 +10,7 @@ export let scene, renderer, camera;
 let _zoomAnim = null;
 let _panAnim = null;
 let _pendingPan = null;
+let _isPanningAnimating = false; // << controla quando estamos em pan animado
 
 // Parâmetros de controle
 const ORBIT_MIN_PHI = 0.05;
@@ -28,6 +29,9 @@ const ZOOM_FACTOR_MIN = 0.5;
 const ZOOM_FACTOR_MAX = 2.0;
 const ZOOM_MIN = 4;
 const ZOOM_MAX = 400;
+
+// Seguir sempre o centro do modelo (salva sua sanidade ao rotacionar)
+const FOLLOW_MODEL_CENTER = true;
 
 // Auto-fit
 let _autoFitTimer = null;
@@ -92,10 +96,10 @@ export function initScene() {
   // Aplica posição inicial
   applyOrbitToCamera();
 
-  // Inicia handler de toque unificado (pan vs pinch)
+  // Touch handler (pan vs pinch)
   setupUnifiedTouchGestureHandler(cvs);
 
-  // Auto-fit no centro da Torre assim que ela existir
+  // Auto-fit no centro assim que a geometria existir
   startAutoFitOnce();
 
   return { scene, renderer, camera };
@@ -114,6 +118,16 @@ function onResize() {
 export function applyOrbitToCamera() {
   ensureOrbitTargetVec3();
 
+  // Se ativado, sempre mira no centro do modelo (exceto quando está panning)
+  if (FOLLOW_MODEL_CENTER && !_isPanningAnimating) {
+    const bb = computeCurrentBBox(); // independe de nome; se quiser pode nomear 'Torre'
+    if (bb) {
+      const center = bb.getCenter(new THREE.Vector3());
+      const size = bb.getSize(new THREE.Vector3());
+      State.orbitTarget.set(center.x, center.y + size.y * 0.10, center.z);
+    }
+  }
+
   const r = Math.max(0.1, Number(State.radius) || 20);
   const th = Number.isFinite(State.theta) ? State.theta : 0;
   const ph = Math.max(ORBIT_MIN_PHI, Math.min(ORBIT_MAX_PHI, Number(State.phi) || 1.1));
@@ -128,19 +142,30 @@ export function applyOrbitToCamera() {
 }
 
 // -------- Bounding Box Utils --------
-function findTorre() {
-  let torre = null;
-  scene?.traverse(n => { if (!torre && n.name === 'Torre') torre = n; });
-  return torre;
-}
-
-// Aceita root opcional para forçar o cálculo do BBox a partir de um nó conhecido:
 function computeCurrentBBox(root = null) {
-  const targetRoot = root || findTorre();
+  const targetRoot = root || scene;
   if (!targetRoot) return null;
-  const bb = new THREE.Box3().setFromObject(targetRoot);
-  if (!Number.isFinite(bb.min.x) || !Number.isFinite(bb.max.x)) return null;
-  return bb;
+
+  // Monta um Box3 de tudo que for visível e com geometria
+  const box = new THREE.Box3();
+  let has = false;
+
+  targetRoot.traverse((obj) => {
+    if (!obj.visible) return;
+    if (obj.isMesh && obj.geometry) {
+      const geomBox = new THREE.Box3().setFromObject(obj);
+      if (
+        Number.isFinite(geomBox.min.x) && Number.isFinite(geomBox.max.x) &&
+        Number.isFinite(geomBox.min.y) && Number.isFinite(geomBox.max.y) &&
+        Number.isFinite(geomBox.min.z) && Number.isFinite(geomBox.max.z)
+      ) {
+        box.union(geomBox);
+        has = true;
+      }
+    }
+  });
+
+  return has ? box : null;
 }
 
 function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.18 }) {
@@ -149,7 +174,7 @@ function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.18 }) {
   const w = Math.hypot(size.x, size.z);
 
   const vHalf = h * 0.5;
-  the const hHalf = w * 0.5;
+  const hHalf = w * 0.5;
 
   const distV = vHalf / Math.tan(vfovRad * 0.5);
   const hfovRad = 2 * Math.atan(Math.tan(vfovRad * 0.5) * aspect);
@@ -172,7 +197,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
 
   const {
     bbox = null,
-    root = null,                 // <— aceita root opcional
+    root = null,
     verticalOffsetRatio = 0.10,
     target = null,
     dist = null,
@@ -241,7 +266,7 @@ function startAutoFitOnce() {
 
   const t0 = performance.now();
   const tick = () => {
-    const bb = computeCurrentBBox(); // tenta por nome "Torre"
+    const bb = computeCurrentBBox();
     if (bb) {
       const center = bb.getCenter(new THREE.Vector3());
       const size = bb.getSize(new THREE.Vector3());
@@ -274,7 +299,7 @@ function startAutoFitOnce() {
   _autoFitTimer = setInterval(tick, AUTO_FIT_POLL_MS);
 }
 
-// Função utilitária pública: força centralização a partir de um root conhecido
+// Força centralização a partir de um root conhecido
 export function syncOrbitTargetToModel({ root = null, animate = false } = {}) {
   const bb = computeCurrentBBox(root);
   if (!bb) return;
@@ -314,6 +339,7 @@ export function panDelta(dx, dy) {
   }
   _pendingPan = { dx, dy };
   if (_panAnim) cancelAnimationFrame(_panAnim);
+  _isPanningAnimating = true; // << começa pan
   _panAnim = requestAnimationFrame(animatePan);
 }
 
@@ -346,6 +372,7 @@ function animatePan() {
   } else {
     _pendingPan = null;
     _panAnim = null;
+    _isPanningAnimating = false; // << terminou pan; volta a seguir o centro
   }
 }
 
