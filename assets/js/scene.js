@@ -14,12 +14,12 @@ let _pendingPan = null;
 // Parâmetros de controle
 const ORBIT_MIN_PHI = 0.05;
 const ORBIT_MAX_PHI = Math.PI - 0.05;
-export const INITIAL_THETA = Math.PI * 0.25;
-export const INITIAL_PHI = Math.PI * 0.35;
+export const INITIAL_THETA = Math.PI * 0.25; // pose "em pé"
+export const INITIAL_PHI   = Math.PI * 0.35; // pose "em pé"
 
 // Ajustes finos
-const ROT_SPEED_DESKTOP = 0.004;
-const ROT_SPEED_TOUCH = 0.004;
+const ROT_SPEED_DESKTOP = 0.0042; // levemente maior p/ arcball ficar “na mão”
+const ROT_SPEED_TOUCH   = 0.0042;
 const PAN_FACTOR = 0.4;
 const PAN_SMOOTH = 0.22;
 const ZOOM_EXP_K_WHEEL = 0.27;
@@ -37,7 +37,7 @@ const AUTO_FIT_POLL_MS = 120;
 // Pivô fixo do modelo (centro do BBox), calculado 1x
 let _modelPivot = null;
 
-// Margem mínima “à prova de corte” (mesmo se chamarem recenterCamera com menos)
+// Margem mínima “à prova de corte”
 const SAFE_MIN_MARGIN = 1.5;
 
 // Pose inicial (“Home”) para Reset
@@ -103,7 +103,7 @@ export function initScene() {
 
   ensureOrbitTargetVec3();
   if (!Number.isFinite(State.theta)) State.theta = INITIAL_THETA;
-  if (!Number.isFinite(State.phi)) State.phi = INITIAL_PHI;
+  if (!Number.isFinite(State.phi))   State.phi   = INITIAL_PHI;
   if (!Number.isFinite(State.radius)) State.radius = 28;
 
   getAppEl().prepend(cvs);
@@ -132,9 +132,9 @@ function onResize() {
 export function applyOrbitToCamera() {
   ensureOrbitTargetVec3();
 
-  const r = THREE.MathUtils.clamp(Number(State.radius) || 20, ZOOM_MIN, ZOOM_MAX);
+  const r  = THREE.MathUtils.clamp(Number(State.radius) || 20, ZOOM_MIN, ZOOM_MAX);
   const th = Number.isFinite(State.theta) ? State.theta : 0;
-  const ph = THREE.MathUtils.clamp(Number(State.phi) || INITIAL_PHI, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
+  const ph = THREE.MathUtils.clamp(Number(State.phi)   || INITIAL_PHI, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
 
   const target = State.orbitTarget;
   const x = target.x + r * Math.sin(ph) * Math.cos(th);
@@ -142,7 +142,6 @@ export function applyOrbitToCamera() {
   const z = target.z + r * Math.sin(ph) * Math.sin(th);
 
   camera.position.set(x, y, z);
-  camera.up.set(0, 1, 0); // evita “roll” residual
   camera.lookAt(target);
 }
 
@@ -172,14 +171,12 @@ function computeCurrentBBox(root = null) {
   return has ? box : null;
 }
 
-// Distância para caber 100% (pior caso V/H) + margem
-// Agora considera verticalOffsetRatio: vHalf = h/2 + |offset|
+// Distância para caber 100% (pior caso V/H) + margem, considerando offsets
 function fitDistanceToBBox(bb, { vfovRad, aspect, margin = 1.6, verticalOffsetRatio = 0 }) {
   const size = bb.getSize(new THREE.Vector3());
   const h = size.y;
   const w = Math.hypot(size.x, size.z);
 
-  // metade vertical “efetiva”: garante topo/rodapé mesmo com offset do alvo
   const vHalf = (h * 0.5) + Math.abs(h * verticalOffsetRatio);
   const hHalf = w * 0.5;
 
@@ -205,12 +202,12 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   const {
     bbox = null,
     root = null,
-    verticalOffsetRatio = 0.0, // alvo no centro do BBox
+    verticalOffsetRatio = 0.0,
     target = null,
     dist = null,
     theta = null,
     phi = null,
-    margin = SAFE_MIN_MARGIN, // aplica mínimo seguro
+    margin = SAFE_MIN_MARGIN,
     animate = false,
     dur = 280,
     forceUpright = true
@@ -218,7 +215,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
 
   const bb = bbox || computeCurrentBBox(root);
   const size = bb ? bb.getSize(new THREE.Vector3()) : new THREE.Vector3(20, 20, 20);
-  const ctr = bb ? bb.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
+  const ctr  = bb ? bb.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
 
   const cy = ctr.y + (size.y * verticalOffsetRatio);
 
@@ -230,7 +227,7 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   const finalDist = (typeof dist === 'number' && isFinite(dist)) ? dist : idealDist;
 
   if (typeof theta === 'number' && isFinite(theta)) State.theta = theta;
-  if (typeof phi === 'number' && isFinite(phi)) State.phi = THREE.MathUtils.clamp(phi, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
+  if (typeof phi   === 'number' && isFinite(phi))   State.phi   = THREE.MathUtils.clamp(phi, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
   if (target && typeof target === 'object' && 'x' in target) ctr.copy(target);
 
   ensureOrbitTargetVec3();
@@ -249,9 +246,9 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
   }
 
   const fromTarget = State.orbitTarget.clone();
-  const toTarget = new THREE.Vector3(ctr.x, cy, ctr.z);
+  const toTarget   = new THREE.Vector3(ctr.x, cy, ctr.z);
   const rFrom = Number(State.radius || 20);
-  const rTo = finalDist;
+  const rTo   = finalDist;
 
   const start = performance.now();
   const ease = (t) => 1 - Math.pow(1 - t, 3);
@@ -286,7 +283,7 @@ function startAutoFitOnce() {
 
       camera.up.set(0, 1, 0);
       State.theta = INITIAL_THETA;
-      State.phi = THREE.MathUtils.clamp(INITIAL_PHI, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
+      State.phi   = THREE.MathUtils.clamp(INITIAL_PHI, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
       State.orbitTarget.copy(_modelPivot);
 
       const vfovRad = (camera.fov || 50) * Math.PI / 180;
@@ -318,7 +315,7 @@ export function refreshModelPivotAndFit({ animate = false } = {}) {
   recenterCamera({ bbox: bb, animate, margin: 1.6, verticalOffsetRatio: 0, forceUpright: true });
 }
 
-// Mantém compatibilidade: centraliza e re-salva o pivô/target
+// Compat: centraliza e (opcional) salva como Home
 export function syncOrbitTargetToModel({ root = null, animate = false, saveAsHome = false } = {}) {
   const bb = computeCurrentBBox(root);
   if (!bb) return;
@@ -337,13 +334,12 @@ export function resetRotation() {
   if (Home.has) {
     State.orbitTarget.copy(Home.target);
     State.radius = Home.radius;
-    State.theta = Home.theta;
-    State.phi = Home.phi;
+    State.theta  = Home.theta;
+    State.phi    = Home.phi;
     camera.up.set(0, 1, 0);
     applyOrbitToCamera();
     render();
   } else {
-    // fallback: tenta centralizar
     const bb = computeCurrentBBox();
     if (bb) {
       _modelPivot = bb.getCenter(new THREE.Vector3());
@@ -351,7 +347,7 @@ export function resetRotation() {
       saveHomeFromState();
     } else {
       State.theta = INITIAL_THETA;
-      State.phi = THREE.MathUtils.clamp(INITIAL_PHI, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
+      State.phi   = THREE.MathUtils.clamp(INITIAL_PHI, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
       camera.up.set(0, 1, 0);
       applyOrbitToCamera();
       render();
@@ -364,99 +360,50 @@ export function render() {
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// === Util: pan instantâneo em eixos de tela (para compensar drift de rotação)
-function panInstantScreen(dx, dy) {
-  const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-  const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-  State.orbitTarget.addScaledVector(right, -dx * base);
-  State.orbitTarget.addScaledVector(upScreen, dy * base);
-}
-
-// === Util: projeta ponto do mundo para coordenadas de tela (px)
-function worldToScreen(vec3) {
-  const v = vec3.clone().project(camera);
-  const w = renderer.domElement.width || renderer.getSize(new THREE.Vector2()).width;
-  const h = renderer.domElement.height || renderer.getSize(new THREE.Vector2()).height;
-  return new THREE.Vector2((v.x * 0.5 + 0.5) * w, ( -v.y * 0.5 + 0.5) * h);
-}
-
-// ========== ROTATION (arcball em torno do pivô + compensação em tela) ==========
+// ========== ARCball / Trackball ==========
 export function orbitDelta(dx, dy, isTouch = false) {
+  // Trackball: gesto 2D -> eixo 3D em espaço de TELA (right/upScreen)
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
-  // Yaw no mesmo sentido do arrasto
-  const yaw = -dx * ROT;
-  const pitch = -dy * ROT;
 
+  // Se não há pivô calculado ainda, usa o alvo atual
   const pivot = _modelPivot ? _modelPivot : State.orbitTarget.clone();
 
-  // Posição de tela do pivô ANTES (para compensar drift)
-  const scrBefore = worldToScreen(pivot);
+  // Base de tela da câmera
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera
+  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera
 
-  // Vetores relativos ao pivô
-  const P = camera.position.clone();
-  const T = State.orbitTarget.clone();
-  const up0 = camera.up.clone();
+  // Eixo de rotação segue o gesto: subir (dy<0) gira em torno de +right; arrastar p/ dir (dx>0) gira em torno de -upScr
+  const axis = new THREE.Vector3()
+    .addScaledVector(right,  dy)
+    .addScaledVector(upScr, -dx);
 
-  const vP = P.sub(pivot);
-  const vT = T.sub(pivot);
+  const axisLen = axis.length();
+  if (axisLen < 1e-6) return;
+  axis.divideScalar(axisLen);
 
-  // Base atual
-  const forward0 = vT.clone().sub(vP).normalize();
-  let right0 = new THREE.Vector3().crossVectors(forward0, up0).normalize();
-  if (!Number.isFinite(right0.x) || right0.lengthSq() === 0) right0.set(1, 0, 0);
-  const up1 = new THREE.Vector3().crossVectors(right0, forward0).normalize();
+  // Ângulo proporcional ao comprimento do gesto (pequenos passos = suave)
+  const angle = ROT * Math.hypot(dx, dy);
 
-  // Yaw (Y global) + Pitch (no right já yawado)
-  const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
-  const vP1 = vP.clone().applyQuaternion(qYaw);
-  const vT1 = vT.clone().applyQuaternion(qYaw);
-  const right1 = right0.clone().applyQuaternion(qYaw);
-  const upYaw = up1.clone().applyQuaternion(qYaw);
+  // Quaternion de rotação
+  const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
 
-  const qPitch = new THREE.Quaternion().setFromAxisAngle(right1, pitch);
-  const qTotal = new THREE.Quaternion().multiplyQuaternions(qPitch, qYaw);
+  // Rotaciona câmera, alvo e up em torno do pivô (arcball real)
+  const posRel = camera.position.clone().sub(pivot).applyQuaternion(q);
+  const tgtRel = State.orbitTarget.clone().sub(pivot).applyQuaternion(q);
 
-  // Candidatos com yaw+pitch aplicados também no alvo (arcball real)
-  const vP2 = vP.clone().applyQuaternion(qTotal);
-  const vT2 = vT.clone().applyQuaternion(qTotal);
-  const up2 = up0.clone().applyQuaternion(qTotal);
+  camera.position.copy(pivot.clone().add(posRel));
+  State.orbitTarget.copy(pivot.clone().add(tgtRel));
+  camera.up.applyQuaternion(q).normalize();
 
-  // Clamp de phi
-  const rel2 = vP2.clone().sub(vT2);
-  const r2 = rel2.length();
-  const ph2 = Math.acos(THREE.MathUtils.clamp(rel2.y / r2, -1, 1));
-  const pitchOk = (ph2 >= ORBIT_MIN_PHI && ph2 <= ORBIT_MAX_PHI);
-
-  // Commit (ignora pitch se estourar)
-  const used_vP = pitchOk ? vP2 : vP1;
-  const used_vT = pitchOk ? vT2 : vT1;
-  const used_up = pitchOk ? up2 : upYaw;
-
-  const Pnew = pivot.clone().add(used_vP);
-  const Tnew = pivot.clone().add(used_vT);
-
-  camera.position.copy(Pnew);
-  camera.up.copy(used_up.normalize());
-  State.orbitTarget.copy(Tnew);
-
-  // Atualiza esféricas
+  // Atualiza esféricas (mantém compatibilidade com applyOrbitToCamera)
   const rel = camera.position.clone().sub(State.orbitTarget);
-  const r = rel.length();
-  const ph = Math.acos(THREE.MathUtils.clamp(rel.y / r, -1, 1));
-  const th = Math.atan2(rel.z, rel.x);
+  const r   = rel.length();
+  const ph  = Math.acos(THREE.MathUtils.clamp(rel.y / r, -1, 1));
+  const th  = Math.atan2(rel.z, rel.x);
 
   State.radius = THREE.MathUtils.clamp(r, ZOOM_MIN, ZOOM_MAX);
-  State.theta = th;
-  State.phi = THREE.MathUtils.clamp(ph, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
-
-  // Compensação de drift em tela: mantém o pivô no mesmo pixel
-  const scrAfter = worldToScreen(pivot);
-  const dScreenX = scrAfter.x - scrBefore.x;
-  const dScreenY = scrAfter.y - scrBefore.y;
-  if (Math.abs(dScreenX) > 0.01 || Math.abs(dScreenY) > 0.01) {
-    panInstantScreen(dScreenX, dScreenY);
-  }
+  State.theta  = th;
+  State.phi    = THREE.MathUtils.clamp(ph, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
 
   camera.lookAt(State.orbitTarget);
   render();
@@ -485,10 +432,11 @@ function animatePan() {
 
   const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
 
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera
-  const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera
+  // Eixos de tela (X e Y da câmera no mundo)
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+  const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
 
-  // Arrasto na tela: direita -> +right; baixo -> -upScreen
+  // Arrasto: direita => +right, baixo => -upScreen
   State.orbitTarget.addScaledVector(right, -applyDx * base);
   State.orbitTarget.addScaledVector(upScreen, applyDy * base);
 
