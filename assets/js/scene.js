@@ -20,8 +20,8 @@ export const INITIAL_PHI   = Math.PI * 0.35; // pose "em pé"
 // Ajustes finos
 const ROT_SPEED_DESKTOP = 0.0042;
 const ROT_SPEED_TOUCH   = 0.0042;
-const PAN_FACTOR = 0.4;
-const PAN_SMOOTH = 0.22;
+const PAN_FACTOR = 0.25;
+const PAN_SMOOTH = 0.28;
 const ZOOM_EXP_K_WHEEL = 0.27;
 const ZOOM_EXP_K_PINCH = 2;
 const ZOOM_FACTOR_MIN = 0.5;
@@ -449,7 +449,7 @@ function animatePan() {
   _pendingPan.dx -= applyDx;
   _pendingPan.dy -= applyDy;
 
-  const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
+  const base = (State.radius || 20) * (0.0028 * PAN_FACTOR);
 
   const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
   const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
@@ -558,3 +558,4 @@ function setupUnifiedTouchGestureHandler(canvas) {
     };
   }
 }
+
