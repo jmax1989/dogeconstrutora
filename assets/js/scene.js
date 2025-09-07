@@ -310,6 +310,24 @@ export function refreshModelPivotAndFit({ animate = false } = {}) {
   recenterCamera({ bbox: bb, animate, margin: 1.6 });
 }
 
+// Mantém compatibilidade: centraliza e re-salva o pivô/target
+export function syncOrbitTargetToModel({ root = null, animate = false, saveAsHome = false } = {}) {
+  const bb = computeCurrentBBox(root);
+  if (!bb) return;
+
+  // Atualiza pivô fixo do modelo
+  _modelPivot = bb.getCenter(new THREE.Vector3());
+
+  // Recentraliza câmera para esse BBox
+  recenterCamera({ bbox: bb, animate, margin: 1.6 });
+
+  // Opcional: salvar como Home
+  if (saveAsHome) {
+    camera.up.set(0, 1, 0);
+    saveHomeFromState();
+  }
+}
+
 // ------------- Reset (volta ao Home “em pé”) -------------
 export function resetRotation() {
   if (Home.has) {
@@ -369,7 +387,7 @@ export function orbitDelta(dx, dy, isTouch = false) {
   const qPitch = new THREE.Quaternion().setFromAxisAngle(right1, pitch);
   const qTotal = new THREE.Quaternion().multiplyQuaternions(qPitch, qYaw);
 
-  // Candidatos aplicando yaw+pitch em TAMBÉM no alvo (arcball real)
+  // Candidatos aplicando yaw+pitch TAMBÉM no alvo (arcball real em torno do pivô)
   const vP2 = vP.clone().applyQuaternion(qTotal);
   const vT2 = vT.clone().applyQuaternion(qTotal);
   const up2 = up0.clone().applyQuaternion(qTotal);
