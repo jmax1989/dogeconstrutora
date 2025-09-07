@@ -16,7 +16,7 @@ import {
   recenterCamera,
   INITIAL_THETA,
   INITIAL_PHI,
-  refreshModelPivotAndFit // <- para hookar também
+  refreshModelPivotAndFit   // <- adicionamos para hookar/logar também
 } from './scene.js';
 import {
   buildFromLayout,
@@ -28,111 +28,52 @@ import { initPicking, selectGroup } from './picking.js';
 import { initModal } from './modal.js';
 import { initHUD, applyFVSAndRefresh } from './hud.js';
 
-// === DEBUG: medir top do prédio em pixels de tela ===
+// ============================
+// DEBUG helpers (logs, hooks e watchdog anti-“coice”)
+// ============================
+
+// acesso a scene/renderer para medir projeção em tela
 import { scene, renderer } from './scene.js';
 
-function __doge_getBBoxRoot() {
-  const torre = getTorre?.();
-  return torre || scene;
-}
-function __doge_computeBBox(root) {
-  try {
-    const bb = new THREE.Box3().setFromObject(root);
-    if (!Number.isFinite(bb.min.x) || !Number.isFinite(bb.max.x)) return null;
-    return bb;
-  } catch (e) { return null; }
-}
-function __doge_worldToScreen(v3) {
-  const v = v3.clone().project(camera);
-  const size = renderer.getSize(new THREE.Vector2());
-  return {
-    x: (v.x * 0.5 + 0.5) * size.x,
-    y: (-v.y * 0.5 + 0.5) * size.y,
-    w: size.x,
-    h: size.y
+// Hook: só LOGA chamadas a fits (não bloqueia)
+let __DOGE_BOOT_T0 = performance.now();
+function __doge_installFitHooks_LOG_ONLY() {
+  if (window.__DOGE_HOOKS_ON) return;
+  window.__DOGE_HOOKS_ON = true;
+
+  const origRecenter = recenterCamera;
+  const origRefresh  = refreshModelPivotAndFit;
+
+  const wrap = (name, orig) => (...args) => {
+    const t = Math.round(performance.now() - __DOGE_BOOT_T0);
+    console.warn(`[DOGE:CALL ${name}] t=${t}ms`, { args });
+    console.trace(`[DOGE:TRACE ${name}]`);
+    return orig(...args);
   };
+
+  window.__DOGE_ORIG_RECENTER = origRecenter;
+  window.__DOGE_ORIG_REFRESH  = origRefresh;
+
+  // @ts-ignore
+  window.recenterCamera = wrap('recenterCamera', origRecenter);
+  // @ts-ignore
+  window.refreshModelPivotAndFit = wrap('refreshModelPivotAndFit', origRefresh);
 }
-function __doge_measureScreen(label = '') {
-  const root = __doge_getBBoxRoot();
-  const bb = __doge_computeBBox(root);
-  if (!bb) { console.log('[DOGE:measure]', label, 'bbox=null'); return null; }
+
+// medir topo do modelo em px de tela
+function __doge_worldTopToScreen() {
+  const torre = getTorre?.();
+  const root = torre || scene;
+  const bb = new THREE.Box3().setFromObject(root);
+  if (!bb) return null;
   const topCenter = new THREE.Vector3(
     (bb.min.x + bb.max.x) * 0.5,
     bb.max.y,
     (bb.min.z + bb.max.z) * 0.5
   );
-  const scr = __doge_worldToScreen(topCenter);
-  const info = {
-    label,
-    topPx: { x: Math.round(scr.x), y: Math.round(scr.y) },
-    viewport: { w: scr.w, h: scr.h },
-    marginTopPx: Math.round(scr.y),
-    cutTop: scr.y < 0,
-    orbitTarget: { x: +(State.orbitTarget?.x ?? 0).toFixed?.(3) ?? State.orbitTarget?.x, y: +(State.orbitTarget?.y ?? 0).toFixed?.(3) ?? State.orbitTarget?.y, z: +(State.orbitTarget?.z ?? 0).toFixed?.(3) ?? State.orbitTarget?.z },
-    radius: Number(State.radius).toFixed(3),
-    theta: Number(State.theta).toFixed(3),
-    phi: Number(State.phi).toFixed(3),
-    camPos: {
-      x: Number(camera.position.x).toFixed(3),
-      y: Number(camera.position.y).toFixed(3),
-      z: Number(camera.position.z).toFixed(3)
-    }
-  };
-  console.log('[DOGE:measure]', info);
-  return info;
-}
-function __doge_watchForJumps(ms = 2000, pxJump = 8) {
-  let prevY = null;
-  const t0 = performance.now();
-  function tick() {
-    const m = __doge_measureScreen('watch');
-    if (m) {
-      if (prevY !== null) {
-        const dy = m.topPx.y - prevY;
-        if (Math.abs(dy) >= pxJump) {
-          console.warn('[DOGE:jump]', `ΔY=${Math.round(dy)}px`, 'em', Math.round(performance.now() - t0), 'ms');
-          console.warn('[DOGE:jump:after]', m);
-        }
-      }
-      prevY = m.topPx.y;
-    }
-    if (performance.now() - t0 < ms) requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-}
-
-// === DEBUG HOOK: rastrear e (opcional) bloquear fits “intrusos” nos 2s iniciais
-const __DOGE_BOOT_T0 = performance.now();
-let __DOGE_BOOT_LOCK_MS = 2000;  // mude p/ 0 para só logar (sem bloquear)
-let __doge_fitHooksInstalled = false;
-
-function __doge_installFitHooks() {
-  if (__doge_fitHooksInstalled) return;
-  __doge_fitHooksInstalled = true;
-
-  const __orig_recenter = recenterCamera;
-  const __orig_refresh  = refreshModelPivotAndFit;
-
-  const guard = (name, orig) => (...args) => {
-    const since = Math.round(performance.now() - __DOGE_BOOT_T0);
-    const block = since < __DOGE_BOOT_LOCK_MS;
-    console.warn(`[DOGE:CALL ${name}] t=${since}ms`, { args, block });
-    console.trace(`[DOGE:TRACE ${name}]`);
-    if (block) return;     // BLOQUEIA durante lock
-    return orig(...args);  // ou só loga se __DOGE_BOOT_LOCK_MS=0
-  };
-
-  // expõe originais e wrappers no window (ajuda depurar no console)
-  // @ts-ignore
-  window.__DOGE_ORIG_RECENTER = __orig_recenter;
-  // @ts-ignore
-  window.__DOGE_ORIG_REFRESH  = __orig_refresh;
-  // @ts-ignore
-  window.recenterCamera = guard('recenterCamera', __orig_recenter);
-  // @ts-ignore
-  window.refreshModelPivotAndFit = guard('refreshModelPivotAndFit', __orig_refresh);
-  // @ts-ignore
-  window.__DOGE_DISABLE_BOOT_LOCK = () => { __DOGE_BOOT_LOCK_MS = -1; };
+  const v = topCenter.clone().project(camera);
+  const size = renderer.getSize(new THREE.Vector2());
+  return { x: (v.x * 0.5 + 0.5) * size.x, y: (-v.y * 0.5 + 0.5) * size.y };
 }
 
 // ============================
@@ -140,7 +81,7 @@ function __doge_installFitHooks() {
 // ============================
 (async function boot(){
   try {
-    __doge_installFitHooks(); // << instala hooks ANTES de tudo
+    __doge_installFitHooks_LOG_ONLY(); // logar qualquer fit chamado por terceiros
 
     // UI base
     initTooltip();
@@ -156,101 +97,111 @@ function __doge_installFitHooks() {
     // 2) Cena / câmera / renderer
     initScene();
 
+    // Desliga auto-fit interno se existir
+    window.disableAutoFit?.();
+
     // 3) Monta a torre
     const { bbox } = buildFromLayout(layoutData || { meta:{}, placements:[] });
 
-    // --- LOGS iniciais ---
-    __doge_measureScreen('apos build (antes do 1o render)');
+    // Primeiro render só para estabilizar GL
     render();
-    __doge_measureScreen('apos 1o render');
 
-    // === Fit inicial adiado (garante viewport/HUD estabilizados) ===
-    (function fitInitialView(){
-      // 1º frame: deixa layout/CSS assentarem
+    // === Fit inicial controlado + watchdog anti-“coice” ===
+    (function fitInitialViewGuarded(){
+      // 1º frame: deixa DOM/CSS estabilizar e atualiza aspect
       requestAnimationFrame(()=>{
-        __doge_measureScreen('fit: antes de resize');
-        // força um recálculo de aspect se algo mudou
         window.dispatchEvent(new Event('resize'));
 
-        // 2º frame: faz o fit-to-bbox já com aspect correto
+        // 2º frame: faz UM ÚNICO fit “de frente”
         requestAnimationFrame(()=>{
-          __doge_measureScreen('fit: antes de recenterCamera (adiado)');
-          recenterCamera({
-            // sem bbox explícito: scene calcula a BBox atual
-            theta: INITIAL_THETA,
-            phi:   INITIAL_PHI,
-            margin: 1.20,
-            animate: false
-          });
-          __doge_measureScreen('fit: apos recenterCamera (adiado)');
-          render();
-          __doge_measureScreen('fit: apos render (adiado)');
-          __doge_watchForJumps(2000, 8);
+          const doFit = () => {
+            const opts = {
+              theta:  INITIAL_THETA,
+              phi:    INITIAL_PHI,
+              margin: 1.22,          // respiro um pouco maior
+              animate:false
+            };
+            if (bbox && bbox.isBox3) opts.bbox = bbox;
+            recenterCamera(opts);
+
+            // offset vertical leve para afastar do topo (se tiver bbox)
+            if (bbox && bbox.isBox3) {
+              recenterCamera({ bbox, verticalOffsetRatio: 0.06, animate:false });
+            }
+            render();
+          };
+
+          doFit();
+
+          // Watchdog 1.2s: se detectar corte/drift, refaz fit e loga stack 1x
+          const T_GUARD = 1200;
+          const t0 = performance.now();
+          const target0 = { x: State.orbitTarget.x, y: State.orbitTarget.y, z: State.orbitTarget.z };
+          const radius0 = State.radius;
+          let logged = false;
+
+          function guardTick(){
+            const dt = performance.now() - t0;
+            const scr = __doge_worldTopToScreen();
+            const cutTop = scr && scr.y < 0;
+            const driftTarget =
+              Math.abs(State.orbitTarget.x - target0.x) > 1e-3 ||
+              Math.abs(State.orbitTarget.y - target0.y) > 1e-3 ||
+              Math.abs(State.orbitTarget.z - target0.z) > 1e-3 ||
+              Math.abs(State.radius - radius0) > 1e-3;
+
+            if ((cutTop || driftTarget) && !logged) {
+              logged = true;
+              console.warn('[DOGE:guard] drift/cut detectado em', Math.round(dt), 'ms', {
+                cutTop, driftTarget, orbitTarget: {...State.orbitTarget}, radius: State.radius, scr
+              });
+              console.trace('[DOGE:guard:stack]');
+            }
+
+            if (cutTop || driftTarget) {
+              doFit();
+            }
+
+            if (dt < T_GUARD) requestAnimationFrame(guardTick);
+          }
+          requestAnimationFrame(guardTick);
         });
       });
     })();
 
-    // Enquadra 100% e coloca “de frente”
-    __doge_measureScreen('antes: recenterCamera bbox (frente)');
-    recenterCamera({ bbox, theta: INITIAL_THETA, phi: INITIAL_PHI, animate: false, margin: 1.18 });
-    __doge_measureScreen('apos:  recenterCamera bbox (frente)');
-
-    // 4) Ajuste inicial — mesmo enquadramento usado no recenter
-    if (bbox && bbox.isBox3){
-      __doge_measureScreen('antes: recenterCamera offset 0.12');
-      recenterCamera({ bbox, verticalOffsetRatio: 0.12 });
-      __doge_measureScreen('apos:  recenterCamera offset 0.12');
-    } else {
-      applyOrbitToCamera();
-      render();
-      __doge_measureScreen('apos: applyOrbitToCamera (sem bbox)');
-    }
-
     // 5) HUD (dropdowns, botões, sliders)
     initHUD();
-    __doge_measureScreen('apos initHUD');
 
     // 6) Aplica FVS/NC — injeta resolvers e COLOR_MAP
     applyFVSAndRefresh();
-    __doge_measureScreen('apos applyFVSAndRefresh');
 
     // 7) Overlay 2D (render já com resolvers prontos)
     initOverlay2D();
-    __doge_measureScreen('apos initOverlay2D');
-
     render2DCards();
-    __doge_measureScreen('apos render2DCards');
 
     // 8) Picking (hover + click) no 3D
     initPicking();
-    __doge_measureScreen('apos initPicking');
 
     // 9) Loading off
     loading?.classList.add('hidden');
-    __doge_measureScreen('apos esconder loading');
 
     // 10) Render inicial
-    __doge_measureScreen('antes do render final');
     render();
-    __doge_measureScreen('apos render final');
 
-    // 11) Reaplica o offset vertical no resize mantendo enquadramento
+    // 11) Resize: sem novo fit — só re-projeta para evitar “coice”
     window.addEventListener('resize', ()=> {
-      const torre = getTorre();
-      if (!torre) return;
-      const bb = new THREE.Box3().setFromObject(torre);
-      if (!bb || !bb.isBox3) return;
-      __doge_measureScreen('resize handler: antes');
-      recenterCamera({ bbox: bb, verticalOffsetRatio: 0.12 });
-      __doge_measureScreen('resize handler: apos');
+      applyOrbitToCamera();
+      render();
     }, { passive:true });
 
-    // 12) Input unificado (mouse + touch) – suave no mobile/desktop
+    // 12) Input unificado
     wireUnifiedInput();
   } catch (err){
     console.error('[viewer] erro no boot:', err);
   }
-})();
+})().catch(err=>{
+  console.error('[viewer] erro no boot (outer):', err);
+});
 
 // ============================
 // Selecionar também o grupo 3D ao clicar num card 2D
@@ -410,5 +361,6 @@ window.addEventListener('keydown', (e)=>{
   const modalOpen = modalBackdrop && modalBackdrop.classList.contains('show');
   if (modalOpen) return;
 
-  // (mantive como no seu arquivo: lugar para desligar overlay 2D, se necessário)
-});
+  // (mantido conforme sua versão; se quiser, podemos restaurar o hide2D aqui)
+  // if (State.flatten2D >= 0.95) { State.flatten2D = 0; hide2D(); apply2DVisual(false); render(); }
+}, { passive:true });
