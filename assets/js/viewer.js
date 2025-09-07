@@ -26,6 +26,84 @@ import { initPicking, selectGroup } from './picking.js';
 import { initModal } from './modal.js';
 import { initHUD, applyFVSAndRefresh } from './hud.js';
 
+// === DEBUG: medir top do prédio em pixels de tela ===
+import { scene, renderer, camera } from './scene.js';
+
+function __doge_getBBoxRoot() {
+  const torre = getTorre?.();
+  return torre || scene;
+}
+function __doge_computeBBox(root) {
+  try {
+    const bb = new THREE.Box3().setFromObject(root);
+    if (!Number.isFinite(bb.min.x) || !Number.isFinite(bb.max.x)) return null;
+    return bb;
+  } catch (e) {
+    return null;
+  }
+}
+function __doge_worldToScreen(v3) {
+  const v = v3.clone().project(camera);
+  const size = renderer.getSize(new THREE.Vector2());
+  return {
+    x: (v.x * 0.5 + 0.5) * size.x,
+    y: (-v.y * 0.5 + 0.5) * size.y,
+    w: size.x,
+    h: size.y
+  };
+}
+function __doge_measureScreen(label = '') {
+  const root = __doge_getBBoxRoot();
+  const bb = __doge_computeBBox(root);
+  if (!bb) {
+    console.log('[DOGE:measure]', label, 'bbox=null');
+    return null;
+  }
+  const topCenter = new THREE.Vector3(
+    (bb.min.x + bb.max.x) * 0.5,
+    bb.max.y,
+    (bb.min.z + bb.max.z) * 0.5
+  );
+  const scr = __doge_worldToScreen(topCenter);
+  const info = {
+    label,
+    topPx: { x: Math.round(scr.x), y: Math.round(scr.y) },
+    viewport: { w: scr.w, h: scr.h },
+    marginTopPx: Math.round(scr.y),
+    cutTop: scr.y < 0,
+    orbitTarget: { x: +State.orbitTarget.x.toFixed?.(3) ?? State.orbitTarget.x, y: +State.orbitTarget.y?.toFixed?.(3) ?? State.orbitTarget.y, z: +State.orbitTarget.z?.toFixed?.(3) ?? State.orbitTarget.z },
+    radius: Number(State.radius).toFixed(3),
+    theta: Number(State.theta).toFixed(3),
+    phi: Number(State.phi).toFixed(3),
+    camPos: {
+      x: Number(camera.position.x).toFixed(3),
+      y: Number(camera.position.y).toFixed(3),
+      z: Number(camera.position.z).toFixed(3)
+    }
+  };
+  console.log('[DOGE:measure]', info);
+  return info;
+}
+function __doge_watchForJumps(ms = 2000, pxJump = 8) {
+  let prevY = null;
+  const t0 = performance.now();
+  function tick() {
+    const m = __doge_measureScreen('watch');
+    if (m) {
+      if (prevY !== null) {
+        const dy = m.topPx.y - prevY;
+        if (Math.abs(dy) >= pxJump) {
+          console.warn('[DOGE:jump]', `ΔY=${Math.round(dy)}px`, 'em', Math.round(performance.now() - t0), 'ms');
+          console.warn('[DOGE:jump:after]', m);
+        }
+      }
+      prevY = m.topPx.y;
+    }
+    if (performance.now() - t0 < ms) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
 // ============================
 // Boot
 // ============================
@@ -43,16 +121,23 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
 
     buildFromLayout(layoutData || { meta: {}, placements: [] });
 
+    __doge_measureScreen('apos build (antes do 1o render)');
     render();
+    __doge_measureScreen('apos 1o render');
 
     // Fit inicial = mesma Home do Reset (sem corte)
     (function fitInitialView(){
       requestAnimationFrame(()=>{
+        __doge_measureScreen('fit: antes de resize');
         window.dispatchEvent(new Event('resize'));
         requestAnimationFrame(()=>{
+          __doge_measureScreen('fit: antes de syncOrbitTargetToModel');
           syncOrbitTargetToModel({ saveAsHome: true, animate: false });
+          __doge_measureScreen('fit: antes de resetRotation');
           resetRotation();
           render();
+          __doge_measureScreen('fit: apos resetRotation');
+          __doge_watchForJumps(2000, 8);
         });
       });
     })();
@@ -66,15 +151,20 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
     initPicking();
 
     loading?.classList.add('hidden');
+
+    __doge_measureScreen('final do boot (antes do render final)');
     render();
+    __doge_measureScreen('final do boot (apos render final)');
 
     // Resize: não refaça fit; só reaplique órbita
     let lastW = window.innerWidth, lastH = window.innerHeight;
     window.addEventListener('resize', () => {
       if (window.innerWidth !== lastW || window.innerHeight !== lastH) {
+        __doge_measureScreen('resize: antes');
         lastW = window.innerWidth; lastH = window.innerHeight;
         applyOrbitToCamera();
         render();
+        __doge_measureScreen('resize: apos');
       }
     }, { passive: true });
 
@@ -256,7 +346,7 @@ function wireUnifiedInput(){
       if (dAng >  Math.PI) dAng -= 2*Math.PI;
       if (dAng < -Math.PI) dAng += 2*Math.PI;
 
-      // Se preferir o sentido oposto no seu device, troque para orbitTwist(-dAng)
+      // Se preferir o sentido oposto no seu device, troque para orbitTwist(+dAng)
       if (Math.abs(dAng) > 1e-4) {
         orbitTwist(-dAng);
       }
