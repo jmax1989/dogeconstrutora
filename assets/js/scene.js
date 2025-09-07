@@ -114,7 +114,7 @@ export function initScene() {
   applyOrbitToCamera();
 
   setupUnifiedTouchGestureHandler(cvs);
-  startAutoFitOnce(); // calcula pivô fixo + Home (mas não roda se Home já existir)
+  startAutoFitOnce(); // calcula pivô fixo + Home (não roda se Home já existir)
 
   return { scene, renderer, camera };
 }
@@ -280,15 +280,12 @@ export function disableAutoFit(){
 }
 
 function startAutoFitOnce() {
-  // Se o viewer já definiu uma Home, não faça auto-fit (evita “coice”)
-  if (Home.has) return;
-
+  if (Home.has) return;       // viewer já definiu a Home → não faz auto-fit
   if (_autoFitTimer) return;
 
   const t0 = performance.now();
   const tick = () => {
-    // Se a Home foi definida enquanto esperamos, cancelamos
-    if (Home.has) { disableAutoFit(); return; }
+    if (Home.has) { disableAutoFit(); return; } // Home definida no meio do caminho
 
     const bb = computeCurrentBBox();
     if (bb) {
@@ -337,8 +334,7 @@ export function syncOrbitTargetToModel({ root = null, animate = false, saveAsHom
   if (saveAsHome) {
     camera.up.set(0, 1, 0);
     saveHomeFromState();
-    // >>> IMPORTANTÍSSIMO: se o viewer já salvou a Home, não deixe o auto-fit posterior sobrescrever
-    disableAutoFit();
+    disableAutoFit(); // evita "coice" posterior
   }
 }
 
@@ -374,37 +370,84 @@ export function render() {
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// ========== ARCball / Trackball (segue o dedo em 6-DOF) ==========
+// === Util: pan instantâneo em eixos de tela (para compensar drift de rotação)
+function panInstantScreen(dx, dy) {
+  const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+  const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+  State.orbitTarget.addScaledVector(right, -dx * base);
+  State.orbitTarget.addScaledVector(upScreen, dy * base);
+}
+
+// === Util: projeta ponto do mundo para coordenadas de tela (px)
+function worldToScreen(vec3) {
+  const v = vec3.clone().project(camera);
+  const size = renderer.getSize(new THREE.Vector2());
+  return new THREE.Vector2((v.x * 0.5 + 0.5) * size.x, (-v.y * 0.5 + 0.5) * size.y);
+}
+
+// ========== ROTATION (1 dedo): YAW/PITCH sem roll, em torno do pivô ==========
 export function orbitDelta(dx, dy, isTouch = false) {
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
 
+  // sinais para "seguir o dedo"
+  const yaw   = -dx * ROT; // arrastar p/ direita → yaw para a direita
+  const pitch = -dy * ROT; // arrastar p/ cima    → inclina para cima
+
   const pivot = _modelPivot ? _modelPivot : State.orbitTarget.clone();
 
-  // Base de tela da câmera
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera (direita)
-  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera (para cima)
+  // posição de tela do pivô ANTES (para compensar drift)
+  const scrBefore = worldToScreen(pivot);
 
-  // “Segue o dedo”
-  const axis = new THREE.Vector3()
-    .addScaledVector(right,  -dy)
-    .addScaledVector(upScr,  -dx);
+  // Vetores relativos ao pivô
+  const P = camera.position.clone();
+  const T = State.orbitTarget.clone();
+  const up0 = camera.up.clone();
 
-  const len = axis.length();
-  if (len < 1e-6) return;
-  axis.divideScalar(len);
+  const vP = P.sub(pivot);
+  const vT = T.sub(pivot);
 
-  const angle = (isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP) * Math.hypot(dx, dy);
-  const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+  // Base atual
+  const forward0 = vT.clone().sub(vP).normalize();           // direção câmera->target
+  let right0 = new THREE.Vector3().crossVectors(forward0, up0).normalize();
+  if (!Number.isFinite(right0.x) || right0.lengthSq() === 0) right0.set(1, 0, 0);
+  const up1 = new THREE.Vector3().crossVectors(right0, forward0).normalize();
 
-  // Rotaciona posição, alvo e up em torno do pivô (arcball real)
-  const posRel = camera.position.clone().sub(pivot).applyQuaternion(q);
-  const tgtRel = State.orbitTarget.clone().sub(pivot).applyQuaternion(q);
+  // 1) Yaw em Y global
+  const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
+  const vP1 = vP.clone().applyQuaternion(qYaw);
+  const vT1 = vT.clone().applyQuaternion(qYaw);
+  const right1 = right0.clone().applyQuaternion(qYaw);
+  const upYaw  = up1.clone().applyQuaternion(qYaw);
 
-  camera.position.copy(pivot.clone().add(posRel));
-  State.orbitTarget.copy(pivot.clone().add(tgtRel));
-  camera.up.applyQuaternion(q).normalize();
+  // 2) Pitch em torno do "right" já yawado
+  const qPitch = new THREE.Quaternion().setFromAxisAngle(right1, pitch);
+  const qTotal = new THREE.Quaternion().multiplyQuaternions(qPitch, qYaw);
 
-  // Atualiza esféricas
+  // Candidatos com yaw+pitch aplicados também no alvo (arcball real)
+  const vP2 = vP.clone().applyQuaternion(qTotal);
+  const vT2 = vT.clone().applyQuaternion(qTotal);
+  const up2 = up0.clone().applyQuaternion(qTotal);
+
+  // Clamp de phi (evita virar de ponta cabeça)
+  const rel2 = vP2.clone().sub(vT2);
+  const r2   = rel2.length();
+  const ph2  = Math.acos(THREE.MathUtils.clamp(rel2.y / r2, -1, 1));
+  const pitchOk = (ph2 >= ORBIT_MIN_PHI && ph2 <= ORBIT_MAX_PHI);
+
+  // Commit (ignora pitch se estourar)
+  const used_vP = pitchOk ? vP2 : vP1;
+  const used_vT = pitchOk ? vT2 : vT1;
+  const used_up = pitchOk ? up2 : upYaw;
+
+  const Pnew = pivot.clone().add(used_vP);
+  const Tnew = pivot.clone().add(used_vT);
+
+  camera.position.copy(Pnew);
+  camera.up.copy(used_up.normalize());
+  State.orbitTarget.copy(Tnew);
+
+  // Atualiza esféricas (para manter applyOrbitToCamera coerente)
   const rel = camera.position.clone().sub(State.orbitTarget);
   const r   = rel.length();
   const ph  = Math.acos(THREE.MathUtils.clamp(rel.y / r, -1, 1));
@@ -414,11 +457,19 @@ export function orbitDelta(dx, dy, isTouch = false) {
   State.theta  = th;
   State.phi    = THREE.MathUtils.clamp(ph, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
 
+  // Compensa drift de tela: mantém o pivô no mesmo pixel
+  const scrAfter = worldToScreen(pivot);
+  const dScreenX = scrAfter.x - scrBefore.x;
+  const dScreenY = scrAfter.y - scrBefore.y;
+  if (Math.abs(dScreenX) > 0.01 || Math.abs(dScreenY) > 0.01) {
+    panInstantScreen(dScreenX, dScreenY);
+  }
+
   camera.lookAt(State.orbitTarget);
   render();
 }
 
-// ========== TWIST (roll em torno do eixo de visão) ==========
+// ========== TWIST (2 dedos): roll em torno do eixo de visão ==========
 export function orbitTwist(deltaAngleRad) {
   if (!Number.isFinite(deltaAngleRad) || Math.abs(deltaAngleRad) < 1e-6) return;
 
