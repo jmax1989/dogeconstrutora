@@ -14,7 +14,11 @@ import {
   zoomDelta,
   resetRotation,
   syncOrbitTargetToModel,
-  orbitTwist            // roll por gesto de torção (twist)
+  orbitTwist,           // roll por gesto de torção (twist)
+  camera,
+  scene,
+  renderer,
+  disableAutoFit        // <<< desativa auto-fit interno do scene
 } from './scene.js';
 import {
   buildFromLayout,
@@ -41,18 +45,75 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
 
     initScene();
 
+    // IMPORTANTE: desliga qualquer auto-fit interno que o scene faça (timer)
+    disableAutoFit?.();
+
     buildFromLayout(layoutData || { meta: {}, placements: [] });
 
     render();
 
-    // Fit inicial = mesma Home do Reset (sem corte)
+    // Fit inicial "guardado" (mesma Home do Reset), evitando corte/drift
     (function fitInitialView(){
       requestAnimationFrame(()=>{
+        // garante aspect correto após CSS/layout
         window.dispatchEvent(new Event('resize'));
+
         requestAnimationFrame(()=>{
+          // Faz UM único fit e salva como Home
           syncOrbitTargetToModel({ saveAsHome: true, animate: false });
-          resetRotation();
+          resetRotation(); // deixa "em pé"
           render();
+
+          // --- Watchdog 1.2s: se cortar topo ou o alvo/raio mudar, refaz fit ---
+          const T_GUARD = 1200;
+          const t0 = performance.now();
+          const target0 = State.orbitTarget.clone();
+          const radius0 = State.radius;
+
+          function worldTopToScreen() {
+            const torre = getTorre?.();
+            const root = torre || scene;
+            if (!root) return null;
+            const bb = new THREE.Box3().setFromObject(root);
+            if (!bb) return null;
+            const topCenter = new THREE.Vector3(
+              (bb.min.x + bb.max.x) * 0.5,
+              bb.max.y,
+              (bb.min.z + bb.max.z) * 0.5
+            );
+            const v = topCenter.clone().project(camera);
+            const size = renderer.getSize(new THREE.Vector2());
+            return { x: (v.x*0.5+0.5)*size.x, y: (-v.y*0.5+0.5)*size.y };
+          }
+
+          let logged = false;
+          function guardTick(){
+            const dt = performance.now() - t0;
+            const scr = worldTopToScreen();
+            const cutTop = scr && scr.y < 0;
+            const driftTarget =
+              Math.abs(State.orbitTarget.x - target0.x) > 1e-3 ||
+              Math.abs(State.orbitTarget.y - target0.y) > 1e-3 ||
+              Math.abs(State.orbitTarget.z - target0.z) > 1e-3 ||
+              Math.abs(State.radius - radius0) > 1e-3;
+
+            if ((cutTop || driftTarget) && !logged) {
+              logged = true;
+              console.warn('[DOGE:guard] reajustando fit (cutTop/drift detectado)', {
+                cutTop, driftTarget, scr, orbitTarget: {...State.orbitTarget}, radius: State.radius
+              });
+            }
+
+            if (cutTop || driftTarget) {
+              // reaplica o mesmo fit “Home” para estabilizar
+              syncOrbitTargetToModel({ saveAsHome: false, animate: false });
+              resetRotation();
+              render();
+            }
+
+            if (dt < T_GUARD) requestAnimationFrame(guardTick);
+          }
+          requestAnimationFrame(guardTick);
         });
       });
     })();
