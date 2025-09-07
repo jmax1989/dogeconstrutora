@@ -14,7 +14,7 @@ import {
   zoomDelta,
   resetRotation,
   syncOrbitTargetToModel,
-  orbitTwist            // <<< novo: roll por gesto de torção (twist)
+  orbitTwist            // roll por gesto de torção (twist)
 } from './scene.js';
 import {
   buildFromLayout,
@@ -124,10 +124,26 @@ window.addEventListener('keydown', (e)=>{
 }, { passive:true });
 
 // ============================
+// Tracking da tecla Space (Space + esquerdo = Pan)
+// ============================
+let __spacePressed = false;
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { __spacePressed = true; e.preventDefault(); }
+}, { passive:false });
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') __spacePressed = false;
+}, { passive:true });
+
+// ============================
 // Input unificado (Pointer Events)
-// - 1 ponteiro: orbit (esq) / pan (dir) / touch=orbit
-// - 2 ponteiros: pinch (zoom) + pan do centro + twist (roll)
-// - Wheel: zoom
+// PC:
+//   - Pan: botão do meio OU Space + esquerdo
+//   - Orbit (yaw/pitch): botão esquerdo
+//   - Twist (roll): botão direito
+//   - Zoom: scroll
+// Touch:
+//   - 1 dedo = orbit
+//   - 2 dedos = pinch (zoom) + pan do centro + twist (ângulo entre dedos)
 // ============================
 function wireUnifiedInput(){
   const cvs = document.getElementById('doge-canvas') || document.querySelector('#app canvas');
@@ -141,10 +157,19 @@ function wireUnifiedInput(){
   const pointers = new Map(); // id -> {x,y,button,ptype,mode}
   let pinchPrevDist = 0;
   let pinchPrevMid  = null;
-  let pinchPrevAng  = 0; // <<< ângulo entre os dedos no frame anterior
+  let pinchPrevAng  = 0; // ângulo entre dedos no frame anterior
+
+  // sensibilidade do twist com botão direito (mouse)
+  const TWIST_SENS_MOUSE = 0.012; // ajuste aqui se quiser mais/menos sensível
 
   const setModeForPointer = (pe) => {
-    if (pe.pointerType === 'mouse') return (pe.button === 2) ? 'pan' : 'orbit';
+    if (pe.pointerType === 'mouse') {
+      if (pe.button === 1) return 'pan';                 // botão do meio
+      if (pe.button === 2) return 'twist';               // botão direito
+      if (pe.button === 0 && __spacePressed) return 'pan'; // Space + esquerdo
+      return 'orbit';                                    // esquerdo
+    }
+    // touch 1 dedo = orbit
     return 'orbit';
   };
 
@@ -161,7 +186,6 @@ function wireUnifiedInput(){
     const a = arrPts(); if (a.length < 2) return 0;
     const dx = a[1].x - a[0].x;
     const dy = a[1].y - a[0].y;
-    // Atenção: Y de tela cresce para baixo; atan2 já reflete isso.
     return Math.atan2(dy, dx); // rad
   };
 
@@ -191,8 +215,19 @@ function wireUnifiedInput(){
 
     if (pointers.size === 1){
       const dx = p.x - px, dy = p.y - py;
-      if (p.mode === 'pan') panDelta(dx, dy);
-      else                  orbitDelta(dx, dy, p.ptype !== 'mouse');
+
+      switch (p.mode) {
+        case 'pan':
+          panDelta(dx, dy);
+          break;
+        case 'twist':
+          // botão direito: roll em torno do eixo de visão
+          // segue o movimento horizontal (troque o sinal se preferir o inverso)
+          orbitTwist(dx * TWIST_SENS_MOUSE);
+          break;
+        default: // 'orbit'
+          orbitDelta(dx, dy, p.ptype !== 'mouse'); // yaw/pitch (sem roll)
+      }
 
     } else if (pointers.size === 2){
       // === PINCH (zoom) ===
@@ -218,13 +253,10 @@ function wireUnifiedInput(){
       // === TWIST (roll) — rotação de dois dedos ===
       const ang = getAngle();
       let dAng = ang - pinchPrevAng;
-      // normaliza para [-PI, PI] para evitar saltos
       if (dAng >  Math.PI) dAng -= 2*Math.PI;
       if (dAng < -Math.PI) dAng += 2*Math.PI;
 
-      // Sinal para “seguir o gesto”: em telas com Y pra baixo,
-      // o sentido horário do par de dedos dá dAng > 0.
-      // Se sentir invertido, troque por (-dAng).
+      // Se preferir o sentido oposto no seu device, troque para orbitTwist(-dAng)
       if (Math.abs(dAng) > 1e-4) {
         orbitTwist(-dAng);
       }
@@ -247,7 +279,7 @@ function wireUnifiedInput(){
   cvs.addEventListener('pointercancel', clearPointer,    { passive:true });
   cvs.addEventListener('lostpointercapture', clearPointer,{ passive:true });
 
-  // Wheel (desktop/trackpad)
+  // Wheel (desktop/trackpad) = zoom
   cvs.addEventListener('wheel', (e)=>{
     e.preventDefault();
     const unit = (e.deltaMode === 1) ? 33 : (e.deltaMode === 2) ? 120 : 1;
@@ -257,7 +289,6 @@ function wireUnifiedInput(){
     zoomDelta({ scale }, /*isPinch=*/false);
   }, { passive:false });
 
-  // Botão direito = pan (somente mouse)
+  // Bloqueia menu do botão direito (necessário para twist com right-drag)
   cvs.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
 }
-
