@@ -364,27 +364,22 @@ export function render() {
 export function orbitDelta(dx, dy, isTouch = false) {
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
 
-  // Se não há pivô calculado ainda, usa o alvo atual
   const pivot = _modelPivot ? _modelPivot : State.orbitTarget.clone();
 
   // Base de tela da câmera
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera (direita)
-  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera (para cima)
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera
+  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera
 
-  // >>> Correção de espelhamento:
-  // Queremos “seguir o dedo” em QUALQUER direção.
-  // - Arrastar para a direita (dx>0): eixo tem componente -upScr (mantém perfeito que você já aprovou)
-  // - Arrastar para cima   (dy<0): eixo deve ter componente +right  -> usa (-dy)
+  // “Segue o dedo”: eixo é combinação das bases de tela
   const axis = new THREE.Vector3()
-    .addScaledVector(right,  -dy)   // antes era (+dy)
-    .addScaledVector(upScr,  -dx);  // mantém igual (horizontal já estava perfeito)
+    .addScaledVector(right,  -dy)
+    .addScaledVector(upScr,  -dx);
 
-  const axisLen = axis.length();
-  if (axisLen < 1e-6) return;
-  axis.divideScalar(axisLen);
+  const len = axis.length();
+  if (len < 1e-6) return;
+  axis.divideScalar(len);
 
-  const angle = ROT * Math.hypot(dx, dy);
-
+  const angle = (isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP) * Math.hypot(dx, dy);
   const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
 
   // Rotaciona câmera, alvo e up em torno do pivô (arcball real)
@@ -395,7 +390,7 @@ export function orbitDelta(dx, dy, isTouch = false) {
   State.orbitTarget.copy(pivot.clone().add(tgtRel));
   camera.up.applyQuaternion(q).normalize();
 
-  // Atualiza esféricas (compatibilidade com applyOrbitToCamera)
+  // Atualiza esféricas
   const rel = camera.position.clone().sub(State.orbitTarget);
   const r   = rel.length();
   const ph  = Math.acos(THREE.MathUtils.clamp(rel.y / r, -1, 1));
@@ -404,6 +399,30 @@ export function orbitDelta(dx, dy, isTouch = false) {
   State.radius = THREE.MathUtils.clamp(r, ZOOM_MIN, ZOOM_MAX);
   State.theta  = th;
   State.phi    = THREE.MathUtils.clamp(ph, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
+
+  camera.lookAt(State.orbitTarget);
+  render();
+}
+
+// ========== TWIST (roll em torno do eixo de visão) ==========
+export function orbitTwist(deltaAngleRad) {
+  if (!Number.isFinite(deltaAngleRad) || Math.abs(deltaAngleRad) < 1e-6) return;
+
+  const pivot = _modelPivot ? _modelPivot : State.orbitTarget.clone();
+  // Eixo de visão (camera -> alvo)
+  const forward = camera.getWorldDirection(new THREE.Vector3()).normalize();
+
+  // Sinal: gesto horário deve girar horário; como tela tem Y para baixo,
+  // o delta calculado no viewer já vem no sentido “de tela”.
+  // Se quiser inverter, troque pelo negativo.
+  const q = new THREE.Quaternion().setFromAxisAngle(forward, deltaAngleRad);
+
+  const posRel = camera.position.clone().sub(pivot).applyQuaternion(q);
+  const tgtRel = State.orbitTarget.clone().sub(pivot).applyQuaternion(q);
+
+  camera.position.copy(pivot.clone().add(posRel));
+  State.orbitTarget.copy(pivot.clone().add(tgtRel));
+  camera.up.applyQuaternion(q).normalize();
 
   camera.lookAt(State.orbitTarget);
   render();
@@ -512,6 +531,7 @@ function setupUnifiedTouchGestureHandler(canvas) {
       const centerDeltaX = now.centerX - lastTouches.centerX;
       const centerDeltaY = now.centerY - lastTouches.centerY;
 
+      // pinch vs pan (fallback para compat); twist por PointerEvents está no viewer.js
       if (Math.abs(distDelta) > Math.max(Math.abs(centerDeltaX), Math.abs(centerDeltaY))) {
         zoomDelta(distDelta / 120, true);
       } else {
