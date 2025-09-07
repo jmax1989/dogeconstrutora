@@ -226,7 +226,7 @@ function wireUnifiedInput(){
       // o sentido horário do par de dedos dá dAng > 0.
       // Se sentir invertido, troque por (-dAng).
       if (Math.abs(dAng) > 1e-4) {
-        orbitTwist(dAng);
+        orbitTwist(-dAng);
       }
       pinchPrevAng = ang;
     }
@@ -260,3 +260,4 @@ function wireUnifiedInput(){
   // Botão direito = pan (somente mouse)
   cvs.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
 }
+
