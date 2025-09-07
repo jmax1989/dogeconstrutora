@@ -18,7 +18,7 @@ export const INITIAL_THETA = Math.PI * 0.25; // pose "em pé"
 export const INITIAL_PHI   = Math.PI * 0.35; // pose "em pé"
 
 // Ajustes finos
-const ROT_SPEED_DESKTOP = 0.0042; // levemente maior p/ arcball ficar “na mão”
+const ROT_SPEED_DESKTOP = 0.0042;
 const ROT_SPEED_TOUCH   = 0.0042;
 const PAN_FACTOR = 0.4;
 const PAN_SMOOTH = 0.22;
@@ -360,31 +360,31 @@ export function render() {
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// ========== ARCball / Trackball ==========
+// ========== ARCball / Trackball (segue o dedo em 6-DOF) ==========
 export function orbitDelta(dx, dy, isTouch = false) {
-  // Trackball: gesto 2D -> eixo 3D em espaço de TELA (right/upScreen)
   const ROT = isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP;
 
   // Se não há pivô calculado ainda, usa o alvo atual
   const pivot = _modelPivot ? _modelPivot : State.orbitTarget.clone();
 
   // Base de tela da câmera
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera
-  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera (direita)
+  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera (para cima)
 
-  // Eixo de rotação segue o gesto: subir (dy<0) gira em torno de +right; arrastar p/ dir (dx>0) gira em torno de -upScr
+  // >>> Correção de espelhamento:
+  // Queremos “seguir o dedo” em QUALQUER direção.
+  // - Arrastar para a direita (dx>0): eixo tem componente -upScr (mantém perfeito que você já aprovou)
+  // - Arrastar para cima   (dy<0): eixo deve ter componente +right  -> usa (-dy)
   const axis = new THREE.Vector3()
-    .addScaledVector(right,  dy)
-    .addScaledVector(upScr, -dx);
+    .addScaledVector(right,  -dy)   // antes era (+dy)
+    .addScaledVector(upScr,  -dx);  // mantém igual (horizontal já estava perfeito)
 
   const axisLen = axis.length();
   if (axisLen < 1e-6) return;
   axis.divideScalar(axisLen);
 
-  // Ângulo proporcional ao comprimento do gesto (pequenos passos = suave)
   const angle = ROT * Math.hypot(dx, dy);
 
-  // Quaternion de rotação
   const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
 
   // Rotaciona câmera, alvo e up em torno do pivô (arcball real)
@@ -395,7 +395,7 @@ export function orbitDelta(dx, dy, isTouch = false) {
   State.orbitTarget.copy(pivot.clone().add(tgtRel));
   camera.up.applyQuaternion(q).normalize();
 
-  // Atualiza esféricas (mantém compatibilidade com applyOrbitToCamera)
+  // Atualiza esféricas (compatibilidade com applyOrbitToCamera)
   const rel = camera.position.clone().sub(State.orbitTarget);
   const r   = rel.length();
   const ph  = Math.acos(THREE.MathUtils.clamp(rel.y / r, -1, 1));
@@ -432,11 +432,9 @@ function animatePan() {
 
   const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
 
-  // Eixos de tela (X e Y da câmera no mundo)
   const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
   const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
 
-  // Arrasto: direita => +right, baixo => -upScreen
   State.orbitTarget.addScaledVector(right, -applyDx * base);
   State.orbitTarget.addScaledVector(upScreen, applyDy * base);
 
