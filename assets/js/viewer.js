@@ -12,11 +12,8 @@ import {
   orbitDelta,
   panDelta,
   zoomDelta,
-  recenterCamera,
-  resetRotation,              // <--- novo
-  syncOrbitTargetToModel,     // <--- novo
-  INITIAL_THETA,
-  INITIAL_PHI
+  resetRotation,          // usamos a mesma "Home" do Reset no primeiro load
+  syncOrbitTargetToModel  // calcula BBox, fixa pivô e (opcional) salva Home
 } from './scene.js';
 import {
   buildFromLayout,
@@ -53,17 +50,18 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
     // 4) Primeiro render
     render();
 
-    // === Fit inicial: use a MESMA pose do Reset (Home) ===
+    // === Fit inicial: usa a MESMA pose do Reset (Home) ===
     (function fitInitialView(){
-      // 1º frame: deixa layout/CSS assentarem
+      // Deixa layout/CSS e canvas estabilizarem
       requestAnimationFrame(()=>{
-        // força um recálculo de aspect se algo mudou
+        // força recalcular aspect, caso HUD/DOM altere o layout
         window.dispatchEvent(new Event('resize'));
 
-        // 2º frame: calcula Home (BBox) e aplica Reset
+        // Próximo frame: calcula BBox/pivô, salva como Home e aplica Reset
         requestAnimationFrame(()=>{
-          // calcula BBox, salva como Home (sem animar) e aplica exatamente a Home
+          // Calcula BBox e fixa pivô (saveAsHome=true -> salva Home)
           syncOrbitTargetToModel({ saveAsHome: true, animate: false });
+          // Aplica exatamente a Home (fica “em pé”, sem corte no topo)
           resetRotation();
           render();
         });
@@ -96,7 +94,7 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
       if (window.innerWidth !== lastW || window.innerHeight !== lastH) {
         lastW = window.innerWidth;
         lastH = window.innerHeight;
-        applyOrbitToCamera(); // mantém alvo/raio/ângulos atuais
+        applyOrbitToCamera(); // mantém target/raio/ângulos atuais
         render();
       }
     }, { passive: true });
@@ -223,10 +221,10 @@ function wireUnifiedInput(){
 
       if (pinchPrevDist > 0 && dist > 0){
         let scale = dist / pinchPrevDist;
-        const exponent = 0.85;
+        const exponent = 0.85;       // tempera a sensibilidade do pinch
         scale = Math.pow(scale, exponent);
-        scale = Math.max(0.8, Math.min(1.25, scale));
-        zoomDelta({ scale }, true);
+        scale = Math.max(0.8, Math.min(1.25, scale)); // clamp por evento
+        zoomDelta({ scale }, true);  // true = pinch
       }
 
       if (pinchPrevMid && mid){
@@ -258,10 +256,16 @@ function wireUnifiedInput(){
   cvs.addEventListener('wheel', (e)=>{
     e.preventDefault();
 
+    // Normaliza delta independente do deltaMode
     const unit = (e.deltaMode === 1) ? 33 : (e.deltaMode === 2) ? 120 : 1;
     const dy   = e.deltaY * unit;
 
+    // Converte para fator multiplicativo
+    //  dy=+100  -> ~1.12 (afasta 12%)
+    //  dy=-100  -> ~0.89 (aproxima 11%)
     let scale = Math.exp(dy * 0.0011);
+
+    // limita por evento para suavidade
     scale = Math.max(0.8, Math.min(1.25, scale));
 
     zoomDelta({ scale }, /*isPinch=*/false);
