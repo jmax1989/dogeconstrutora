@@ -20,8 +20,8 @@ export const INITIAL_PHI   = Math.PI * 0.35; // pose "em pé"
 // Ajustes finos
 const ROT_SPEED_DESKTOP = 0.0042;
 const ROT_SPEED_TOUCH   = 0.0042;
-const PAN_FACTOR = 0.25;
-const PAN_SMOOTH = 0.28;
+const PAN_FACTOR = 0.4;
+const PAN_SMOOTH = 0.22;
 const ZOOM_EXP_K_WHEEL = 0.27;
 const ZOOM_EXP_K_PINCH = 2;
 const ZOOM_FACTOR_MIN = 0.5;
@@ -114,7 +114,7 @@ export function initScene() {
   applyOrbitToCamera();
 
   setupUnifiedTouchGestureHandler(cvs);
-  startAutoFitOnce(); // calcula pivô fixo + Home
+  startAutoFitOnce(); // calcula pivô fixo + Home (mas não roda se Home já existir)
 
   return { scene, renderer, camera };
 }
@@ -272,11 +272,24 @@ export function recenterCamera(a = undefined, b = undefined, c = undefined) {
 }
 
 // ---------- Auto-fit inicial (pivô fixo + Home) ----------
+export function disableAutoFit(){
+  if (_autoFitTimer){
+    clearInterval(_autoFitTimer);
+    _autoFitTimer = null;
+  }
+}
+
 function startAutoFitOnce() {
+  // Se o viewer já definiu uma Home, não faça auto-fit (evita “coice”)
+  if (Home.has) return;
+
   if (_autoFitTimer) return;
 
   const t0 = performance.now();
   const tick = () => {
+    // Se a Home foi definida enquanto esperamos, cancelamos
+    if (Home.has) { disableAutoFit(); return; }
+
     const bb = computeCurrentBBox();
     if (bb) {
       _modelPivot = bb.getCenter(new THREE.Vector3());
@@ -293,14 +306,12 @@ function startAutoFitOnce() {
       render();
       saveHomeFromState();
 
-      clearInterval(_autoFitTimer);
-      _autoFitTimer = null;
+      disableAutoFit();
       return;
     }
 
     if (performance.now() - t0 > AUTO_FIT_MAX_MS) {
-      clearInterval(_autoFitTimer);
-      _autoFitTimer = null;
+      disableAutoFit();
     }
   };
 
@@ -326,6 +337,8 @@ export function syncOrbitTargetToModel({ root = null, animate = false, saveAsHom
   if (saveAsHome) {
     camera.up.set(0, 1, 0);
     saveHomeFromState();
+    // >>> IMPORTANTÍSSIMO: se o viewer já salvou a Home, não deixe o auto-fit posterior sobrescrever
+    disableAutoFit();
   }
 }
 
@@ -345,6 +358,7 @@ export function resetRotation() {
       _modelPivot = bb.getCenter(new THREE.Vector3());
       recenterCamera({ bbox: bb, animate: false, margin: 1.6, verticalOffsetRatio: 0, forceUpright: true });
       saveHomeFromState();
+      disableAutoFit();
     } else {
       State.theta = INITIAL_THETA;
       State.phi   = THREE.MathUtils.clamp(INITIAL_PHI, ORBIT_MIN_PHI, ORBIT_MAX_PHI);
@@ -367,10 +381,10 @@ export function orbitDelta(dx, dy, isTouch = false) {
   const pivot = _modelPivot ? _modelPivot : State.orbitTarget.clone();
 
   // Base de tela da câmera
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera
-  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // X da câmera (direita)
+  const upScr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // Y da câmera (para cima)
 
-  // “Segue o dedo”: eixo é combinação das bases de tela
+  // “Segue o dedo”
   const axis = new THREE.Vector3()
     .addScaledVector(right,  -dy)
     .addScaledVector(upScr,  -dx);
@@ -382,7 +396,7 @@ export function orbitDelta(dx, dy, isTouch = false) {
   const angle = (isTouch ? ROT_SPEED_TOUCH : ROT_SPEED_DESKTOP) * Math.hypot(dx, dy);
   const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
 
-  // Rotaciona câmera, alvo e up em torno do pivô (arcball real)
+  // Rotaciona posição, alvo e up em torno do pivô (arcball real)
   const posRel = camera.position.clone().sub(pivot).applyQuaternion(q);
   const tgtRel = State.orbitTarget.clone().sub(pivot).applyQuaternion(q);
 
@@ -409,12 +423,8 @@ export function orbitTwist(deltaAngleRad) {
   if (!Number.isFinite(deltaAngleRad) || Math.abs(deltaAngleRad) < 1e-6) return;
 
   const pivot = _modelPivot ? _modelPivot : State.orbitTarget.clone();
-  // Eixo de visão (camera -> alvo)
   const forward = camera.getWorldDirection(new THREE.Vector3()).normalize();
 
-  // Sinal: gesto horário deve girar horário; como tela tem Y para baixo,
-  // o delta calculado no viewer já vem no sentido “de tela”.
-  // Se quiser inverter, troque pelo negativo.
   const q = new THREE.Quaternion().setFromAxisAngle(forward, deltaAngleRad);
 
   const posRel = camera.position.clone().sub(pivot).applyQuaternion(q);
@@ -428,7 +438,7 @@ export function orbitTwist(deltaAngleRad) {
   render();
 }
 
-// ========== PAN SUAVE (eixos de TELA; nunca inverte) ==========
+// ========== PAN SUAVE ==========
 export function panDelta(dx, dy) {
   ensureOrbitTargetVec3();
   if (_pendingPan) {
@@ -449,7 +459,7 @@ function animatePan() {
   _pendingPan.dx -= applyDx;
   _pendingPan.dy -= applyDy;
 
-  const base = (State.radius || 20) * (0.0028 * PAN_FACTOR);
+  const base = (State.radius || 20) * (0.0035 * PAN_FACTOR);
 
   const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
   const upScreen = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
@@ -531,7 +541,6 @@ function setupUnifiedTouchGestureHandler(canvas) {
       const centerDeltaX = now.centerX - lastTouches.centerX;
       const centerDeltaY = now.centerY - lastTouches.centerY;
 
-      // pinch vs pan (fallback para compat); twist por PointerEvents está no viewer.js
       if (Math.abs(distDelta) > Math.max(Math.abs(centerDeltaX), Math.abs(centerDeltaY))) {
         zoomDelta(distDelta / 120, true);
       } else {
@@ -558,4 +567,3 @@ function setupUnifiedTouchGestureHandler(canvas) {
     };
   }
 }
-
