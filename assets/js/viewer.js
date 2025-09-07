@@ -13,6 +13,8 @@ import {
   panDelta,
   zoomDelta,
   recenterCamera,
+  resetRotation,              // <--- novo
+  syncOrbitTargetToModel,     // <--- novo
   INITIAL_THETA,
   INITIAL_PHI
 } from './scene.js';
@@ -51,22 +53,18 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
     // 4) Primeiro render
     render();
 
-    // === Fit inicial adiado (garante viewport/HUD estabilizados) ===
+    // === Fit inicial: use a MESMA pose do Reset (Home) ===
     (function fitInitialView(){
       // 1º frame: deixa layout/CSS assentarem
       requestAnimationFrame(()=>{
         // força um recálculo de aspect se algo mudou
         window.dispatchEvent(new Event('resize'));
 
-        // 2º frame: faz o fit-to-bbox já com aspect correto
+        // 2º frame: calcula Home (BBox) e aplica Reset
         requestAnimationFrame(()=>{
-          recenterCamera({
-            // sem bbox: ele computa a BBox atual da torre
-            theta: INITIAL_THETA,    // 90° anti-horário
-            phi:   INITIAL_PHI,      // inclinação padrão
-            margin: 1.20,
-            animate: false
-          });
+          // calcula BBox, salva como Home (sem animar) e aplica exatamente a Home
+          syncOrbitTargetToModel({ saveAsHome: true, animate: false });
+          resetRotation();
           render();
         });
       });
@@ -91,20 +89,20 @@ import { initHUD, applyFVSAndRefresh } from './hud.js';
     // 10) Render final pós-setup
     render();
 
-    // 11) Reaplica o offset vertical no resize mantendo enquadramento
-let lastW = window.innerWidth;
-let lastH = window.innerHeight;
-window.addEventListener('resize', () => {
-  // Só recenter se a janela realmente mudou de tamanho
-  if (window.innerWidth !== lastW || window.innerHeight !== lastH) {
-    lastW = window.innerWidth;
-    lastH = window.innerHeight;
-    recenterCamera({ verticalOffsetRatio: 0.12 });
-  }
-}, { passive: true });
+    // 11) Resize: NÃO refaça fit; apenas reaplique a órbita atual
+    let lastW = window.innerWidth;
+    let lastH = window.innerHeight;
+    window.addEventListener('resize', () => {
+      if (window.innerWidth !== lastW || window.innerHeight !== lastH) {
+        lastW = window.innerWidth;
+        lastH = window.innerHeight;
+        applyOrbitToCamera(); // mantém alvo/raio/ângulos atuais
+        render();
+      }
+    }, { passive: true });
 
-// 12) Input unificado (mouse + touch) – suave no mobile
-wireUnifiedInput();
+    // 12) Input unificado (mouse + touch) – suave no mobile
+    wireUnifiedInput();
   } catch (err){
     console.error('[viewer] erro no boot:', err);
   }
@@ -139,12 +137,10 @@ wireUnifiedInput();
 window.addEventListener('keydown', (e)=>{
   if (e.key !== 'Escape') return;
 
-  // Se o modal estiver aberto, deixamos o handler do modal agir.
   const backdrop = document.getElementById('doge-modal-backdrop');
   const modalOpen = backdrop && backdrop.getAttribute('aria-hidden') === 'false';
   if (modalOpen) return;
 
-  // Se 2D estiver ativo, desliga
   if (State.flatten2D >= 0.95){
     State.flatten2D = 0;
     hide2D();
@@ -226,18 +222,11 @@ function wireUnifiedInput(){
       const mid  = getMidpoint();
 
       if (pinchPrevDist > 0 && dist > 0){
-        // fator = novaDist / distAnterior (ex.: 1.02 = afasta 2%)
         let scale = dist / pinchPrevDist;
-
-        // “temperar” sensibilidade do pinch:
-        // exponent < 1 reduz sensibilidade; > 1 aumenta
-        const exponent = 0.85; // deixe 0.75–1.20 conforme seu gosto
+        const exponent = 0.85;
         scale = Math.pow(scale, exponent);
-
-        // limita por quadro para não “saltar”
         scale = Math.max(0.8, Math.min(1.25, scale));
-
-        zoomDelta({ scale }, true); // true = pinch
+        zoomDelta({ scale }, true);
       }
 
       if (pinchPrevMid && mid){
@@ -269,16 +258,10 @@ function wireUnifiedInput(){
   cvs.addEventListener('wheel', (e)=>{
     e.preventDefault();
 
-    // Normaliza delta independente do deltaMode
     const unit = (e.deltaMode === 1) ? 33 : (e.deltaMode === 2) ? 120 : 1;
     const dy   = e.deltaY * unit;
 
-    // Converte para fator multiplicativo
-    //  dy=+100  -> ~1.12 (afasta 12%)
-    //  dy=-100  -> ~0.89 (aproxima 11%)
     let scale = Math.exp(dy * 0.0011);
-
-    // limita por evento para suavidade
     scale = Math.max(0.8, Math.min(1.25, scale));
 
     zoomDelta({ scale }, /*isPinch=*/false);
@@ -287,4 +270,3 @@ function wireUnifiedInput(){
   // Botão direito = pan (somente mouse)
   cvs.addEventListener('contextmenu', e => e.preventDefault(), { passive:false });
 }
-
